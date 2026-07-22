@@ -37,8 +37,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount thư mục public
+# Mount thư mục public & assets
 app.mount("/public", StaticFiles(directory="public"), name="public")
+if os.path.exists("public/assets"):
+    app.mount("/assets", StaticFiles(directory="public/assets"), name="assets")
+
 
 # Tự động tạo thư mục storage nếu chưa có để tránh lỗi sập server
 if not os.path.exists("storage"):

@@ -26,10 +26,26 @@ body {
     min-height: 100vh;
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start;
+    padding-top: 2rem;
+    padding-bottom: 2rem;
     overflow-x: hidden;
     position: relative;
 }
+
+#app {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.app-container {
+    width: 95%;
+    max-width: 1300px;
+    padding: 1rem;
+    z-index: 1;
+}
+
 
 /* Custom Scrollbar cho toàn trang */
 ::-webkit-scrollbar {
@@ -121,12 +137,7 @@ body {
     100% { transform: translate(30px, 50px) scale(1.1); }
 }
 
-.app-container {
-    width: 100%;
-    max-width: 800px;
-    padding: 2rem;
-    z-index: 1;
-}
+
 
 header {
     text-align: center;
