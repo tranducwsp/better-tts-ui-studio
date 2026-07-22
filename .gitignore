@@ -1,0 +1,48 @@
+# Python virtual environment
+venv/
+ENV/
+env/
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Audio temporary / output files
+*.wav
+*.mp3
+
+# AI Models & Cache
+*.onnx
+*.pth
+*.bin
+*.safetensors
+pretrained-models/
+.cache/
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Databases & Runtime Data
+*.db
+*.sqlite
+*.sqlite3
+tts_database.db
+storage/
+
+# Backup & Temporary files
+*.orig
+*.bak
+
+# Logs
+*.log
+*secret.yaml

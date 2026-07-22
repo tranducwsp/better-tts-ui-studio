@@ -1,0 +1,11 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "vieneu-tts-api.fullname" . }}-auth
+  labels:
+    app.kubernetes.io/name: {{ include "vieneu-tts-api.name" . }}
+    helm.sh/chart: {{ include "vieneu-tts-api.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  basicAuth:
+    secret: vieneu-tts-api-auth-secret
