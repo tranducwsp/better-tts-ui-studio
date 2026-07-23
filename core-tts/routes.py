@@ -15,6 +15,7 @@ from engine import (
     get_preset_voices,
     synthesize_standard_sync,
     synthesize_fast_async,
+    vieneu_engine,
     tasks_db,
     cloned_voices_cache,
     cleanup_tasks_db
@@ -53,8 +54,13 @@ async def synthesize(req: SynthesizeRequest, background_tasks: BackgroundTasks):
         
     cleanup_tasks_db()
     task_id = req.task_id if req.task_id else str(uuid.uuid4())
-    target_voice = req.voice_id or req.voice or "minh_duc"
-    engine_type = req.engine or ("fast" if "Hoài Mỹ" in target_voice or "Nam Minh" in target_voice else "standard")
+    target_voice = req.voice_id or req.voice or "Minh Đức"
+    
+    # Rút gọn tên giọng nếu chứa dấu gạch ngang mô tả
+    if " — " in target_voice:
+        target_voice = target_voice.split(" — ")[0].strip()
+
+    engine_type = req.engine if req.engine else ("fast" if "Neural" in target_voice or "Hoài Mỹ" in target_voice or "Nam Minh" in target_voice else "standard")
 
     tasks_db[task_id] = {
         "progress": 0,
@@ -140,10 +146,13 @@ async def clone_voice(file: UploadFile = File(...), name: str = Form(...)):
         with open(file_path, "wb") as f:
             f.write(content)
             
+        speaker_emb, ref_codes = vieneu_engine.encode_reference(file_path)
         cloned_voices_cache[clone_id] = {
             "id": clone_id,
             "name": name,
-            "path": file_path
+            "path": file_path,
+            "speaker_emb": speaker_emb,
+            "ref_codes": ref_codes
         }
         return {"voice_id": clone_id, "name": name}
     except Exception as e:

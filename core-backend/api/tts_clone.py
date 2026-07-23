@@ -1,19 +1,15 @@
 import os
-import io
 import uuid
 import time
 import gc
 import asyncio
-import tempfile
-import numpy as np
-import soundfile as sf
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from core.schemas import CloneSynthesizeRequest
-from core.state import tts, tasks_db, cloned_voices_cache, cleanup_tasks_db
+from core.state import CoreTTSClient, tasks_db, cloned_voices_cache, cleanup_tasks_db
 from core.models import UserVoice, User
-from core.database import get_db, register_job_and_chunk, update_chunk_status
+from core.database import get_db, update_chunk_status
 from api.auth import get_current_active_user
 
 router = APIRouter()
@@ -35,17 +31,16 @@ async def clone_voice(
         ext = file.filename.split('.')[-1] if '.' in file.filename else 'wav'
         file_path = f"{user_dir}/{clone_id}.{ext}"
         
+        content = await file.read()
         with open(file_path, "wb") as f:
-            f.write(await file.read())
+            f.write(content)
             
-        speaker_emb, ref_codes = tts.encode_reference(file_path)
-        cloned_voices_cache[clone_id] = {
-            "speaker_emb": speaker_emb,
-            "ref_codes": ref_codes
-        }
+        # Send audio sample to Core TTS Microservice to extract embedding
+        res = CoreTTSClient.clone_voice(content, file.filename, name)
+        core_clone_id = res.get("voice_id", clone_id)
         
         user_voice = UserVoice(
-            id=clone_id,
+            id=core_clone_id,
             user_id=current_user.id,
             name=name,
             gender=gender,
@@ -56,7 +51,7 @@ async def clone_voice(
         db.add(user_voice)
         db.commit()
         
-        return {"clone_id": clone_id, "message": "Clone giọng thành công!"}
+        return {"clone_id": core_clone_id, "message": "Clone giọng thành công!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -66,21 +61,9 @@ async def clone_voice_temp(
     current_user: User = Depends(get_current_active_user)
 ):
     try:
-        temp_dir = "storage/temp"
-        os.makedirs(temp_dir, exist_ok=True)
-        clone_id = f"temp_{uuid.uuid4()}"
-        ext = file.filename.split('.')[-1] if '.' in file.filename else 'wav'
-        file_path = f"{temp_dir}/{clone_id}.{ext}"
-        
-        with open(file_path, "wb") as f:
-            f.write(await file.read())
-            
-        speaker_emb, ref_codes = tts.encode_reference(file_path)
-        cloned_voices_cache[clone_id] = {
-            "speaker_emb": speaker_emb,
-            "ref_codes": ref_codes
-        }
-        
+        content = await file.read()
+        res = CoreTTSClient.clone_voice(content, file.filename, "temp_voice")
+        clone_id = res.get("voice_id", f"temp_{uuid.uuid4()}")
         return {"clone_id": clone_id, "message": "Nạp giọng tạm thành công!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -104,25 +87,26 @@ def delete_user_voice(clone_id: str, db: Session = Depends(get_db), current_user
         raise HTTPException(status_code=404, detail="Không tìm thấy giọng")
     if os.path.exists(voice.file_path):
         os.remove(voice.file_path)
-    if clone_id in cloned_voices_cache:
-        del cloned_voices_cache[clone_id]
+        
+    try:
+        CoreTTSClient.delete_voice(clone_id)
+    except Exception:
+        pass
+        
     db.delete(voice)
     db.commit()
     return {"message": "Đã xóa giọng"}
 
 @router.post("/synthesize")
 async def synthesize_clone(req: CloneSynthesizeRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    voice = db.query(UserVoice).filter(UserVoice.id == req.clone_id).first()
-    if not voice and req.clone_id not in cloned_voices_cache:
-        raise HTTPException(status_code=404, detail="Không tìm thấy ID giọng clone này")
-        
     cleanup_tasks_db()
     task_id = req.task_id if req.task_id else str(uuid.uuid4())
     job_id = req.job_id
+    target_clone_id = req.clone_id or req.voice
     
     tasks_db[task_id] = {"progress": 0, "status": "processing", "audio": None, "cancel": False, "created_at": time.time()}
     loop = asyncio.get_running_loop()
-    
+
     if job_id and req.chunk_index is not None and req.total_chunks is not None:
         from core.database import SessionLocal
         from core.models import TTSChunk
@@ -144,64 +128,31 @@ async def synthesize_clone(req: CloneSynthesizeRequest, background_tasks: Backgr
     
     def process_task():
         try:
-            if req.clone_id not in cloned_voices_cache:
-                speaker_emb, ref_codes = tts.encode_reference(voice.file_path)
-                cloned_voices_cache[req.clone_id] = {
-                    "speaker_emb": speaker_emb,
-                    "ref_codes": ref_codes
-                }
-                
-            voice_data = cloned_voices_cache[req.clone_id]
-            estimated_chunks = max(1, len(req.text) / (4.5 * req.speed))
-            
-            stream_gen = tts.infer_stream(
-                text=req.text, 
-                voice=voice_data,
-                speed=req.speed
+            # Proxy synthesis request to Core TTS Microservice
+            audio_bytes = CoreTTSClient.synthesize(
+                text=req.text,
+                voice=target_clone_id,
+                speed=req.speed,
+                engine="clone"
             )
             
-            audio_chunks = []
-            for i, chunk in enumerate(stream_gen):
-                if tasks_db[task_id].get("cancel"):
-                    if "queue" in tasks_db[task_id]:
-                        loop.call_soon_threadsafe(tasks_db[task_id]["queue"].put_nowait, {"status": "cancelled"})
-                    return
-                audio_chunks.append(chunk)
-                progress = min(99, int((i / estimated_chunks) * 100))
-                tasks_db[task_id]["progress"] = max(tasks_db[task_id]["progress"], progress)
-                
-                if "queue" in tasks_db[task_id]:
-                    loop.call_soon_threadsafe(tasks_db[task_id]["queue"].put_nowait, {"status": "processing", "progress": tasks_db[task_id]["progress"]})
-                
-            if tasks_db[task_id].get("cancel"):
-                return
-                
-            file_path = None
-            if audio_chunks:
-                full_audio = np.concatenate(audio_chunks)
-                out_io = io.BytesIO()
-                sf.write(out_io, full_audio, tts.sample_rate, format="WAV")
-                tasks_db[task_id]["audio"] = out_io.getvalue()
-                
-                try:
-                    mp3_io = io.BytesIO()
-                    sf.write(mp3_io, full_audio, tts.sample_rate, format="MP3")
-                    tasks_db[task_id]["audio_mp3"] = mp3_io.getvalue()
-                except Exception:
-                    pass
-                
-                os.makedirs("storage/temp", exist_ok=True)
-                file_path = f"storage/temp/{task_id}.wav"
-                with open(file_path, "wb") as f:
-                    f.write(tasks_db[task_id]["audio"])
+            tasks_db[task_id]["audio"] = audio_bytes
+            tasks_db[task_id]["audio_mp3"] = audio_bytes
+            
+            os.makedirs("storage/temp", exist_ok=True)
+            file_path = f"storage/temp/{task_id}.wav"
+            with open(file_path, "wb") as f:
+                f.write(audio_bytes)
             
             if job_id:
                 update_chunk_status(task_id, "done", file_path)
             
             tasks_db[task_id]["progress"] = 100
             tasks_db[task_id]["status"] = "done"
+            
+            # Notify SSE Queue immediately
             if "queue" in tasks_db[task_id]:
-                loop.call_soon_threadsafe(tasks_db[task_id]["queue"].put_nowait, {"status": "done"})
+                loop.call_soon_threadsafe(tasks_db[task_id]["queue"].put_nowait, {"status": "done", "progress": 100})
         except Exception as e:
             tasks_db[task_id]["status"] = "error"
             tasks_db[task_id]["error"] = str(e)

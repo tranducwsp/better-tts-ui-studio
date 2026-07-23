@@ -3,6 +3,7 @@ import re
 import uuid
 import time
 import asyncio
+import os
 import numpy as np
 import soundfile as sf
 import edge_tts
@@ -11,12 +12,16 @@ from vieneu import Vieneu
 # Initialize ViNeu AI Model Engine (CPU/Int8 or CUDA)
 vieneu_engine = Vieneu(mode="v3turbo", device="cpu", precision="int8")
 
-# Fast TTS Voices Registry
+# Fast TTS Voices Registry (Full Mapping)
 FAST_VOICES = {
     "Hoài Mỹ (Nữ)": "vi-VN-HoaiMyNeural",
     "Nam Minh (Nam)": "vi-VN-NamMinhNeural",
+    "Hoài Mỹ": "vi-VN-HoaiMyNeural",
+    "Nam Minh": "vi-VN-NamMinhNeural",
     "hoai_my": "vi-VN-HoaiMyNeural",
-    "nam_minh": "vi-VN-NamMinhNeural"
+    "nam_minh": "vi-VN-NamMinhNeural",
+    "vi-VN-HoaiMyNeural": "vi-VN-HoaiMyNeural",
+    "vi-VN-NamMinhNeural": "vi-VN-NamMinhNeural"
 }
 
 # Task Database in RAM
@@ -32,17 +37,23 @@ def cleanup_tasks_db():
 def get_preset_voices():
     preset_list = vieneu_engine.list_preset_voices()
     voices = []
-    for p in preset_list:
+    for item in preset_list:
+        if isinstance(item, tuple):
+            v_name, v_id = item[0], item[1]
+        else:
+            v_name, v_id = str(item), str(item)
+            
         voices.append({
-            "id": p,
-            "name": p,
+            "id": v_id,
+            "name": v_name,
             "type": "standard",
             "language": "vi-VN"
         })
+        
     for k, v in FAST_VOICES.items():
         if not any(x["id"] == v for x in voices):
             voices.append({
-                "id": k,
+                "id": v,
                 "name": k,
                 "type": "fast",
                 "language": "vi-VN"
@@ -53,7 +64,22 @@ def synthesize_standard_sync(text: str, voice: str, speed: float = 1.0) -> bytes
     if not text.strip().endswith(('.', '?', '!')):
         text = text.strip() + '.'
     
-    stream_gen = vieneu_engine.infer_stream(text=text, voice=voice, speed=speed)
+    # Check if voice is a cloned voice embedding or sample audio file path
+    voice_param = voice
+    if voice in cloned_voices_cache:
+        voice_data = cloned_voices_cache[voice]
+        if "speaker_emb" in voice_data:
+            voice_param = voice_data
+        elif "path" in voice_data and os.path.exists(voice_data["path"]):
+            speaker_emb, ref_codes = vieneu_engine.encode_reference(voice_data["path"])
+            voice_data["speaker_emb"] = speaker_emb
+            voice_data["ref_codes"] = ref_codes
+            voice_param = voice_data
+    elif isinstance(voice, str) and os.path.exists(voice):
+        speaker_emb, ref_codes = vieneu_engine.encode_reference(voice)
+        voice_param = {"speaker_emb": speaker_emb, "ref_codes": ref_codes}
+
+    stream_gen = vieneu_engine.infer_stream(text=text, voice=voice_param, speed=speed)
     audio_chunks = []
     for chunk in stream_gen:
         audio_chunks.append(chunk)
