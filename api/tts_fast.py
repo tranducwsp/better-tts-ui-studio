@@ -27,18 +27,9 @@ async def synthesize_fast_tts(req: FastTTSRequest, background_tasks: BackgroundT
     
     cleanup_tasks_db()
     
-    # If using history DB, task_id is provided, otherwise generate one
     task_id = req.task_id if req.task_id else str(uuid.uuid4())
     job_id = req.job_id
     
-    if job_id:
-        # We assume user is 'temp' if not passed in request? Wait, auth is usually injected.
-        # But this endpoint doesn't have auth dependency. Let's just pass "anonymous" or get it.
-        # Actually in history.py we have full auth for standard, but here it's missing?
-        # Let's just use a dummy user or allow it to be NULL if no auth on this router.
-        # But wait, history requires user_id. Let's assume frontend doesn't send user_id.
-        pass
-
     tasks_db[task_id] = {"progress": 0, "status": "processing", "audio_mp3": None, "audio": None, "cancel": False, "created_at": time.time()}
     loop = asyncio.get_running_loop()
     
@@ -66,7 +57,7 @@ async def synthesize_fast_tts(req: FastTTSRequest, background_tasks: BackgroundT
         try:
             voice_code = FAST_VOICES.get(req.voice, "vi-VN-HoaiMyNeural")
             rate_percent = int((req.speed - 1.0) * 100)
-            rate_str = f"{rate_percent:+d}%"
+            rate_str = f"{rate_percent:+d}%" if rate_percent != 0 else None
 
             def split_text(txt, target_chars=800, max_chars=2000):
                 txt = txt.replace('\r\n', '\n')
@@ -108,7 +99,10 @@ async def synthesize_fast_tts(req: FastTTSRequest, background_tasks: BackgroundT
             async def generate_chunk(text_segment, idx):
                 if not text_segment.strip() or not any(c.isalnum() for c in text_segment):
                     return idx, b""
-                communicate = edge_tts.Communicate(text_segment, voice_code, rate=rate_str)
+                if rate_str:
+                    communicate = edge_tts.Communicate(text_segment, voice_code, rate=rate_str)
+                else:
+                    communicate = edge_tts.Communicate(text_segment, voice_code)
                 chunk_audio = b""
                 async for chunk in communicate.stream():
                     if tasks_db[task_id].get("cancel"):

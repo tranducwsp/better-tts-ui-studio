@@ -17,12 +17,12 @@
   let lastSearchIndex = $state(0);
   let textareaElement: HTMLTextAreaElement;
 
-  // Svelte 5 derived state for text chunks
+  // Svelte 5 derived state for text chunks (Exact match with original splitTextIntoChunks)
   let chunks = $derived.by(() => {
     if (!text || text.length <= 1000) return text ? [text] : [];
     const paragraphs = text.split(/(?<=\.\s*\n)/);
     const result: string[] = [];
-    let current = '';
+    let currentChunk = '';
 
     for (const p of paragraphs) {
       const cleanP = p.trim();
@@ -33,24 +33,24 @@
         for (const s of sentences) {
           const cleanS = s.trim();
           if (!cleanS) continue;
-          if (current.length + cleanS.length + 1 <= 1000) {
-            current += (current ? ' ' : '') + cleanS;
+          if (currentChunk.length + cleanS.length + 1 <= 1000) {
+            currentChunk += (currentChunk ? ' ' : '') + cleanS;
           } else {
-            if (current) result.push(current);
-            current = cleanS;
+            if (currentChunk) result.push(currentChunk);
+            currentChunk = cleanS;
           }
         }
       } else {
-        if (current.length + cleanP.length + 1 <= 1000) {
-          current += (current ? '\n' : '') + cleanP;
+        if (currentChunk.length + cleanP.length + 1 <= 1000) {
+          currentChunk += (currentChunk ? '\n' : '') + cleanP;
         } else {
-          if (current) result.push(current);
-          current = cleanP;
+          if (currentChunk) result.push(currentChunk);
+          currentChunk = cleanP;
         }
       }
     }
-    if (current) result.push(current);
-    return result;
+    if (currentChunk) result.push(currentChunk);
+    return result.length ? result : [text];
   });
 
   let fileInput: HTMLInputElement;
@@ -66,11 +66,12 @@
         text = extracted;
         isReadOnly = false;
         uploadedFileName = file.name;
-        toast.show('Trích xuất văn bản từ file thành công!', 'success');
+        toast.show('Đã tải xong văn bản!', 'success');
       }
     } catch (err: any) {
       toast.show('Lỗi đọc file: ' + err.message, 'error');
     }
+    target.value = ''; // Reset input
   }
 
   function toggleRegexMode() {

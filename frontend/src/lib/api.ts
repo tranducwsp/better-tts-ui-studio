@@ -303,7 +303,7 @@ export function subscribeTaskStream(
   onComplete: (blob: Blob, mp3Url: string) => void,
   onError: (errorMsg: string) => void
 ): () => void {
-  const eventSource = new EventSource(`/api/stream/tasks/${taskId}`);
+  const eventSource = new EventSource(`/api/stream/tasks/${taskId}`, { withCredentials: true });
 
   eventSource.onmessage = async (e) => {
     try {
@@ -315,7 +315,7 @@ export function subscribeTaskStream(
         eventSource.close();
         const audioRes = await fetch(`/api/tasks/${taskId}/audio?format=wav`, { credentials: 'include' });
         if (!audioRes.ok) {
-          onError('Không thể tải file audio .wav');
+          onError('Không thể tải file audio .wav từ máy chủ');
           return;
         }
         const blob = await audioRes.blob();
@@ -323,7 +323,7 @@ export function subscribeTaskStream(
         onComplete(blob, mp3Url);
       } else if (data.status === 'error' || data.status === 'failed') {
         eventSource.close();
-        onError(data.error || 'Lỗi xử lý AI');
+        onError(data.error || 'Lỗi xử lý AI từ server');
       } else if (data.status === 'cancelled') {
         eventSource.close();
         onError('Tác vụ đã bị hủy');
@@ -335,6 +335,7 @@ export function subscribeTaskStream(
 
   eventSource.onerror = (err) => {
     eventSource.close();
+    onError('Lỗi kết nối luồng âm thanh Stream SSE từ máy chủ');
   };
 
   return () => {
