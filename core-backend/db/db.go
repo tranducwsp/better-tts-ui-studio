@@ -2,18 +2,24 @@ package db
 
 import (
 	"context"
+	"embed"
 	"log"
-	"os"
 	"time"
 
 	"core-backend/config"
 	"core-backend/db/sqlc"
 	"core-backend/security"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+//go:embed migrations/*.sql
+var migrationFS embed.FS
 
 var (
 	// Pool quản lý Connection Pool PostgreSQL hiệu năng cao của pgx.
@@ -23,7 +29,7 @@ var (
 	Queries *sqlc.Queries
 )
 
-// InitDB khởi tạo kết nối CSDL PostgreSQL với cấu hình Connection Pool linh hoạt từ ENV.
+// InitDB khởi tạo kết nối CSDL PostgreSQL với cấu hình Connection Pool linh hoạt và tự động thực thi golang-migrate.
 func InitDB(cfg *config.Config) {
 	var pool *pgxpool.Pool
 	var err error
@@ -36,7 +42,6 @@ func InitDB(cfg *config.Config) {
 		log.Fatalf("Lỗi cấu hình DATABASE_URL: %v", parseErr)
 	}
 
-	// Cấu hình thông số Pool từ Config ENV
 	poolConfig.MaxConns = cfg.DBMaxConns
 	poolConfig.MinConns = cfg.DBMinConns
 	poolConfig.MaxConnLifetime = time.Duration(cfg.DBMaxConnLifetimeMinutes) * time.Minute
@@ -65,21 +70,38 @@ func InitDB(cfg *config.Config) {
 		time.Sleep(retryInterval)
 	}
 
-	// 3. Tự động thực thi DDL schema nếu chưa tồn tại bảng
-	schemaBytes, err := os.ReadFile("db/schema.sql")
-	if err == nil {
-		log.Println("Executing PostgreSQL database schema...")
-		if _, execErr := pool.Exec(ctx, string(schemaBytes)); execErr != nil {
-			log.Printf("Warning executing schema.sql: %v", execErr)
-		}
-	}
+	// 3. Tự động thực thi Migration có đánh phiên bản qua golang-migrate
+	runDatabaseMigrations(cfg.DatabaseURL)
 
 	Pool = pool
 	Queries = sqlc.New(pool)
 
 	// 4. Khởi tạo các tài khoản mặc định (Admin & User)
 	seedDefaultAccounts(ctx, cfg)
-	log.Println("Database initialization completed successfully (SQL-First sqlc).")
+	log.Println("Database initialization completed successfully (SQL-First sqlc & golang-migrate).")
+}
+
+// runDatabaseMigrations thực thi hệ thống quản lý phiên bản database schema (golang-migrate).
+func runDatabaseMigrations(dbURL string) {
+	log.Println("Executing database versioned migrations (golang-migrate)...")
+
+	driver, err := iofs.New(migrationFS, "migrations")
+	if err != nil {
+		log.Printf("Warning: Không thể đọc tập tin migrations nhúng trong binary: %v", err)
+		return
+	}
+
+	m, err := migrate.NewWithSourceInstance("iofs", driver, dbURL)
+	if err != nil {
+		log.Printf("Warning: Không thể khởi tạo golang-migrate instance: %v", err)
+		return
+	}
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		log.Printf("Warning khi thực thi golang-migrate up: %v", err)
+	} else {
+		log.Println("Database migrations applied successfully (Schema up-to-date)!")
+	}
 }
 
 // seedDefaultAccounts tự động khởi tạo tài khoản Admin và User mặc định nếu chưa tồn tại trong PostgreSQL.
