@@ -16,10 +16,14 @@ import (
 )
 
 var (
-	Pool    *pgxpool.Pool
+	// Pool quản lý Connection Pool PostgreSQL hiệu năng cao của pgx.
+	Pool *pgxpool.Pool
+
+	// Queries chứa các phương thức truy vấn CSDL type-safe được sinh ra tự động bởi sqlc.
 	Queries *sqlc.Queries
 )
 
+// InitDB khởi tạo kết nối CSDL PostgreSQL với cơ chế Retry ngắt kết nối, tự động nạp Schema DDL và khởi tạo tài khoản mặc định.
 func InitDB(cfg *config.Config) {
 	var pool *pgxpool.Pool
 	var err error
@@ -27,6 +31,7 @@ func InitDB(cfg *config.Config) {
 	maxRetries := 10
 	ctx := context.Background()
 
+	// 1. Kết nối PostgreSQL với cơ chế retry (thích hợp khi chạy Docker Compose)
 	for i := 1; i <= maxRetries; i++ {
 		log.Printf("Connecting to PostgreSQL database via pgxpool (Attempt %d/%d)...", i, maxRetries)
 		pool, err = pgxpool.New(ctx, cfg.DatabaseURL)
@@ -43,7 +48,7 @@ func InitDB(cfg *config.Config) {
 		time.Sleep(2 * time.Second)
 	}
 
-	// Auto-execute DDL schema if tables don't exist
+	// 2. Tự động thực thi DDL schema nếu chưa tồn tại bảng
 	schemaBytes, err := os.ReadFile("db/schema.sql")
 	if err == nil {
 		log.Println("Executing PostgreSQL database schema...")
@@ -55,10 +60,12 @@ func InitDB(cfg *config.Config) {
 	Pool = pool
 	Queries = sqlc.New(pool)
 
+	// 3. Đặt các tài khoản mặc định (Admin & User)
 	seedDefaultAccounts(ctx, cfg)
 	log.Println("Database initialization completed successfully (SQL-First sqlc).")
 }
 
+// seedDefaultAccounts tự động khởi tạo tài khoản Admin và User mặc định nếu chưa tồn tại trong PostgreSQL.
 func seedDefaultAccounts(ctx context.Context, cfg *config.Config) {
 	type account struct {
 		username string
@@ -111,6 +118,7 @@ func seedDefaultAccounts(ctx context.Context, cfg *config.Config) {
 	}
 }
 
+// RegisterJobAndChunk đăng ký hoặc cập nhật một Job TTS lớn cùng với đoạn Chunk con vào PostgreSQL bằng sqlc.
 func RegisterJobAndChunk(ctx context.Context, userID, jobID, engine, voice string, speed float64, totalChunks int, taskID string, chunkIndex int, text string) error {
 	_, err := Queries.GetTTSJobByID(ctx, jobID)
 	if err != nil {
@@ -135,6 +143,7 @@ func RegisterJobAndChunk(ctx context.Context, userID, jobID, engine, voice strin
 	return err
 }
 
+// UpdateChunkStatus cập nhật trạng thái tiến độ (processing, done, error), đường dẫn file audio hoặc thông báo lỗi của Chunk.
 func UpdateChunkStatus(ctx context.Context, taskID, status string, audioPath *string, errorMsg *string) error {
 	params := sqlc.UpdateTTSChunkStatusParams{
 		ID:     taskID,

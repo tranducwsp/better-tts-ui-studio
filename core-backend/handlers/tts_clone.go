@@ -21,14 +21,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// TTSCloneHandler xử lý các API liên quan đến Voice Cloning (Tải mẫu giọng mẫu, quản lý giọng và tổng hợp tiếng nói theo mẫu giọng).
 type TTSCloneHandler struct {
 	TTSClient *client.CoreTTSClient
 }
 
+// NewTTSCloneHandler khởi tạo TTSCloneHandler với CoreTTSClient.
 func NewTTSCloneHandler(ttsClient *client.CoreTTSClient) *TTSCloneHandler {
 	return &TTSCloneHandler{TTSClient: ttsClient}
 }
 
+// UploadVoice tải file âm thanh mẫu (.wav, .mp3) để nhân bản (clone) giọng nói lâu dài cho tài khoản người dùng.
 func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)
@@ -38,7 +41,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := r.ParseMultipartForm(32 << 20)
+	err := r.ParseMultipartForm(32 << 20) // Đọc Form 32MB
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
@@ -71,6 +74,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1. Lưu file mẫu vào thư mục lưu trữ người dùng
 	userDir := filepath.Join("storage", user.ID, "voice")
 	_ = os.MkdirAll(userDir, 0755)
 
@@ -82,6 +86,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	filePath := filepath.Join(userDir, fmt.Sprintf("%s.%s", cloneID, ext))
 	_ = os.WriteFile(filePath, fileBytes, 0644)
 
+	// 2. Gửi file sang Core TTS Service (Python AI engine) để trích xuất Feature Embeddings
 	res, err := h.TTSClient.CloneVoice(fileBytes, header.Filename, name)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -94,6 +99,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		coreCloneID = vID
 	}
 
+	// 3. Lưu thông tin giọng nhân bản vào PostgreSQL qua sqlc
 	params := sqlc.CreateUserVoiceParams{
 		ID:       coreCloneID,
 		UserID:   user.ID,
@@ -123,6 +129,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// UploadTempVoice tải giọng mẫu tạm thời (không lưu vào lịch sử DB).
 func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, ok := middleware.GetCurrentUser(r)
@@ -172,6 +179,7 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// UserVoiceResponse cấu trúc phản hồi danh sách giọng nhân bản của người dùng.
 type UserVoiceResponse struct {
 	ID        string  `json:"id"`
 	Name      string  `json:"name"`
@@ -181,6 +189,7 @@ type UserVoiceResponse struct {
 	CreatedAt string  `json:"created_at"`
 }
 
+// GetUserVoices lấy danh sách tất cả các giọng nhân bản của người dùng hiện tại.
 func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)
@@ -227,6 +236,7 @@ func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(res)
 }
 
+// DeleteUserVoice xóa một giọng nhân bản khỏi CSDL, đĩa cứng và AI Engine.
 func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)
@@ -260,6 +270,7 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã xóa giọng"})
 }
 
+// CloneSynthesizeRequest cấu trúc yêu cầu tổng hợp tiếng nói từ giọng nhân bản.
 type CloneSynthesizeRequest struct {
 	Text        string   `json:"text"`
 	CloneID     *string  `json:"clone_id"`
@@ -271,6 +282,7 @@ type CloneSynthesizeRequest struct {
 	TaskID      *string  `json:"task_id"`
 }
 
+// Synthesize thực hiện tổng hợp tiếng nói bất đồng bộ (Asynchronous Background Task) dựa trên giọng nhân bản.
 func (h *TTSCloneHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)
@@ -315,6 +327,7 @@ func (h *TTSCloneHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		_ = db.RegisterJobAndChunk(context.Background(), user.ID, *req.JobID, "clone", targetCloneID, req.Speed, *req.TotalChunks, taskID, *req.ChunkIndex, req.Text)
 	}
 
+	// Gọi goroutine xử lý bất đồng bộ kết nối AI Engine
 	go func() {
 		bgCtx := context.Background()
 		audioBytes, err := h.TTSClient.Synthesize(req.Text, targetCloneID, req.Speed, "clone")

@@ -14,16 +14,19 @@ import (
 	"github.com/bytedance/sonic"
 )
 
+// UtilsHandler xử lý các API tiện ích hỗ trợ đọc và bóc tách văn bản từ file tài liệu upload.
 type UtilsHandler struct{}
 
+// NewUtilsHandler khởi tạo UtilsHandler.
 func NewUtilsHandler() *UtilsHandler {
 	return &UtilsHandler{}
 }
 
+// ExtractText bóc tách văn bản thô từ các định dạng tài liệu được tải lên (.txt, .pdf, .docx, .odt).
 func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	err := r.ParseMultipartForm(32 << 20) // 32MB
+	err := r.ParseMultipartForm(32 << 20) // Đọc Form tối đa 32MB
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
@@ -89,6 +92,7 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// extractDOCXText đọc file DOCX (Zip archive) và parse XML word/document.xml để lấy toàn bộ chữ.
 func extractDOCXText(data []byte) (string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -145,6 +149,7 @@ func extractDOCXText(data []byte) (string, error) {
 	return sb.String(), nil
 }
 
+// extractODTText đọc file ODT (OpenDocument Text) và parse XML content.xml để lấy chữ.
 func extractODTText(data []byte) (string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -216,6 +221,7 @@ func extractODTText(data []byte) (string, error) {
 	return sb.String(), nil
 }
 
+// extractPDFText bóc tách các dòng chữ thô từ PDF Stream Objects.
 func extractPDFText(data []byte) (string, error) {
 	var sb strings.Builder
 	reTextObj := regexp.MustCompile(`\(([^)]*)\)\s*Tj|\[([^\]]*)\]\s*TJ`)

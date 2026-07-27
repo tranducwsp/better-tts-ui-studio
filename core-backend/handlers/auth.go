@@ -14,19 +14,23 @@ import (
 	"github.com/google/uuid"
 )
 
+// AuthHandler xử lý các API liên quan đến Xác thực (Authentication) và Quản lý người dùng.
 type AuthHandler struct {
 	Config *config.Config
 }
 
+// NewAuthHandler khởi tạo một AuthHandler mới với cấu hình hệ thống.
 func NewAuthHandler(cfg *config.Config) *AuthHandler {
 	return &AuthHandler{Config: cfg}
 }
 
+// UserCreateRequest cấu trúc payload yêu cầu khi đăng ký hoặc đăng nhập.
 type UserCreateRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
+// UserResponse cấu trúc dữ liệu người dùng trả về cho client (không chứa PasswordHash).
 type UserResponse struct {
 	ID         string `json:"id"`
 	Username   string `json:"username"`
@@ -34,6 +38,8 @@ type UserResponse struct {
 	IsApproved bool   `json:"is_approved"`
 }
 
+// Register xử lý đăng ký tài khoản người dùng mới.
+// Mặc định tài khoản mới sẽ ở trạng thái chờ duyệt (IsApproved = false).
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var req UserCreateRequest
@@ -43,6 +49,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1. Kiểm tra xem username đã tồn tại chưa
 	_, err := db.Queries.GetUserByUsername(r.Context(), req.Username)
 	if err == nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -50,6 +57,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 2. Hash mật khẩu bằng thuật toán Bcrypt
 	hashedPassword, err := security.HashPassword(req.Password)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -57,6 +65,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 3. Tạo tài khoản người dùng trong CSDL PostgreSQL qua sqlc
 	_, err = db.Queries.CreateUser(r.Context(), sqlc.CreateUserParams{
 		ID:           uuid.NewString(),
 		Username:     req.Username,
@@ -74,11 +83,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đăng ký thành công! Vui lòng chờ Admin duyệt tài khoản."})
 }
 
+// Login xử lý đăng nhập, kiểm tra mật khẩu và thiết lập JWT Access Token qua HttpOnly Cookie.
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	username := ""
 	password := ""
 
+	// Hỗ trợ nhận dữ liệu từ JSON payload hoặc Form Data
 	if r.Header.Get("Content-Type") == "application/json" {
 		var req UserCreateRequest
 		_ = sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req)
@@ -96,6 +107,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1. Kiểm tra tài khoản có tồn tại không
 	user, err := db.Queries.GetUserByUsername(r.Context(), username)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -103,18 +115,21 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 2. Xác thực mật khẩu Bcrypt
 	if !security.VerifyPassword(password, user.PasswordHash) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Sai tài khoản hoặc mật khẩu"})
 		return
 	}
 
+	// 3. Kiểm tra xem tài khoản đã được Admin phê duyệt chưa
 	if !user.IsApproved {
 		w.WriteHeader(http.StatusForbidden)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Tài khoản chưa được Admin duyệt. Vui lòng chờ!"})
 		return
 	}
 
+	// 4. Tạo JWT Access Token
 	accessToken, err := security.CreateAccessToken(user.Username, user.Role, h.Config.SecretKey, h.Config.AccessTokenExpireMinutes)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -122,6 +137,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 5. Gửi Cookie bảo mật HttpOnly về cho Browser Client
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
 		Value:    "Bearer " + accessToken,
@@ -140,6 +156,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Logout xử lý đăng xuất bằng cách xoá Cookie access_token trên trình duyệt.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	http.SetCookie(w, &http.Cookie{
@@ -152,6 +169,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã đăng xuất"})
 }
 
+// Me trả về thông tin chi tiết của người dùng đang đăng nhập dựa trên JWT Token.
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)
@@ -169,6 +187,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetUsers (Admin API) lấy danh sách tất cả người dùng trong hệ thống.
 func (h *AuthHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	users, err := db.Queries.ListUsers(r.Context())
@@ -190,6 +209,7 @@ func (h *AuthHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(res)
 }
 
+// ApproveUser (Admin API) duyệt tài khoản người dùng theo user_id để họ có thể đăng nhập & sử dụng hệ thống.
 func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	userID := chi.URLParam(r, "user_id")

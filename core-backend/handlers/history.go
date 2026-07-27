@@ -15,12 +15,15 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// HistoryHandler xử lý các API xem lịch sử chuyển đổi TTS và chi tiết các Job/Task.
 type HistoryHandler struct{}
 
+// NewHistoryHandler khởi tạo HistoryHandler.
 func NewHistoryHandler() *HistoryHandler {
 	return &HistoryHandler{}
 }
 
+// JobSummaryResponse cấu trúc dữ liệu tóm tắt công việc TTS trong lịch sử.
 type JobSummaryResponse struct {
 	JobID      string  `json:"job_id"`
 	Engine     string  `json:"engine"`
@@ -32,6 +35,7 @@ type JobSummaryResponse struct {
 	IsComplete bool    `json:"is_complete"`
 }
 
+// GetUserHistory lấy danh sách lịch sử tạo TTS của chính người dùng đang đăng nhập.
 func (h *HistoryHandler) GetUserHistory(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)
@@ -44,12 +48,14 @@ func (h *HistoryHandler) GetUserHistory(w http.ResponseWriter, r *http.Request) 
 	h.getHistoryForUser(w, r, user.ID)
 }
 
+// GetUserHistoryAdmin (Admin API) lấy lịch sử chuyển đổi TTS của một người dùng bất kỳ theo user_id.
 func (h *HistoryHandler) GetUserHistoryAdmin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	userID := chi.URLParam(r, "user_id")
 	h.getHistoryForUser(w, r, userID)
 }
 
+// getHistoryForUser hàm nội bộ tổng hợp dữ liệu lịch sử các Job và tiến độ hoàn thành các Chunk của User.
 func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Request, userID string) {
 	jobs, err := db.Queries.ListTTSJobsByUserID(r.Context(), userID)
 	if err != nil {
@@ -132,6 +138,7 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(result)
 }
 
+// ChunkItemResponse thông tin từng đoạn audio chunk trong job.
 type ChunkItemResponse struct {
 	TaskID     string  `json:"task_id"`
 	ChunkIndex int     `json:"chunk_index"`
@@ -140,6 +147,7 @@ type ChunkItemResponse struct {
 	Text       string  `json:"text"`
 }
 
+// JobDetailResponse chi tiết đầy đủ của một Job TTS bao gồm tất cả các đoạn Chunks ghép lại.
 type JobDetailResponse struct {
 	JobID       string              `json:"job_id"`
 	Engine      string              `json:"engine"`
@@ -150,6 +158,7 @@ type JobDetailResponse struct {
 	Chunks      []ChunkItemResponse `json:"chunks"`
 }
 
+// GetJobDetail lấy chi tiết một Job TTS cụ thể theo job_id (bao gồm tiến độ từng đoạn văn bản).
 func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	jobID := chi.URLParam(r, "job_id")
@@ -239,6 +248,7 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// JobInitRequest yêu cầu khởi tạo thông tin cho một Job TTS lớn.
 type JobInitRequest struct {
 	JobID       string  `json:"job_id"`
 	Engine      string  `json:"engine"`
@@ -248,6 +258,7 @@ type JobInitRequest struct {
 	Text        string  `json:"text"`
 }
 
+// InitJob khởi tạo thông tin ban đầu của Job TTS trước khi tiến hành chia nhỏ văn bản và phát âm từng chunk.
 func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)

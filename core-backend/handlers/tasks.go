@@ -11,12 +11,15 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// TasksHandler xử lý việc kiểm tra tiến độ, stream Server-Sent Events (SSE), hủy task và tải file audio.
 type TasksHandler struct{}
 
+// NewTasksHandler khởi tạo TasksHandler.
 func NewTasksHandler() *TasksHandler {
 	return &TasksHandler{}
 }
 
+// GetTaskStatus lấy trạng thái (status, progress) của một Task bất đồng bộ qua task_id.
 func (h *TasksHandler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	taskID := chi.URLParam(r, "task_id")
@@ -34,6 +37,7 @@ func (h *TasksHandler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// CancelTask hủy một Task đang chạy hoặc đang chờ trong hàng đợi.
 func (h *TasksHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	taskID := chi.URLParam(r, "task_id")
@@ -42,6 +46,7 @@ func (h *TasksHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã yêu cầu hủy"})
 }
 
+// GetTaskAudio lấy file dữ liệu âm thanh (WAV hoặc MP3) sau khi Task hoàn thành.
 func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "task_id")
 	format := strings.ToLower(r.URL.Query().Get("format"))
@@ -66,6 +71,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(task.AudioWAV)
 }
 
+// StreamTaskProgress truyền dữ liệu tiến độ thời gian thực (Real-time SSE Stream) qua kết nối HTTP Persistent/Event-Stream.
 func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "task_id")
 
@@ -90,7 +96,7 @@ func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request
 	ch := task.Subscribe()
 	defer task.Unsubscribe(ch)
 
-	// Send current initial status
+	// Gửi sự kiện khởi tạo ban đầu
 	initUpdate := state.TaskUpdate{
 		Status:   task.Status,
 		Progress: task.Progress,

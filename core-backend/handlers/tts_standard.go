@@ -17,14 +17,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// TTSStandardHandler xử lý các yêu cầu tổng hợp tiếng nói sử dụng Engine TTS Tiêu Chuẩn (Standard Model).
 type TTSStandardHandler struct {
 	TTSClient *client.CoreTTSClient
 }
 
+// NewTTSStandardHandler khởi tạo TTSStandardHandler.
 func NewTTSStandardHandler(ttsClient *client.CoreTTSClient) *TTSStandardHandler {
 	return &TTSStandardHandler{TTSClient: ttsClient}
 }
 
+// StandardSynthesizeRequest cấu trúc thông số yêu cầu tổng hợp tiếng nói Tiêu Chuẩn.
 type StandardSynthesizeRequest struct {
 	Text        string   `json:"text"`
 	Voice       string   `json:"voice"`
@@ -35,6 +38,7 @@ type StandardSynthesizeRequest struct {
 	TaskID      *string  `json:"task_id"`
 }
 
+// GetVoices lấy danh sách tên các giọng nói Tiêu Chuẩn có sẵn từ AI Engine.
 func (h *TTSStandardHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	voices, err := h.TTSClient.GetVoices()
@@ -50,6 +54,7 @@ func (h *TTSStandardHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode([]string{"Minh Đức", "Hoài Mỹ"})
 }
 
+// Synthesize tổng hợp tiếng nói Standard trong Background Goroutine và phát thông báo tiến độ.
 func (h *TTSStandardHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)

@@ -17,11 +17,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// TTSFastHandler xử lý các yêu cầu tổng hợp tiếng nói tốc độ cao (Fast TTS Engine).
 type TTSFastHandler struct {
 	TTSClient *client.CoreTTSClient
 	VoiceMap  map[string]string
 }
 
+// NewTTSFastHandler khởi tạo TTSFastHandler cùng bảng ánh xạ tên giọng thân thiện sang mã voice code hệ thống.
 func NewTTSFastHandler(ttsClient *client.CoreTTSClient) *TTSFastHandler {
 	return &TTSFastHandler{
 		TTSClient: ttsClient,
@@ -36,6 +38,7 @@ func NewTTSFastHandler(ttsClient *client.CoreTTSClient) *TTSFastHandler {
 	}
 }
 
+// FastSynthesizeRequest cấu trúc thông số yêu cầu tổng hợp Fast TTS.
 type FastSynthesizeRequest struct {
 	Text        string   `json:"text"`
 	Voice       string   `json:"voice"`
@@ -46,11 +49,13 @@ type FastSynthesizeRequest struct {
 	TaskID      *string  `json:"task_id"`
 }
 
+// GetVoices lấy danh sách các giọng Fast TTS hỗ trợ.
 func (h *TTSFastHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode([]string{"Hoài Mỹ (Nữ)", "Nam Minh (Nam)"})
 }
 
+// Synthesize tổng hợp tiếng nói Fast TTS cực nhanh trong background và trả về audio MP3.
 func (h *TTSFastHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)
