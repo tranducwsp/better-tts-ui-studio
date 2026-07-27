@@ -9,6 +9,7 @@ import (
 	"core-backend/db"
 	"core-backend/db/sqlc"
 	"core-backend/security"
+	"core-backend/state"
 )
 
 type contextKey string
@@ -48,6 +49,9 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 					if err == nil {
 						ctx := context.WithValue(r.Context(), UserContextKey, &user)
 						r = r.WithContext(ctx)
+
+						// Cập nhật trạng thái Online thời gian thực lên Redis (TTL 60s)
+						state.TouchUserOnline(r.Context(), user.ID)
 					}
 				}
 			}

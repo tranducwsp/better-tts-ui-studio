@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"core-backend/config"
 	"core-backend/db"
 	"core-backend/db/sqlc"
 	"core-backend/middleware"
 	"core-backend/security"
+	"core-backend/state"
 
 	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
@@ -36,104 +38,114 @@ type UserResponse struct {
 	Username   string `json:"username"`
 	Role       string `json:"role"`
 	IsApproved bool   `json:"is_approved"`
+	IsOnline   bool   `json:"is_online"`
 }
 
-// Register xử lý đăng ký tài khoản người dùng mới.
-// Mặc định tài khoản mới sẽ ở trạng thái chờ duyệt (IsApproved = false).
+// Register xử lý đăng ký tài khoản mới. Tài khoản đăng ký mới sẽ mặc định ở trạng thái IsApproved = false (chờ Admin duyệt).
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
 	var req UserCreateRequest
-	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" || req.Password == "" {
+	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Vui lòng nhập đầy đủ username và password"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Dữ liệu JSON không hợp lệ"})
 		return
 	}
 
-	// 1. Kiểm tra xem username đã tồn tại chưa
+	req.Username = strings.TrimSpace(req.Username)
+	req.Password = strings.TrimSpace(req.Password)
+
+	if req.Username == "" || req.Password == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Username và Password không được để trống"})
+		return
+	}
+
+	// 1. Kiểm tra tài khoản đã tồn tại chưa bằng sqlc
 	_, err := db.Queries.GetUserByUsername(r.Context(), req.Username)
 	if err == nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Username already registered"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Tên đăng nhập đã tồn tại"})
 		return
 	}
 
-	// 2. Hash mật khẩu bằng thuật toán Bcrypt
+	// 2. Băm mật khẩu an toàn với Bcrypt
 	hashedPassword, err := security.HashPassword(req.Password)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi mã hóa mật khẩu"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi xử lý mật khẩu"})
 		return
 	}
 
-	// 3. Tạo tài khoản người dùng trong CSDL PostgreSQL qua sqlc
-	_, err = db.Queries.CreateUser(r.Context(), sqlc.CreateUserParams{
-		ID:           uuid.NewString(),
+	// 3. Tạo record User trong PostgreSQL
+	userID := uuid.NewString()
+	user, err := db.Queries.CreateUser(r.Context(), sqlc.CreateUserParams{
+		ID:           userID,
 		Username:     req.Username,
 		PasswordHash: hashedPassword,
 		Role:         "user",
-		IsApproved:   false,
+		IsApproved:   false, // Yêu cầu Admin phê duyệt thủ công
 	})
-
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi lưu tài khoản"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi tạo tài khoản"})
 		return
 	}
 
-	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đăng ký thành công! Vui lòng chờ Admin duyệt tài khoản."})
+	w.WriteHeader(http.StatusCreated)
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Đăng ký thành công. Vui lòng chờ Quản trị viên phê duyệt tài khoản.",
+		"user": UserResponse{
+			ID:         user.ID,
+			Username:   user.Username,
+			Role:       user.Role,
+			IsApproved: user.IsApproved,
+			IsOnline:   false,
+		},
+	})
 }
 
-// Login xử lý đăng nhập, kiểm tra mật khẩu và thiết lập JWT Access Token qua HttpOnly Cookie.
+// Login xử lý đăng nhập, xác thực mật khẩu, kiểm tra trạng thái duyệt và cấp phát JWT Token (kèm HttpOnly Cookie).
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	username := ""
-	password := ""
 
-	// Hỗ trợ nhận dữ liệu từ JSON payload hoặc Form Data
-	if r.Header.Get("Content-Type") == "application/json" {
-		var req UserCreateRequest
-		_ = sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req)
-		username = req.Username
-		password = req.Password
-	} else {
-		_ = r.ParseForm()
-		username = r.FormValue("username")
-		password = r.FormValue("password")
-	}
-
-	if username == "" || password == "" {
+	var req UserCreateRequest
+	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Vui lòng nhập username và password"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Dữ liệu JSON không hợp lệ"})
 		return
 	}
 
-	// 1. Kiểm tra tài khoản có tồn tại không
-	user, err := db.Queries.GetUserByUsername(r.Context(), username)
+	req.Username = strings.TrimSpace(req.Username)
+	req.Password = strings.TrimSpace(req.Password)
+
+	// 1. Kiểm tra sự tồn tại của User trong PostgreSQL
+	user, err := db.Queries.GetUserByUsername(r.Context(), req.Username)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Sai tài khoản hoặc mật khẩu"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Sai tên đăng nhập hoặc mật khẩu"})
 		return
 	}
 
-	// 2. Xác thực mật khẩu Bcrypt
-	if !security.VerifyPassword(password, user.PasswordHash) {
+	// 2. Kiểm tra mật khẩu băm Bcrypt
+	if !security.VerifyPassword(req.Password, user.PasswordHash) {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Sai tài khoản hoặc mật khẩu"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Sai tên đăng nhập hoặc mật khẩu"})
 		return
 	}
 
-	// 3. Kiểm tra xem tài khoản đã được Admin phê duyệt chưa
+	// 3. Kiểm tra trạng thái duyệt tài khoản của Admin
 	if !user.IsApproved {
 		w.WriteHeader(http.StatusForbidden)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Tài khoản chưa được Admin duyệt. Vui lòng chờ!"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Tài khoản của bạn chưa được Quản trị viên phê duyệt"})
 		return
 	}
 
-	// 4. Tạo JWT Access Token
+	// 4. Tạo mã JWT Access Token
 	accessToken, err := security.CreateAccessToken(user.Username, user.Role, h.Config.SecretKey, h.Config.AccessTokenExpireMinutes)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi tạo token"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi tạo Token xác thực"})
 		return
 	}
 
@@ -147,6 +159,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   h.Config.AccessTokenExpireMinutes * 60,
 	})
+
+	// Cập nhật trạng thái Online lên Redis
+	state.TouchUserOnline(r.Context(), user.ID)
 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]interface{}{
 		"access_token": accessToken,
@@ -184,10 +199,11 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		Username:   user.Username,
 		Role:       user.Role,
 		IsApproved: user.IsApproved,
+		IsOnline:   true,
 	})
 }
 
-// GetUsers (Admin API) lấy danh sách tất cả người dùng trong hệ thống.
+// GetUsers (Admin API) lấy danh sách tất cả người dùng trong hệ thống kèm trạng thái Online thời gian thực từ Redis.
 func (h *AuthHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	users, err := db.Queries.ListUsers(r.Context())
@@ -204,6 +220,7 @@ func (h *AuthHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 			Username:   u.Username,
 			Role:       u.Role,
 			IsApproved: u.IsApproved,
+			IsOnline:   state.IsUserOnline(r.Context(), u.ID),
 		}
 	}
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(res)

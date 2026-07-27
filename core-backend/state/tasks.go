@@ -42,6 +42,22 @@ func InitRedis(cfg *config.Config) {
 	log.Printf("Ket noi Redis thanh cong tai %s! Hệ thống đã chuyển sang Stateless Multi-Node Ready.", cfg.RedisURL)
 }
 
+// TouchUserOnline gia hạn trạng thái Online của người dùng trong Redis với TTL 60 giây.
+func TouchUserOnline(ctx context.Context, userID string) {
+	if RedisClient != nil && userID != "" {
+		_ = RedisClient.Set(ctx, "user:online:"+userID, "1", 60*time.Second).Err()
+	}
+}
+
+// IsUserOnline kiểm tra người dùng có đang Online hay không dựa trên Redis Key.
+func IsUserOnline(ctx context.Context, userID string) bool {
+	if RedisClient != nil && userID != "" {
+		val, err := RedisClient.Exists(ctx, "user:online:"+userID).Result()
+		return err == nil && val > 0
+	}
+	return false
+}
+
 type TaskUpdate struct {
 	Status   string `json:"status"`
 	Progress int    `json:"progress"`
