@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 	"core-backend/middleware"
 	"core-backend/state"
 
+	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -34,21 +34,21 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	user, ok := middleware.GetCurrentUser(r)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
 	err := r.ParseMultipartForm(32 << 20)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
 		return
 	}
 
 	name := r.FormValue("name")
 	if name == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Thiếu tên giọng"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Thiếu tên giọng"})
 		return
 	}
 
@@ -59,7 +59,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Thiếu file âm thanh"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Thiếu file âm thanh"})
 		return
 	}
 	defer file.Close()
@@ -67,7 +67,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file"})
 		return
 	}
 
@@ -85,7 +85,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	res, err := h.TTSClient.CloneVoice(fileBytes, header.Filename, name)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
 	}
 
@@ -113,11 +113,11 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	_, err = db.Queries.CreateUserVoice(r.Context(), params)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi lưu DB voice"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi lưu DB voice"})
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"clone_id": coreCloneID,
 		"message":  "Clone giọng thành công!",
 	})
@@ -128,21 +128,21 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 	_, ok := middleware.GetCurrentUser(r)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
 	err := r.ParseMultipartForm(32 << 20)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Thiếu file âm thanh"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Thiếu file âm thanh"})
 		return
 	}
 	defer file.Close()
@@ -150,14 +150,14 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file"})
 		return
 	}
 
 	res, err := h.TTSClient.CloneVoice(fileBytes, header.Filename, "temp_voice")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
 	}
 
@@ -166,7 +166,7 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 		cloneID = vID
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"clone_id": cloneID,
 		"message":  "Nạp giọng tạm thành công!",
 	})
@@ -186,14 +186,14 @@ func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) 
 	user, ok := middleware.GetCurrentUser(r)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
 	voices, err := db.Queries.ListUserVoices(r.Context(), user.ID)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})
 		return
 	}
 
@@ -224,7 +224,7 @@ func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) 
 			CreatedAt: createdStr,
 		}
 	}
-	_ = json.NewEncoder(w).Encode(res)
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(res)
 }
 
 func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +232,7 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 	user, ok := middleware.GetCurrentUser(r)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
@@ -243,7 +243,7 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 	})
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Không tìm thấy giọng"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Không tìm thấy giọng"})
 		return
 	}
 
@@ -257,7 +257,7 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 		ID:     cloneID,
 		UserID: user.ID,
 	})
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Đã xóa giọng"})
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã xóa giọng"})
 }
 
 type CloneSynthesizeRequest struct {
@@ -276,14 +276,14 @@ func (h *TTSCloneHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	user, ok := middleware.GetCurrentUser(r)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
 	var req CloneSynthesizeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
+	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Văn bản trống"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Văn bản trống"})
 		return
 	}
 
@@ -296,7 +296,7 @@ func (h *TTSCloneHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 
 	if targetCloneID == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Cần truyền clone_id hoặc voice"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Cần truyền clone_id hoặc voice"})
 		return
 	}
 
@@ -348,7 +348,7 @@ func (h *TTSCloneHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"task_id": taskID,
 	})
 }

@@ -2,16 +2,17 @@ package client
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"time"
+
+	"github.com/bytedance/sonic"
 )
 
 type CoreTTSClient struct {
-	BaseURL string
+	BaseURL    string
 	HTTPClient *http.Client
 }
 
@@ -45,7 +46,7 @@ func (c *CoreTTSClient) GetInfo() (map[string]interface{}, error) {
 	defer resp.Body.Close()
 
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := sonic.ConfigDefault.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -64,7 +65,7 @@ func (c *CoreTTSClient) GetVoices() ([]CoreVoice, error) {
 	}
 
 	var voices []CoreVoice
-	if err := json.NewDecoder(resp.Body).Decode(&voices); err != nil {
+	if err := sonic.ConfigDefault.NewDecoder(resp.Body).Decode(&voices); err != nil {
 		return nil, err
 	}
 	return voices, nil
@@ -78,7 +79,7 @@ func (c *CoreTTSClient) Synthesize(text, voice string, speed float64, engine str
 		Engine:  engine,
 	}
 
-	bodyBytes, err := json.Marshal(payload)
+	bodyBytes, err := sonic.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +99,7 @@ func (c *CoreTTSClient) Synthesize(text, voice string, speed float64, engine str
 		var errResp struct {
 			Detail string `json:"detail"`
 		}
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Detail != "" {
+		if sonic.Unmarshal(respBody, &errResp) == nil && errResp.Detail != "" {
 			return nil, fmt.Errorf("Core TTS Error (%d): %s", resp.StatusCode, errResp.Detail)
 		}
 		return nil, fmt.Errorf("Core TTS Error (%d): %s", resp.StatusCode, string(respBody))
@@ -150,7 +151,7 @@ func (c *CoreTTSClient) CloneVoice(fileBytes []byte, filename, name string) (map
 	}
 
 	var result map[string]interface{}
-	if err := json.Unmarshal(respBytes, &result); err != nil {
+	if err := sonic.Unmarshal(respBytes, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -179,7 +180,7 @@ func (c *CoreTTSClient) DeleteVoice(voiceID string) (map[string]interface{}, err
 	}
 
 	var result map[string]interface{}
-	if err := json.Unmarshal(respBytes, &result); err != nil {
+	if err := sonic.Unmarshal(respBytes, &result); err != nil {
 		return nil, err
 	}
 	return result, nil

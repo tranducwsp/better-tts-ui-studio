@@ -1,13 +1,13 @@
 package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"core-backend/state"
 
+	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -24,11 +24,11 @@ func (h *TasksHandler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
 	task, ok := state.GlobalTaskManager.Get(taskID)
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Không tìm thấy task"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Không tìm thấy task"})
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]interface{}{
 		"status":   task.Status,
 		"progress": task.Progress,
 	})
@@ -39,7 +39,7 @@ func (h *TasksHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "task_id")
 
 	state.GlobalTaskManager.Cancel(taskID)
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Đã yêu cầu hủy"})
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã yêu cầu hủy"})
 }
 
 func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +50,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	if !ok || task.Status != "done" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Audio chưa sẵn sàng"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Audio chưa sẵn sàng"})
 		return
 	}
 
@@ -73,7 +73,7 @@ func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request
 	if !ok {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Task not found"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Task not found"})
 		return
 	}
 
@@ -96,7 +96,7 @@ func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request
 		Progress: task.Progress,
 		Error:    task.Error,
 	}
-	initBytes, _ := json.Marshal(initUpdate)
+	initBytes, _ := sonic.Marshal(initUpdate)
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", string(initBytes))
 	flusher.Flush()
 
@@ -112,7 +112,7 @@ func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request
 			if !open {
 				return
 			}
-			updateBytes, _ := json.Marshal(update)
+			updateBytes, _ := sonic.Marshal(update)
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", string(updateBytes))
 			flusher.Flush()
 

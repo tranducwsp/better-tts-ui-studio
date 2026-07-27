@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -12,6 +11,7 @@ import (
 	"core-backend/db/sqlc"
 	"core-backend/middleware"
 
+	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -37,7 +37,7 @@ func (h *HistoryHandler) GetUserHistory(w http.ResponseWriter, r *http.Request) 
 	user, ok := middleware.GetCurrentUser(r)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
@@ -54,7 +54,7 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 	jobs, err := db.Queries.ListTTSJobsByUserID(r.Context(), userID)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})
 		return
 	}
 
@@ -129,7 +129,7 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
-	_ = json.NewEncoder(w).Encode(result)
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(result)
 }
 
 type ChunkItemResponse struct {
@@ -156,20 +156,20 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 	user, ok := middleware.GetCurrentUser(r)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
 	job, err := db.Queries.GetTTSJobByID(r.Context(), jobID)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Job not found"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Job not found"})
 		return
 	}
 
 	if job.UserID != user.ID && user.Role != "admin" {
 		w.WriteHeader(http.StatusForbidden)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Forbidden"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Forbidden"})
 		return
 	}
 
@@ -228,7 +228,7 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 		totalChunks = len(sortedChunks)
 	}
 
-	_ = json.NewEncoder(w).Encode(JobDetailResponse{
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(JobDetailResponse{
 		JobID:       job.ID,
 		Engine:      job.Engine,
 		Voice:       job.Voice,
@@ -253,14 +253,14 @@ func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 	user, ok := middleware.GetCurrentUser(r)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
 	var req JobInitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.JobID == "" {
+	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil || req.JobID == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Dữ liệu không hợp lệ"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Dữ liệu không hợp lệ"})
 		return
 	}
 
@@ -277,5 +277,5 @@ func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Job initialized successfully"})
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Job initialized successfully"})
 }

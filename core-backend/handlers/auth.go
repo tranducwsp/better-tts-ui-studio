@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"core-backend/config"
@@ -10,6 +9,7 @@ import (
 	"core-backend/middleware"
 	"core-backend/security"
 
+	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -37,23 +37,23 @@ type UserResponse struct {
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var req UserCreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" || req.Password == "" {
+	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" || req.Password == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Vui lòng nhập đầy đủ username và password"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Vui lòng nhập đầy đủ username và password"})
 		return
 	}
 
 	_, err := db.Queries.GetUserByUsername(r.Context(), req.Username)
 	if err == nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Username already registered"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Username already registered"})
 		return
 	}
 
 	hashedPassword, err := security.HashPassword(req.Password)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi mã hóa mật khẩu"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi mã hóa mật khẩu"})
 		return
 	}
 
@@ -67,11 +67,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi lưu tài khoản"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi lưu tài khoản"})
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Đăng ký thành công! Vui lòng chờ Admin duyệt tài khoản."})
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đăng ký thành công! Vui lòng chờ Admin duyệt tài khoản."})
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +81,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if r.Header.Get("Content-Type") == "application/json" {
 		var req UserCreateRequest
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		_ = sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req)
 		username = req.Username
 		password = req.Password
 	} else {
@@ -92,33 +92,33 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if username == "" || password == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Vui lòng nhập username và password"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Vui lòng nhập username và password"})
 		return
 	}
 
 	user, err := db.Queries.GetUserByUsername(r.Context(), username)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Sai tài khoản hoặc mật khẩu"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Sai tài khoản hoặc mật khẩu"})
 		return
 	}
 
 	if !security.VerifyPassword(password, user.PasswordHash) {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Sai tài khoản hoặc mật khẩu"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Sai tài khoản hoặc mật khẩu"})
 		return
 	}
 
 	if !user.IsApproved {
 		w.WriteHeader(http.StatusForbidden)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Tài khoản chưa được Admin duyệt. Vui lòng chờ!"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Tài khoản chưa được Admin duyệt. Vui lòng chờ!"})
 		return
 	}
 
 	accessToken, err := security.CreateAccessToken(user.Username, user.Role, h.Config.SecretKey, h.Config.AccessTokenExpireMinutes)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi tạo token"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi tạo token"})
 		return
 	}
 
@@ -132,7 +132,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   h.Config.AccessTokenExpireMinutes * 60,
 	})
 
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]interface{}{
 		"access_token": accessToken,
 		"token_type":   "bearer",
 		"message":      "Đăng nhập thành công",
@@ -149,7 +149,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		MaxAge:   -1,
 	})
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Đã đăng xuất"})
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã đăng xuất"})
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
@@ -157,11 +157,11 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	user, ok := middleware.GetCurrentUser(r)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode(UserResponse{
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(UserResponse{
 		ID:         user.ID,
 		Username:   user.Username,
 		Role:       user.Role,
@@ -174,7 +174,7 @@ func (h *AuthHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := db.Queries.ListUsers(r.Context())
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi lấy danh sách user"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi lấy danh sách user"})
 		return
 	}
 
@@ -187,7 +187,7 @@ func (h *AuthHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 			IsApproved: u.IsApproved,
 		}
 	}
-	_ = json.NewEncoder(w).Encode(res)
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(res)
 }
 
 func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
@@ -197,11 +197,11 @@ func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 	user, err := db.Queries.ApproveUser(r.Context(), userID)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "User not found"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "User not found"})
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"message": "User " + user.Username + " approved!",
 	})
 }

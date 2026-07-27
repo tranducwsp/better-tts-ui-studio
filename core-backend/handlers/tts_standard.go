@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"core-backend/middleware"
 	"core-backend/state"
 
+	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
 )
 
@@ -43,11 +43,11 @@ func (h *TTSStandardHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 		for i, v := range voices {
 			names[i] = v.Name
 		}
-		_ = json.NewEncoder(w).Encode(names)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(names)
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode([]string{"Minh Đức", "Hoài Mỹ"})
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode([]string{"Minh Đức", "Hoài Mỹ"})
 }
 
 func (h *TTSStandardHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
@@ -55,14 +55,14 @@ func (h *TTSStandardHandler) Synthesize(w http.ResponseWriter, r *http.Request) 
 	user, ok := middleware.GetCurrentUser(r)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
 	var req StandardSynthesizeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
+	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Văn bản trống"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Văn bản trống"})
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *TTSStandardHandler) Synthesize(w http.ResponseWriter, r *http.Request) 
 		})
 	}()
 
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"task_id": taskID,
 	})
 }

@@ -3,7 +3,6 @@ package handlers
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/json"
 	"encoding/xml"
 	"io"
 	"net/http"
@@ -11,6 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/bytedance/sonic"
 )
 
 type UtilsHandler struct{}
@@ -25,14 +26,14 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseMultipartForm(32 << 20) // 32MB
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Thiếu file tài liệu"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Thiếu file tài liệu"})
 		return
 	}
 	defer file.Close()
@@ -40,7 +41,7 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	content, err := io.ReadAll(file)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc nội dung file"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc nội dung file"})
 		return
 	}
 
@@ -55,7 +56,7 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 		extractedText, err = extractPDFText(content)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file PDF: " + err.Error()})
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file PDF: " + err.Error()})
 			return
 		}
 
@@ -63,7 +64,7 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 		extractedText, err = extractDOCXText(content)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file DOCX: " + err.Error()})
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file DOCX: " + err.Error()})
 			return
 		}
 
@@ -71,24 +72,23 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 		extractedText, err = extractODTText(content)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file ODT: " + err.Error()})
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file ODT: " + err.Error()})
 			return
 		}
 
 	default:
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 			"detail": "Định dạng file không hỗ trợ. Chỉ hỗ trợ .txt, .pdf, .docx, .odt",
 		})
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"text": strings.TrimSpace(extractedText),
 	})
 }
 
-// DOCX Extraction via zip & XML
 func extractDOCXText(data []byte) (string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -132,7 +132,6 @@ func extractDOCXText(data []byte) (string, error) {
 		switch elem := tok.(type) {
 		case xml.StartElement:
 			if elem.Name.Local == "p" {
-				// new paragraph
 			}
 		case xml.EndElement:
 			if elem.Name.Local == "p" {
@@ -146,7 +145,6 @@ func extractDOCXText(data []byte) (string, error) {
 	return sb.String(), nil
 }
 
-// ODT Extraction via zip & XML
 func extractODTText(data []byte) (string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -191,7 +189,6 @@ func extractODTText(data []byte) (string, error) {
 		case xml.StartElement:
 			local := elem.Name.Local
 			if local == "s" {
-				// handle <text:s c="N"/>
 				c := 1
 				for _, attr := range elem.Attr {
 					if attr.Name.Local == "c" {
@@ -219,9 +216,7 @@ func extractODTText(data []byte) (string, error) {
 	return sb.String(), nil
 }
 
-// PDF Extraction (stream object text parsing)
 func extractPDFText(data []byte) (string, error) {
-	// Simple PDF text extractor for standard text objects ((text) Tj / [ (text) ] TJ)
 	var sb strings.Builder
 	reTextObj := regexp.MustCompile(`\(([^)]*)\)\s*Tj|\[([^\]]*)\]\s*TJ`)
 	matches := reTextObj.FindAllSubmatch(data, -1)
@@ -231,7 +226,6 @@ func extractPDFText(data []byte) (string, error) {
 			sb.Write(m[1])
 			sb.WriteString(" ")
 		} else if len(m[2]) > 0 {
-			// parse array of (text) strings
 			reSub := regexp.MustCompile(`\(([^)]*)\)`)
 			subMatches := reSub.FindAllSubmatch(m[2], -1)
 			for _, sm := range subMatches {
@@ -243,7 +237,6 @@ func extractPDFText(data []byte) (string, error) {
 
 	res := sb.String()
 	if strings.TrimSpace(res) == "" {
-		// Fallback: extract visible printable strings if text stream object extraction didn't match uncompressed PDF
 		reClean := regexp.MustCompile(`[\w\s.,!?;:\"'-]{5,}`)
 		found := reClean.FindAllString(string(data), -1)
 		res = strings.Join(found, "\n")
