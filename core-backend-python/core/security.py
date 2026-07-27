@@ -10,7 +10,9 @@ import bcrypt
 load_dotenv()
 
 # Cấu hình Secret Key và Algorithm cho JWT
-SECRET_KEY = os.getenv("SECRET_KEY", "vieneu_super_secret_key_change_in_production")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY is not set in environment variables")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
 

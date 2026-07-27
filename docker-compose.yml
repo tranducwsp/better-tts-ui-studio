@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  # 0. PostgreSQL Database Service
+  postgres:
+    image: postgres:16-alpine
+    container_name: vieneu-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=vieneu_tts
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vieneu_tts"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   # 1. AI Core TTS Microservice (Inference Engine)
   core-tts:
     build:
@@ -18,7 +37,7 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
     restart: unless-stopped
 
-  # 2. Control Plane Web Backend (Auth, DB, Management, API Gateway Proxy)
+  # 2. Control Plane Web Backend (Go Chi - Auth, DB, Management, API Gateway Proxy)
   core-backend:
     build:
       context: ./core-backend
@@ -29,12 +48,16 @@ services:
     environment:
       - PORT=8000
       - HOST=0.0.0.0
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/vieneu_tts?sslmode=disable
       - CORE_TTS_URL=http://core-tts:8001
     volumes:
-      - ./core-backend:/app
+      - ./core-backend/storage:/app/storage
     depends_on:
-      - core-tts
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      postgres:
+        condition: service_healthy
+      core-tts:
+        condition: service_started
+    command: ./main
     restart: unless-stopped
 
   # 3. Frontend Web Studio (Svelte 5 Dev Server with Hot Module Replacement)
@@ -54,3 +77,6 @@ services:
       - core-backend
     command: npm run dev -- --host 0.0.0.0
     restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -1,15 +1,25 @@
-FROM python:3.10-slim
+# Build stage
+FROM golang:alpine AS builder
 
 WORKDIR /app
 
-# Install system audio dependencies
-RUN apt-get update && apt-get install -y libsndfile1 ffmpeg && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY go.mod go.sum ./
+RUN go mod download
 
 COPY . .
 
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main main.go
+
+# Production stage
+FROM alpine:latest
+
+RUN apk add --no-cache ca-certificates ffmpeg
+
+WORKDIR /app
+
+COPY --from=builder /app/main .
+COPY .env* ./
+
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["./main"]
