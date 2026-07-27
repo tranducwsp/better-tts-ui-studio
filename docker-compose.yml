@@ -20,6 +20,19 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # 0.1 Redis Cache & PubSub Broker Service
+  redis:
+    image: redis:alpine
+    container_name: vieneu-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   # 1. AI Core TTS Microservice (Inference Engine)
   core-tts:
     build:
@@ -49,11 +62,14 @@ services:
       - PORT=8000
       - HOST=0.0.0.0
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/vieneu_tts?sslmode=disable
+      - REDIS_URL=redis:6379
       - CORE_TTS_URL=http://core-tts:8001
     volumes:
       - ./core-backend/storage:/app/storage
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       core-tts:
         condition: service_started

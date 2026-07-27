@@ -21,6 +21,10 @@ type Config struct {
 	DefaultUserUsername      string
 	DefaultUserPassword      string
 
+	// Cấu hình Redis Cache & PubSub Broker
+	RedisURL      string
+	RedisPassword string
+
 	// Cấu hình Database Connection Pool (pgxpool)
 	DBMaxConns                int32
 	DBMinConns                int32
@@ -30,9 +34,9 @@ type Config struct {
 	DBConnectRetryIntervalSec int
 
 	// Cấu hình Storage & Limit
-	StorageDir      string
-	MaxUploadMB     int
-	CORSOrigins     []string
+	StorageDir       string
+	MaxUploadMB      int
+	CORSOrigins      []string
 	TTSClientTimeout int
 }
 
@@ -45,6 +49,9 @@ func LoadConfig() *Config {
 	dbURL := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/vieneu_tts?sslmode=disable")
 	secretKey := getEnv("SECRET_KEY", "default_secret_key_change_me")
 	coreTTSURL := getEnv("CORE_TTS_URL", "http://localhost:8001")
+
+	redisURL := getEnv("REDIS_URL", "localhost:6379")
+	redisPassword := getEnv("REDIS_PASSWORD", "")
 
 	expireMin := getEnvInt("ACCESS_TOKEN_EXPIRE_MINUTES", 10080)
 
@@ -78,6 +85,8 @@ func LoadConfig() *Config {
 		DefaultAdminPassword:      os.Getenv("DEFAULT_ADMIN_PASSWORD"),
 		DefaultUserUsername:       os.Getenv("DEFAULT_USER_USERNAME"),
 		DefaultUserPassword:       os.Getenv("DEFAULT_USER_PASSWORD"),
+		RedisURL:                  redisURL,
+		RedisPassword:             redisPassword,
 		DBMaxConns:                dbMaxConns,
 		DBMinConns:                dbMinConns,
 		DBMaxConnLifetimeMinutes:  dbMaxConnLifetimeMin,

@@ -14,6 +14,7 @@ import (
 	"core-backend/config"
 	"core-backend/db"
 	"core-backend/router"
+	"core-backend/state"
 )
 
 func main() {
@@ -26,6 +27,9 @@ func main() {
 
 	// Initialize Database with Connection Pool settings
 	db.InitDB(cfg)
+
+	// Initialize Redis Cache & PubSub Broker
+	state.InitRedis(cfg)
 
 	// Core TTS client
 	ttsClient := client.NewCoreTTSClient(cfg.CoreTTSURL, cfg.TTSClientTimeout)

@@ -1,9 +1,46 @@
 package state
 
 import (
+	"context"
+	"log"
 	"sync"
 	"time"
+
+	"core-backend/config"
+
+	"github.com/bytedance/sonic"
+	"github.com/redis/go-redis/v9"
 )
+
+var (
+	// RedisClient kết nối tới Redis Server
+	RedisClient *redis.Client
+)
+
+// InitRedis khởi tạo kết nối Redis Client từ cấu hình ENV.
+func InitRedis(cfg *config.Config) {
+	if cfg.RedisURL == "" {
+		log.Println("RedisURL không được cấu hình, TaskManager sử dụng In-Memory Mode.")
+		return
+	}
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     cfg.RedisURL,
+		Password: cfg.RedisPassword,
+		DB:       0,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		log.Printf("Warning: Khong the ket noi den Redis server (%v). Fallback sang In-Memory Mode.", err)
+		return
+	}
+
+	RedisClient = rdb
+	log.Printf("Ket noi Redis thanh cong tai %s! Hệ thống đã chuyển sang Stateless Multi-Node Ready.", cfg.RedisURL)
+}
 
 type TaskUpdate struct {
 	Status   string `json:"status"`
@@ -12,27 +49,47 @@ type TaskUpdate struct {
 }
 
 type TaskItem struct {
-	ID          string
-	Status      string
-	Progress    int
-	AudioWAV    []byte
-	AudioMP3    []byte
-	Cancel      bool
-	CreatedAt   time.Time
-	Error       string
+	ID          string    `json:"id"`
+	Status      string    `json:"status"`
+	Progress    int       `json:"progress"`
+	AudioWAV    []byte    `json:"audio_wav,omitempty"`
+	AudioMP3    []byte    `json:"audio_mp3,omitempty"`
+	Cancel      bool      `json:"cancel"`
+	CreatedAt   time.Time `json:"created_at"`
+	Error       string    `json:"error,omitempty"`
 	subscribers map[chan TaskUpdate]struct{}
 	mu          sync.Mutex
 }
 
 func (t *TaskItem) Subscribe() chan TaskUpdate {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	ch := make(chan TaskUpdate, 10)
+
+	t.mu.Lock()
 	if t.subscribers == nil {
 		t.subscribers = make(map[chan TaskUpdate]struct{})
 	}
 	t.subscribers[ch] = struct{}{}
+	t.mu.Unlock()
+
+	// Nếu Redis đang bật, tạo Redis Pub/Sub Subscription để hỗ trợ Stateless Multi-Replica Streaming
+	if RedisClient != nil {
+		go func() {
+			pubsub := RedisClient.Subscribe(context.Background(), "channel:task:"+t.ID)
+			defer pubsub.Close()
+
+			redisCh := pubsub.Channel()
+			for msg := range redisCh {
+				var update TaskUpdate
+				if err := sonic.Unmarshal([]byte(msg.Payload), &update); err == nil {
+					select {
+					case ch <- update:
+					default:
+					}
+				}
+			}
+		}()
+	}
+
 	return ch
 }
 
@@ -48,18 +105,46 @@ func (t *TaskItem) Unsubscribe(ch chan TaskUpdate) {
 
 func (t *TaskItem) Notify(update TaskUpdate) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	t.Status = update.Status
 	t.Progress = update.Progress
 	if update.Error != "" {
 		t.Error = update.Error
 	}
-
+	subscribers := make([]chan TaskUpdate, 0, len(t.subscribers))
 	for ch := range t.subscribers {
+		subscribers = append(subscribers, ch)
+	}
+	t.mu.Unlock()
+
+	// 1. Phát bản tin cho các subscriber cục bộ (Local In-Memory Subscriber)
+	for _, ch := range subscribers {
 		select {
 		case ch <- update:
 		default:
+		}
+	}
+
+	// 2. Nếu Redis hoạt động, Publish bản tin Pub/Sub và lưu State vào Redis cho các Node khác đọc
+	if RedisClient != nil {
+		ctx := context.Background()
+		data, err := sonic.Marshal(update)
+		if err == nil {
+			// Redis PubSub Broadcast sang tất cả Replicas Backend khác
+			_ = RedisClient.Publish(ctx, "channel:task:"+t.ID, string(data)).Err()
+		}
+
+		// Lưu thông tin Task vào Redis Key-Value (TTL 1 giờ)
+		taskStateData, err := sonic.Marshal(t)
+		if err == nil {
+			_ = RedisClient.Set(ctx, "task:"+t.ID, string(taskStateData), 1*time.Hour).Err()
+		}
+
+		// Lưu Audio Bytes vào Redis Key nếu hoàn thành
+		if len(t.AudioWAV) > 0 {
+			_ = RedisClient.Set(ctx, "task:audio:"+t.ID+":wav", t.AudioWAV, 1*time.Hour).Err()
+		}
+		if len(t.AudioMP3) > 0 {
+			_ = RedisClient.Set(ctx, "task:audio:"+t.ID+":mp3", t.AudioMP3, 1*time.Hour).Err()
 		}
 	}
 }
@@ -95,30 +180,83 @@ func (tm *TaskManager) GetOrCreate(taskID string) *TaskItem {
 		subscribers: make(map[chan TaskUpdate]struct{}),
 	}
 	tm.tasks[taskID] = item
+
+	// Đăng ký Key lên Redis nếu có kết nối
+	if RedisClient != nil {
+		ctx := context.Background()
+		taskStateData, err := sonic.Marshal(item)
+		if err == nil {
+			_ = RedisClient.Set(ctx, "task:"+taskID, string(taskStateData), 1*time.Hour).Err()
+		}
+	}
+
 	return item
 }
 
 func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {
+	// 1. Kiểm tra RAM cục bộ trước
 	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
 	item, ok := tm.tasks[taskID]
-	return item, ok
+	tm.mu.RUnlock()
+
+	if ok {
+		// Kiểm tra thêm Audio từ Redis nếu RAM rỗng (trường hợp do Node khác tạo audio)
+		if RedisClient != nil {
+			if len(item.AudioWAV) == 0 {
+				if wavBytes, err := RedisClient.Get(context.Background(), "task:audio:"+taskID+":wav").Bytes(); err == nil {
+					item.AudioWAV = wavBytes
+				}
+			}
+			if len(item.AudioMP3) == 0 {
+				if mp3Bytes, err := RedisClient.Get(context.Background(), "task:audio:"+taskID+":mp3").Bytes(); err == nil {
+					item.AudioMP3 = mp3Bytes
+				}
+			}
+		}
+		return item, true
+	}
+
+	// 2. Nếu RAM rỗng và có kết nối Redis (Hit sang Node khác), nạp Task từ Redis
+	if RedisClient != nil {
+		ctx := context.Background()
+		val, err := RedisClient.Get(ctx, "task:"+taskID).Result()
+		if err == nil && val != "" {
+			var fetchedItem TaskItem
+			if err := sonic.Unmarshal([]byte(val), &fetchedItem); err == nil {
+				fetchedItem.subscribers = make(map[chan TaskUpdate]struct{})
+
+				// Nạp Audio bytes từ Redis
+				if wavBytes, err := RedisClient.Get(ctx, "task:audio:"+taskID+":wav").Bytes(); err == nil {
+					fetchedItem.AudioWAV = wavBytes
+				}
+				if mp3Bytes, err := RedisClient.Get(ctx, "task:audio:"+taskID+":mp3").Bytes(); err == nil {
+					fetchedItem.AudioMP3 = mp3Bytes
+				}
+
+				tm.mu.Lock()
+				tm.tasks[taskID] = &fetchedItem
+				tm.mu.Unlock()
+
+				return &fetchedItem, true
+			}
+		}
+	}
+
+	return nil, false
 }
 
 func (tm *TaskManager) Cancel(taskID string) bool {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-
-	if item, ok := tm.tasks[taskID]; ok {
-		item.Cancel = true
-		item.Notify(TaskUpdate{
-			Status:   "cancelled",
-			Progress: item.Progress,
-		})
-		return true
+	item, ok := tm.Get(taskID)
+	if !ok {
+		return false
 	}
-	return false
+
+	item.Cancel = true
+	item.Notify(TaskUpdate{
+		Status:   "cancelled",
+		Progress: item.Progress,
+	})
+	return true
 }
 
 func (tm *TaskManager) Cleanup() {
