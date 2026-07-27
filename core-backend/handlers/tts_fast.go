@@ -28,11 +28,11 @@ func NewTTSFastHandler(ttsClient *client.CoreTTSClient) *TTSFastHandler {
 	return &TTSFastHandler{
 		TTSClient: ttsClient,
 		VoiceMap: map[string]string{
-			"Hoài Mỹ (Nữ)":       "vi-VN-HoaiMyNeural",
-			"Nam Minh (Nam)":     "vi-VN-NamMinhNeural",
-			"Hoài Mỹ":            "vi-VN-HoaiMyNeural",
-			"Nam Minh":           "vi-VN-NamMinhNeural",
-			"vi-VN-HoaiMyNeural": "vi-VN-HoaiMyNeural",
+			"Hoài Mỹ (Nữ)":        "vi-VN-HoaiMyNeural",
+			"Nam Minh (Nam)":      "vi-VN-NamMinhNeural",
+			"Hoài Mỹ":             "vi-VN-HoaiMyNeural",
+			"Nam Minh":            "vi-VN-NamMinhNeural",
+			"vi-VN-HoaiMyNeural":  "vi-VN-HoaiMyNeural",
 			"vi-VN-NamMinhNeural": "vi-VN-NamMinhNeural",
 		},
 	}
@@ -40,13 +40,13 @@ func NewTTSFastHandler(ttsClient *client.CoreTTSClient) *TTSFastHandler {
 
 // FastSynthesizeRequest cấu trúc thông số yêu cầu tổng hợp Fast TTS.
 type FastSynthesizeRequest struct {
-	Text        string   `json:"text"`
-	Voice       string   `json:"voice"`
-	Speed       float64  `json:"speed"`
-	JobID       *string  `json:"job_id"`
-	ChunkIndex  *int     `json:"chunk_index"`
-	TotalChunks *int     `json:"total_chunks"`
-	TaskID      *string  `json:"task_id"`
+	Text        string  `json:"text"`
+	Voice       string  `json:"voice"`
+	Speed       float64 `json:"speed"`
+	JobID       *string `json:"job_id"`
+	ChunkIndex  *int    `json:"chunk_index"`
+	TotalChunks *int    `json:"total_chunks"`
+	TaskID      *string `json:"task_id"`
 }
 
 // GetVoices lấy danh sách các giọng Fast TTS hỗ trợ.

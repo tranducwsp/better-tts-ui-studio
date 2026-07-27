@@ -29,13 +29,13 @@ func NewTTSStandardHandler(ttsClient *client.CoreTTSClient) *TTSStandardHandler 
 
 // StandardSynthesizeRequest cấu trúc thông số yêu cầu tổng hợp tiếng nói Tiêu Chuẩn.
 type StandardSynthesizeRequest struct {
-	Text        string   `json:"text"`
-	Voice       string   `json:"voice"`
-	Speed       float64  `json:"speed"`
-	JobID       *string  `json:"job_id"`
-	ChunkIndex  *int     `json:"chunk_index"`
-	TotalChunks *int     `json:"total_chunks"`
-	TaskID      *string  `json:"task_id"`
+	Text        string  `json:"text"`
+	Voice       string  `json:"voice"`
+	Speed       float64 `json:"speed"`
+	JobID       *string `json:"job_id"`
+	ChunkIndex  *int    `json:"chunk_index"`
+	TotalChunks *int    `json:"total_chunks"`
+	TaskID      *string `json:"task_id"`
 }
 
 // GetVoices lấy danh sách tên các giọng nói Tiêu Chuẩn có sẵn từ AI Engine.

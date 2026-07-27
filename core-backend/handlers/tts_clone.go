@@ -272,14 +272,14 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 
 // CloneSynthesizeRequest cấu trúc yêu cầu tổng hợp tiếng nói từ giọng nhân bản.
 type CloneSynthesizeRequest struct {
-	Text        string   `json:"text"`
-	CloneID     *string  `json:"clone_id"`
-	Voice       *string  `json:"voice"`
-	Speed       float64  `json:"speed"`
-	JobID       *string  `json:"job_id"`
-	ChunkIndex  *int     `json:"chunk_index"`
-	TotalChunks *int     `json:"total_chunks"`
-	TaskID      *string  `json:"task_id"`
+	Text        string  `json:"text"`
+	CloneID     *string `json:"clone_id"`
+	Voice       *string `json:"voice"`
+	Speed       float64 `json:"speed"`
+	JobID       *string `json:"job_id"`
+	ChunkIndex  *int    `json:"chunk_index"`
+	TotalChunks *int    `json:"total_chunks"`
+	TaskID      *string `json:"task_id"`
 }
 
 // Synthesize thực hiện tổng hợp tiếng nói bất đồng bộ (Asynchronous Background Task) dựa trên giọng nhân bản.
