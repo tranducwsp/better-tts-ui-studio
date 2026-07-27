@@ -17,18 +17,18 @@ import (
 )
 
 func main() {
-	// Create storage directory if missing
-	if err := os.MkdirAll("storage", 0755); err != nil {
-		log.Fatalf("Failed to create storage directory: %v", err)
-	}
-
 	cfg := config.LoadConfig()
 
-	// Initialize Database
+	// Create storage directory if missing
+	if err := os.MkdirAll(cfg.StorageDir, 0755); err != nil {
+		log.Fatalf("Failed to create storage directory '%s': %v", cfg.StorageDir, err)
+	}
+
+	// Initialize Database with Connection Pool settings
 	db.InitDB(cfg)
 
 	// Core TTS client
-	ttsClient := client.NewCoreTTSClient(cfg.CoreTTSURL)
+	ttsClient := client.NewCoreTTSClient(cfg.CoreTTSURL, cfg.TTSClientTimeout)
 
 	// Create Router
 	r := router.NewRouter(cfg, ttsClient)

@@ -13,14 +13,21 @@ import (
 	"github.com/go-chi/cors"
 )
 
+// NewRouter tạo và cấu hình toàn bộ HTTP Router (go-chi) kèm Middlewares và API Endpoints.
 func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler {
 	r := chi.NewRouter()
 
-	// Base middlewares
+	// Base middlewares (Global)
 	r.Use(chiMiddleware.Logger)
 	r.Use(chiMiddleware.Recoverer)
+
+	allowedOrigins := cfg.CORSOrigins
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = []string{"*"}
+	}
+
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},

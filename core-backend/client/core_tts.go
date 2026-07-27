@@ -16,11 +16,15 @@ type CoreTTSClient struct {
 	HTTPClient *http.Client
 }
 
-func NewCoreTTSClient(baseURL string) *CoreTTSClient {
+func NewCoreTTSClient(baseURL string, timeoutSeconds int) *CoreTTSClient {
+	timeout := time.Duration(timeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
 	return &CoreTTSClient{
 		BaseURL: baseURL,
 		HTTPClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: timeout,
 		},
 	}
 }
@@ -38,8 +42,7 @@ type SynthesizeRequest struct {
 }
 
 func (c *CoreTTSClient) GetInfo() (map[string]interface{}, error) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(c.BaseURL + "/info")
+	resp, err := c.HTTPClient.Get(c.BaseURL + "/info")
 	if err != nil {
 		return nil, err
 	}
@@ -53,8 +56,7 @@ func (c *CoreTTSClient) GetInfo() (map[string]interface{}, error) {
 }
 
 func (c *CoreTTSClient) GetVoices() ([]CoreVoice, error) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(c.BaseURL + "/voices")
+	resp, err := c.HTTPClient.Get(c.BaseURL + "/voices")
 	if err != nil {
 		return nil, err
 	}
@@ -128,14 +130,13 @@ func (c *CoreTTSClient) CloneVoice(fileBytes []byte, filename, name string) (map
 		return nil, err
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequest("POST", c.BaseURL+"/voices/clone", body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp, err := client.Do(req)
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -158,13 +159,12 @@ func (c *CoreTTSClient) CloneVoice(fileBytes []byte, filename, name string) (map
 }
 
 func (c *CoreTTSClient) DeleteVoice(voiceID string) (map[string]interface{}, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/voices/%s", c.BaseURL, voiceID), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := client.Do(req)
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -23,32 +23,49 @@ var (
 	Queries *sqlc.Queries
 )
 
-// InitDB khởi tạo kết nối CSDL PostgreSQL với cơ chế Retry ngắt kết nối, tự động nạp Schema DDL và khởi tạo tài khoản mặc định.
+// InitDB khởi tạo kết nối CSDL PostgreSQL với cấu hình Connection Pool linh hoạt từ ENV.
 func InitDB(cfg *config.Config) {
 	var pool *pgxpool.Pool
 	var err error
 
-	maxRetries := 10
 	ctx := context.Background()
 
-	// 1. Kết nối PostgreSQL với cơ chế retry (thích hợp khi chạy Docker Compose)
+	// 1. Cấu hình pgxpool từ URL và các biến môi trường
+	poolConfig, parseErr := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if parseErr != nil {
+		log.Fatalf("Lỗi cấu hình DATABASE_URL: %v", parseErr)
+	}
+
+	// Cấu hình thông số Pool từ Config ENV
+	poolConfig.MaxConns = cfg.DBMaxConns
+	poolConfig.MinConns = cfg.DBMinConns
+	poolConfig.MaxConnLifetime = time.Duration(cfg.DBMaxConnLifetimeMinutes) * time.Minute
+	poolConfig.MaxConnIdleTime = time.Duration(cfg.DBMaxConnIdleMinutes) * time.Minute
+
+	maxRetries := cfg.DBConnectMaxRetries
+	retryInterval := time.Duration(cfg.DBConnectRetryIntervalSec) * time.Second
+
+	// 2. Kết nối PostgreSQL với cơ chế Retry
 	for i := 1; i <= maxRetries; i++ {
-		log.Printf("Connecting to PostgreSQL database via pgxpool (Attempt %d/%d)...", i, maxRetries)
-		pool, err = pgxpool.New(ctx, cfg.DatabaseURL)
+		log.Printf("Connecting to PostgreSQL pool [MaxConns: %d, MinConns: %d] (Attempt %d/%d)...",
+			cfg.DBMaxConns, cfg.DBMinConns, i, maxRetries)
+
+		pool, err = pgxpool.NewWithConfig(ctx, poolConfig)
 		if err == nil {
 			if pingErr := pool.Ping(ctx); pingErr == nil {
-				log.Println("Successfully connected to PostgreSQL via pgxpool!")
+				log.Printf("Successfully connected to PostgreSQL via pgxpool (MaxConns: %d, MinConns: %d)!", cfg.DBMaxConns, cfg.DBMinConns)
 				break
 			}
+			pool.Close()
 		}
 
 		if i == maxRetries {
 			log.Fatalf("Failed to connect to PostgreSQL after %d attempts: %v", maxRetries, err)
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(retryInterval)
 	}
 
-	// 2. Tự động thực thi DDL schema nếu chưa tồn tại bảng
+	// 3. Tự động thực thi DDL schema nếu chưa tồn tại bảng
 	schemaBytes, err := os.ReadFile("db/schema.sql")
 	if err == nil {
 		log.Println("Executing PostgreSQL database schema...")
@@ -60,7 +77,7 @@ func InitDB(cfg *config.Config) {
 	Pool = pool
 	Queries = sqlc.New(pool)
 
-	// 3. Đặt các tài khoản mặc định (Admin & User)
+	// 4. Khởi tạo các tài khoản mặc định (Admin & User)
 	seedDefaultAccounts(ctx, cfg)
 	log.Println("Database initialization completed successfully (SQL-First sqlc).")
 }
