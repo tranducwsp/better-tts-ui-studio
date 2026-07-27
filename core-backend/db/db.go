@@ -1,64 +1,65 @@
 package db
 
 import (
+	"context"
 	"log"
+	"os"
 	"time"
 
 	"core-backend/config"
-	"core-backend/models"
+	"core-backend/db/sqlc"
 	"core-backend/security"
 
 	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var DB *gorm.DB
+var (
+	Pool    *pgxpool.Pool
+	Queries *sqlc.Queries
+)
 
-func InitDB(cfg *config.Config) *gorm.DB {
-	var gormDB *gorm.DB
+func InitDB(cfg *config.Config) {
+	var pool *pgxpool.Pool
 	var err error
 
 	maxRetries := 10
+	ctx := context.Background()
+
 	for i := 1; i <= maxRetries; i++ {
-		log.Printf("Connecting to PostgreSQL database (Attempt %d/%d)...", i, maxRetries)
-		gormDB, err = gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{
-			Logger: logger.Default.LogMode(logger.Silent),
-		})
+		log.Printf("Connecting to PostgreSQL database via pgxpool (Attempt %d/%d)...", i, maxRetries)
+		pool, err = pgxpool.New(ctx, cfg.DatabaseURL)
 		if err == nil {
-			sqlDB, pingErr := gormDB.DB()
-			if pingErr == nil && sqlDB.Ping() == nil {
-				log.Println("Successfully connected to PostgreSQL!")
+			if pingErr := pool.Ping(ctx); pingErr == nil {
+				log.Println("Successfully connected to PostgreSQL via pgxpool!")
 				break
 			}
 		}
 
 		if i == maxRetries {
-			log.Fatalf("Failed to connect to PostgreSQL database after %d attempts: %v", maxRetries, err)
+			log.Fatalf("Failed to connect to PostgreSQL after %d attempts: %v", maxRetries, err)
 		}
 		time.Sleep(2 * time.Second)
 	}
 
-	log.Println("Auto-migrating PostgreSQL database schema...")
-	err = gormDB.AutoMigrate(
-		&models.User{},
-		&models.UserVoice{},
-		&models.TTSJob{},
-		&models.TTSChunk{},
-	)
-	if err != nil {
-		log.Fatalf("Failed to migrate database schema: %v", err)
+	// Auto-execute DDL schema if tables don't exist
+	schemaBytes, err := os.ReadFile("db/schema.sql")
+	if err == nil {
+		log.Println("Executing PostgreSQL database schema...")
+		if _, execErr := pool.Exec(ctx, string(schemaBytes)); execErr != nil {
+			log.Printf("Warning executing schema.sql: %v", execErr)
+		}
 	}
 
-	DB = gormDB
-	seedDefaultAccounts(cfg)
+	Pool = pool
+	Queries = sqlc.New(pool)
 
-	log.Println("Database initialization completed successfully.")
-	return DB
+	seedDefaultAccounts(ctx, cfg)
+	log.Println("Database initialization completed successfully (SQL-First sqlc).")
 }
 
-func seedDefaultAccounts(cfg *config.Config) {
+func seedDefaultAccounts(ctx context.Context, cfg *config.Config) {
 	type account struct {
 		username string
 		password string
@@ -83,9 +84,8 @@ func seedDefaultAccounts(cfg *config.Config) {
 	}
 
 	for _, acc := range accounts {
-		var existing models.User
-		err := DB.Where("username = ?", acc.username).First(&existing).Error
-		if err == gorm.ErrRecordNotFound {
+		_, err := Queries.GetUserByUsername(ctx, acc.username)
+		if err != nil {
 			hashedPw, err := security.HashPassword(acc.password)
 			if err != nil {
 				log.Printf("Error hashing password for %s: %v", acc.username, err)
@@ -93,15 +93,14 @@ func seedDefaultAccounts(cfg *config.Config) {
 			}
 
 			userID := uuid.NewString()
-			newUser := models.User{
+			_, err = Queries.CreateUser(ctx, sqlc.CreateUserParams{
 				ID:           userID,
 				Username:     acc.username,
 				PasswordHash: hashedPw,
 				Role:         acc.role,
 				IsApproved:   true,
-			}
-
-			if err := DB.Create(&newUser).Error; err != nil {
+			})
+			if err != nil {
 				log.Printf("Error creating default account %s: %v", acc.username, err)
 			} else {
 				log.Printf("Created default %s account: %s", acc.role, acc.username)
@@ -112,40 +111,41 @@ func seedDefaultAccounts(cfg *config.Config) {
 	}
 }
 
-func RegisterJobAndChunk(userID, jobID, engine, voice string, speed float64, totalChunks int, taskID string, chunkIndex int, text string) error {
-	var job models.TTSJob
-	err := DB.Where("id = ?", jobID).First(&job).Error
-	if err == gorm.ErrRecordNotFound {
-		newJob := models.TTSJob{
+func RegisterJobAndChunk(ctx context.Context, userID, jobID, engine, voice string, speed float64, totalChunks int, taskID string, chunkIndex int, text string) error {
+	_, err := Queries.GetTTSJobByID(ctx, jobID)
+	if err != nil {
+		_, _ = Queries.CreateTTSJob(ctx, sqlc.CreateTTSJobParams{
 			ID:          jobID,
 			UserID:      userID,
 			Engine:      engine,
 			Voice:       voice,
 			Speed:       speed,
-			TotalChunks: totalChunks,
-		}
-		_ = DB.Create(&newJob).Error
+			TotalChunks: int32(totalChunks),
+			Text:        text,
+		})
 	}
 
-	chunk := models.TTSChunk{
+	_, err = Queries.CreateTTSChunk(ctx, sqlc.CreateTTSChunkParams{
 		ID:         taskID,
 		JobID:      jobID,
-		ChunkIndex: chunkIndex,
+		ChunkIndex: int32(chunkIndex),
 		Text:       text,
 		Status:     "processing",
-	}
-	return DB.Create(&chunk).Error
+	})
+	return err
 }
 
-func UpdateChunkStatus(taskID, status string, audioPath *string, errorMsg *string) error {
-	updates := map[string]interface{}{
-		"status": status,
+func UpdateChunkStatus(ctx context.Context, taskID, status string, audioPath *string, errorMsg *string) error {
+	params := sqlc.UpdateTTSChunkStatusParams{
+		ID:     taskID,
+		Status: status,
 	}
 	if audioPath != nil {
-		updates["audio_path"] = *audioPath
+		params.AudioPath = pgtype.Text{String: *audioPath, Valid: true}
 	}
 	if errorMsg != nil {
-		updates["error_msg"] = *errorMsg
+		params.ErrorMsg = pgtype.Text{String: *errorMsg, Valid: true}
 	}
-	return DB.Model(&models.TTSChunk{}).Where("id = ?", taskID).Updates(updates).Error
+	_, err := Queries.UpdateTTSChunkStatus(ctx, params)
+	return err
 }

@@ -46,3 +46,7 @@ storage/
 # Logs
 *.log
 *secret.yaml
+
+# Go Binaries
+core-backend/core-backend
+

@@ -7,7 +7,7 @@ import (
 
 	"core-backend/config"
 	"core-backend/db"
-	"core-backend/models"
+	"core-backend/db/sqlc"
 	"core-backend/security"
 )
 
@@ -40,8 +40,8 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 
 				claims, err := security.ValidateToken(tokenString, cfg.SecretKey)
 				if err == nil && claims.Username != "" {
-					var user models.User
-					if err := db.DB.Where("username = ?", claims.Username).First(&user).Error; err == nil {
+					user, err := db.Queries.GetUserByUsername(r.Context(), claims.Username)
+					if err == nil {
 						ctx := context.WithValue(r.Context(), UserContextKey, &user)
 						r = r.WithContext(ctx)
 					}
@@ -53,8 +53,8 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 	}
 }
 
-func GetCurrentUser(r *http.Request) (*models.User, bool) {
-	user, ok := r.Context().Value(UserContextKey).(*models.User)
+func GetCurrentUser(r *http.Request) (*sqlc.User, bool) {
+	user, ok := r.Context().Value(UserContextKey).(*sqlc.User)
 	return user, ok
 }
 

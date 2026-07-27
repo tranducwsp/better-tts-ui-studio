@@ -17,8 +17,7 @@ func HealthCheck(w http.ResponseWriter, r *http.Request) {
 
 func ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	sqlDB, err := db.DB.DB()
-	if err != nil || sqlDB.Ping() != nil {
+	if db.Pool == nil || db.Pool.Ping(r.Context()) != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "error",

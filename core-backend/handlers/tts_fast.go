@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -86,10 +87,11 @@ func (h *TTSFastHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	taskItem := state.GlobalTaskManager.GetOrCreate(taskID)
 
 	if req.JobID != nil && *req.JobID != "" && req.ChunkIndex != nil && req.TotalChunks != nil {
-		_ = db.RegisterJobAndChunk(user.ID, *req.JobID, "fast", req.Voice, req.Speed, *req.TotalChunks, taskID, *req.ChunkIndex, req.Text)
+		_ = db.RegisterJobAndChunk(context.Background(), user.ID, *req.JobID, "fast", req.Voice, req.Speed, *req.TotalChunks, taskID, *req.ChunkIndex, req.Text)
 	}
 
 	go func() {
+		bgCtx := context.Background()
 		audioBytes, err := h.TTSClient.Synthesize(req.Text, voiceCode, req.Speed, "fast")
 		if err != nil {
 			taskItem.Notify(state.TaskUpdate{
@@ -99,7 +101,7 @@ func (h *TTSFastHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 			})
 			if req.JobID != nil && *req.JobID != "" {
 				errMsg := err.Error()
-				_ = db.UpdateChunkStatus(taskID, "error", nil, &errMsg)
+				_ = db.UpdateChunkStatus(bgCtx, taskID, "error", nil, &errMsg)
 			}
 			return
 		}
@@ -112,7 +114,7 @@ func (h *TTSFastHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		_ = os.WriteFile(filePath, audioBytes, 0644)
 
 		if req.JobID != nil && *req.JobID != "" {
-			_ = db.UpdateChunkStatus(taskID, "done", &filePath, nil)
+			_ = db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil)
 		}
 
 		taskItem.Notify(state.TaskUpdate{

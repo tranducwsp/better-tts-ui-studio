@@ -9,11 +9,10 @@ import (
 	"time"
 
 	"core-backend/db"
+	"core-backend/db/sqlc"
 	"core-backend/middleware"
-	"core-backend/models"
 
 	"github.com/go-chi/chi/v5"
-	"gorm.io/gorm"
 )
 
 type HistoryHandler struct{}
@@ -42,18 +41,17 @@ func (h *HistoryHandler) GetUserHistory(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	h.getHistoryForUser(w, user.ID)
+	h.getHistoryForUser(w, r, user.ID)
 }
 
 func (h *HistoryHandler) GetUserHistoryAdmin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	userID := chi.URLParam(r, "user_id")
-	h.getHistoryForUser(w, userID)
+	h.getHistoryForUser(w, r, userID)
 }
 
-func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, userID string) {
-	var jobs []models.TTSJob
-	err := db.DB.Preload("Chunks").Where("user_id = ?", userID).Order("created_at desc").Find(&jobs).Error
+func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Request, userID string) {
+	jobs, err := db.Queries.ListTTSJobsByUserID(r.Context(), userID)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})
@@ -64,6 +62,7 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, userID string)
 	now := time.Now()
 
 	for _, job := range jobs {
+		chunks, _ := db.Queries.ListTTSChunksByJobID(r.Context(), job.ID)
 		shortText := job.Text
 		if shortText != "" {
 			runes := []rune(shortText)
@@ -71,15 +70,15 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, userID string)
 				shortText = string(runes[:50]) + "..."
 			}
 		} else {
-			var firstChunk *models.TTSChunk
-			for i := range job.Chunks {
-				if job.Chunks[i].ChunkIndex == 0 {
-					firstChunk = &job.Chunks[i]
+			var firstChunk *sqlc.TtsChunk
+			for i := range chunks {
+				if chunks[i].ChunkIndex == 0 {
+					firstChunk = &chunks[i]
 					break
 				}
 			}
-			if firstChunk == nil && len(job.Chunks) > 0 {
-				firstChunk = &job.Chunks[0]
+			if firstChunk == nil && len(chunks) > 0 {
+				firstChunk = &chunks[0]
 			}
 			if firstChunk != nil {
 				shortText = firstChunk.Text
@@ -88,9 +87,9 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, userID string)
 			}
 		}
 
-		uniqueIndexes := make(map[int]bool)
-		doneIndexes := make(map[int]bool)
-		for _, c := range job.Chunks {
+		uniqueIndexes := make(map[int32]bool)
+		doneIndexes := make(map[int32]bool)
+		for _, c := range chunks {
 			uniqueIndexes[c.ChunkIndex] = true
 			if c.Status == "done" {
 				doneIndexes[c.ChunkIndex] = true
@@ -98,22 +97,24 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, userID string)
 		}
 
 		doneChunks := len(doneIndexes)
-		actualTotal := job.TotalChunks
+		actualTotal := int(job.TotalChunks)
 		if len(uniqueIndexes) > actualTotal {
 			actualTotal = len(uniqueIndexes)
 		}
 
-		diff := now.Sub(job.CreatedAt)
 		timeAgo := "Vừa xong"
-		if diff.Hours() >= 24 {
-			days := int(diff.Hours() / 24)
-			timeAgo = fmt.Sprintf("%d ngày trước", days)
-		} else if diff.Hours() >= 1 {
-			hours := int(diff.Hours())
-			timeAgo = fmt.Sprintf("%d giờ trước", hours)
-		} else if diff.Minutes() >= 1 {
-			mins := int(diff.Minutes())
-			timeAgo = fmt.Sprintf("%d phút trước", mins)
+		if job.CreatedAt.Valid {
+			diff := now.Sub(job.CreatedAt.Time)
+			if diff.Hours() >= 24 {
+				days := int(diff.Hours() / 24)
+				timeAgo = fmt.Sprintf("%d ngày trước", days)
+			} else if diff.Hours() >= 1 {
+				hours := int(diff.Hours())
+				timeAgo = fmt.Sprintf("%d giờ trước", hours)
+			} else if diff.Minutes() >= 1 {
+				mins := int(diff.Minutes())
+				timeAgo = fmt.Sprintf("%d phút trước", mins)
+			}
 		}
 
 		result = append(result, JobSummaryResponse{
@@ -159,15 +160,10 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var job models.TTSJob
-	if err := db.DB.Preload("Chunks").Where("id = ?", jobID).First(&job).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			w.WriteHeader(http.StatusNotFound)
-			_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Job not found"})
-			return
-		}
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})
+	job, err := db.Queries.GetTTSJobByID(r.Context(), jobID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Job not found"})
 		return
 	}
 
@@ -177,7 +173,8 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bestChunks := make(map[int]models.TTSChunk)
+	chunks, _ := db.Queries.ListTTSChunksByJobID(r.Context(), job.ID)
+	bestChunks := make(map[int32]sqlc.TtsChunk)
 	statusPriority := map[string]int{
 		"done":       4,
 		"processing": 3,
@@ -185,14 +182,14 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 		"error":      1,
 	}
 
-	for _, c := range job.Chunks {
+	for _, c := range chunks {
 		existing, found := bestChunks[c.ChunkIndex]
 		if !found || statusPriority[c.Status] > statusPriority[existing.Status] {
 			bestChunks[c.ChunkIndex] = c
 		}
 	}
 
-	sortedChunks := make([]models.TTSChunk, 0, len(bestChunks))
+	sortedChunks := make([]sqlc.TtsChunk, 0, len(bestChunks))
 	for _, c := range bestChunks {
 		sortedChunks = append(sortedChunks, c)
 	}
@@ -205,10 +202,14 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 	chunkTexts := make([]string, 0, len(sortedChunks))
 
 	for i, c := range sortedChunks {
+		var audioPathPtr *string
+		if c.AudioPath.Valid {
+			audioPathPtr = &c.AudioPath.String
+		}
 		chunkResponses[i] = ChunkItemResponse{
 			TaskID:     c.ID,
-			ChunkIndex: c.ChunkIndex,
-			AudioPath:  c.AudioPath,
+			ChunkIndex: int(c.ChunkIndex),
+			AudioPath:  audioPathPtr,
 			Status:     c.Status,
 			Text:       c.Text,
 		}
@@ -222,7 +223,7 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 		fullText = strings.Join(chunkTexts, " ")
 	}
 
-	totalChunks := job.TotalChunks
+	totalChunks := int(job.TotalChunks)
 	if len(sortedChunks) > totalChunks {
 		totalChunks = len(sortedChunks)
 	}
@@ -263,19 +264,17 @@ func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var job models.TTSJob
-	err := db.DB.Where("id = ?", req.JobID).First(&job).Error
-	if err == gorm.ErrRecordNotFound {
-		job = models.TTSJob{
+	_, err := db.Queries.GetTTSJobByID(r.Context(), req.JobID)
+	if err != nil {
+		_, _ = db.Queries.CreateTTSJob(r.Context(), sqlc.CreateTTSJobParams{
 			ID:          req.JobID,
 			UserID:      user.ID,
 			Engine:      req.Engine,
 			Voice:       req.Voice,
 			Speed:       req.Speed,
-			TotalChunks: req.TotalChunks,
+			TotalChunks: int32(req.TotalChunks),
 			Text:        req.Text,
-		}
-		_ = db.DB.Create(&job).Error
+		})
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Job initialized successfully"})

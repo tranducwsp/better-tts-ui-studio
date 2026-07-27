@@ -6,13 +6,12 @@ import (
 
 	"core-backend/config"
 	"core-backend/db"
+	"core-backend/db/sqlc"
 	"core-backend/middleware"
-	"core-backend/models"
 	"core-backend/security"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 type AuthHandler struct {
@@ -44,8 +43,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var existing models.User
-	if err := db.DB.Where("username = ?", req.Username).First(&existing).Error; err == nil {
+	_, err := db.Queries.GetUserByUsername(r.Context(), req.Username)
+	if err == nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Username already registered"})
 		return
@@ -58,15 +57,15 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newUser := models.User{
+	_, err = db.Queries.CreateUser(r.Context(), sqlc.CreateUserParams{
 		ID:           uuid.NewString(),
 		Username:     req.Username,
 		PasswordHash: hashedPassword,
 		Role:         "user",
 		IsApproved:   false,
-	}
+	})
 
-	if err := db.DB.Create(&newUser).Error; err != nil {
+	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi lưu tài khoản"})
 		return
@@ -80,7 +79,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	username := ""
 	password := ""
 
-	// Support JSON or Form Data (OAuth2PasswordRequestForm)
 	if r.Header.Get("Content-Type") == "application/json" {
 		var req UserCreateRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
@@ -98,8 +96,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var user models.User
-	if err := db.DB.Where("username = ?", username).First(&user).Error; err != nil {
+	user, err := db.Queries.GetUserByUsername(r.Context(), username)
+	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Sai tài khoản hoặc mật khẩu"})
 		return
@@ -173,8 +171,8 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var users []models.User
-	if err := db.DB.Find(&users).Error; err != nil {
+	users, err := db.Queries.ListUsers(r.Context())
+	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi lấy danh sách user"})
 		return
@@ -196,20 +194,12 @@ func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	userID := chi.URLParam(r, "user_id")
 
-	var user models.User
-	if err := db.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			w.WriteHeader(http.StatusNotFound)
-			_ = json.NewEncoder(w).Encode(map[string]string{"detail": "User not found"})
-			return
-		}
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})
+	user, err := db.Queries.ApproveUser(r.Context(), userID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "User not found"})
 		return
 	}
-
-	user.IsApproved = true
-	db.DB.Save(&user)
 
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"message": "User " + user.Username + " approved!",

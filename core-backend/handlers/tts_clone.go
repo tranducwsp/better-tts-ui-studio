@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,13 +12,13 @@ import (
 
 	"core-backend/client"
 	"core-backend/db"
+	"core-backend/db/sqlc"
 	"core-backend/middleware"
-	"core-backend/models"
 	"core-backend/state"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type TTSCloneHandler struct {
@@ -37,7 +38,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := r.ParseMultipartForm(32 << 20) // 32MB max memory
+	err := r.ParseMultipartForm(32 << 20)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
@@ -51,9 +52,9 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gender := strPtr(r.FormValue("gender"))
-	region := strPtr(r.FormValue("region"))
-	style := strPtr(r.FormValue("style"))
+	gender := r.FormValue("gender")
+	region := r.FormValue("region")
+	style := r.FormValue("style")
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -93,17 +94,24 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		coreCloneID = vID
 	}
 
-	userVoice := models.UserVoice{
+	params := sqlc.CreateUserVoiceParams{
 		ID:       coreCloneID,
 		UserID:   user.ID,
 		Name:     name,
-		Gender:   gender,
-		Region:   region,
-		Style:    style,
 		FilePath: filePath,
 	}
+	if gender != "" {
+		params.Gender = pgtype.Text{String: gender, Valid: true}
+	}
+	if region != "" {
+		params.Region = pgtype.Text{String: region, Valid: true}
+	}
+	if style != "" {
+		params.Style = pgtype.Text{String: style, Valid: true}
+	}
 
-	if err := db.DB.Create(&userVoice).Error; err != nil {
+	_, err = db.Queries.CreateUserVoice(r.Context(), params)
+	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi lưu DB voice"})
 		return
@@ -182,8 +190,8 @@ func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var voices []models.UserVoice
-	if err := db.DB.Where("user_id = ?", user.ID).Find(&voices).Error; err != nil {
+	voices, err := db.Queries.ListUserVoices(r.Context(), user.ID)
+	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})
 		return
@@ -191,13 +199,29 @@ func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) 
 
 	res := make([]UserVoiceResponse, len(voices))
 	for i, v := range voices {
+		var genderPtr, regionPtr, stylePtr *string
+		if v.Gender.Valid {
+			genderPtr = &v.Gender.String
+		}
+		if v.Region.Valid {
+			regionPtr = &v.Region.String
+		}
+		if v.Style.Valid {
+			stylePtr = &v.Style.String
+		}
+
+		createdStr := ""
+		if v.CreatedAt.Valid {
+			createdStr = v.CreatedAt.Time.Format("2006-01-02T15:04:05Z")
+		}
+
 		res[i] = UserVoiceResponse{
 			ID:        v.ID,
 			Name:      v.Name,
-			Gender:    v.Gender,
-			Region:    v.Region,
-			Style:     v.Style,
-			CreatedAt: v.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			Gender:    genderPtr,
+			Region:    regionPtr,
+			Style:     stylePtr,
+			CreatedAt: createdStr,
 		}
 	}
 	_ = json.NewEncoder(w).Encode(res)
@@ -213,15 +237,13 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 	}
 
 	cloneID := chi.URLParam(r, "clone_id")
-	var voice models.UserVoice
-	if err := db.DB.Where("id = ? AND user_id = ?", cloneID, user.ID).First(&voice).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			w.WriteHeader(http.StatusNotFound)
-			_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Không tìm thấy giọng"})
-			return
-		}
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})
+	voice, err := db.Queries.GetUserVoiceByID(r.Context(), sqlc.GetUserVoiceByIDParams{
+		ID:     cloneID,
+		UserID: user.ID,
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"detail": "Không tìm thấy giọng"})
 		return
 	}
 
@@ -231,7 +253,10 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 
 	_, _ = h.TTSClient.DeleteVoice(cloneID)
 
-	db.DB.Delete(&voice)
+	_ = db.Queries.DeleteUserVoice(r.Context(), sqlc.DeleteUserVoiceParams{
+		ID:     cloneID,
+		UserID: user.ID,
+	})
 	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Đã xóa giọng"})
 }
 
@@ -287,10 +312,11 @@ func (h *TTSCloneHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	taskItem := state.GlobalTaskManager.GetOrCreate(taskID)
 
 	if req.JobID != nil && *req.JobID != "" && req.ChunkIndex != nil && req.TotalChunks != nil {
-		_ = db.RegisterJobAndChunk(user.ID, *req.JobID, "clone", targetCloneID, req.Speed, *req.TotalChunks, taskID, *req.ChunkIndex, req.Text)
+		_ = db.RegisterJobAndChunk(context.Background(), user.ID, *req.JobID, "clone", targetCloneID, req.Speed, *req.TotalChunks, taskID, *req.ChunkIndex, req.Text)
 	}
 
 	go func() {
+		bgCtx := context.Background()
 		audioBytes, err := h.TTSClient.Synthesize(req.Text, targetCloneID, req.Speed, "clone")
 		if err != nil {
 			taskItem.Notify(state.TaskUpdate{
@@ -300,7 +326,7 @@ func (h *TTSCloneHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 			})
 			if req.JobID != nil && *req.JobID != "" {
 				errMsg := err.Error()
-				_ = db.UpdateChunkStatus(taskID, "error", nil, &errMsg)
+				_ = db.UpdateChunkStatus(bgCtx, taskID, "error", nil, &errMsg)
 			}
 			return
 		}
@@ -313,7 +339,7 @@ func (h *TTSCloneHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		_ = os.WriteFile(filePath, audioBytes, 0644)
 
 		if req.JobID != nil && *req.JobID != "" {
-			_ = db.UpdateChunkStatus(taskID, "done", &filePath, nil)
+			_ = db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil)
 		}
 
 		taskItem.Notify(state.TaskUpdate{
@@ -325,11 +351,4 @@ func (h *TTSCloneHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"task_id": taskID,
 	})
-}
-
-func strPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }
