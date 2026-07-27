@@ -50,9 +50,6 @@ spec:
           envFrom:
             - secretRef:
                 name: vieneu-tts-api-auth-secret
-          env:
-            - name: PYTHONUNBUFFERED
-              value: "1"
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.persistence.enabled }}
