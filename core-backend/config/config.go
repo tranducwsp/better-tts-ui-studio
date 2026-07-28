@@ -47,10 +47,10 @@ func LoadConfig() *Config {
 
 	host := getEnv("HOST", "0.0.0.0")
 	port := getEnv("PORT", "8000")
-	dbURL := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/vieneu_tts?sslmode=disable")
+	dbURL := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/ai_studio?sslmode=disable")
 	secretKey := getEnv("SECRET_KEY", "default_secret_key_change_me")
-	coreTTSURL := getEnv("CORE_TTS_URL", "http://localhost:8001")
-	coreTTSGrpcURL := getEnv("CORE_TTS_GRPC_URL", "localhost:50051")
+	coreTTSURL := getEnv("CORE_ENGINE_URL", getEnv("CORE_TTS_URL", "http://localhost:8001"))
+	coreTTSGrpcURL := getEnv("CORE_ENGINE_GRPC_URL", getEnv("CORE_TTS_GRPC_URL", "localhost:50051"))
 
 	redisURL := getEnv("REDIS_URL", "localhost:6379")
 	redisPassword := getEnv("REDIS_PASSWORD", "")

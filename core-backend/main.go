@@ -66,7 +66,7 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("Starting VieNeu Core Backend (Go Chi) server at http://%s", addr)
+		log.Printf("Starting Universal Control Plane Backend (Go Chi) server at http://%s", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Listen error: %v", err)
 		}

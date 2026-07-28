@@ -1,20 +1,18 @@
-version: '3.8'
-
 services:
   # 0. PostgreSQL Database Service
   postgres:
     image: postgres:16-alpine
-    container_name: vieneu-postgres
+    container_name: app-postgres
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=vieneu_tts
+      - POSTGRES_DB=ai_studio
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d vieneu_tts"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_studio"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,7 +21,7 @@ services:
   # 0.1 Redis Cache & PubSub Broker Service
   redis:
     image: redis:alpine
-    container_name: vieneu-redis
+    container_name: app-redis
     ports:
       - "6379:6379"
     healthcheck:
@@ -33,12 +31,12 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # 1. AI Core TTS Microservice (Inference Engine)
-  core-tts:
+  # 1. AI Core Engine Microservice (Inference Engine)
+  core-engine:
     build:
       context: ./core-tts
       dockerfile: Dockerfile
-    container_name: vieneu-core-tts
+    container_name: ai-core-engine
     ports:
       - "8001:8001"
       - "50051:50051"
@@ -51,21 +49,21 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
     restart: unless-stopped
 
-  # 2. Control Plane Web Backend (Go Chi - Auth, DB, Management, API Gateway Proxy)
+  # 2. Control Plane Web Backend (Go Chi - Auth, DB, Management, Dynamic Gateway)
   core-backend:
     build:
       context: ./core-backend
       dockerfile: Dockerfile
-    container_name: vieneu-core-backend
+    container_name: ai-core-backend
     ports:
       - "8000:8000"
     environment:
       - PORT=8000
       - HOST=0.0.0.0
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/vieneu_tts?sslmode=disable
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ai_studio?sslmode=disable
       - REDIS_URL=redis:6379
-      - CORE_TTS_URL=http://core-tts:8001
-      - CORE_TTS_GRPC_URL=core-tts:50051
+      - CORE_ENGINE_URL=http://core-engine:8001
+      - CORE_ENGINE_GRPC_URL=core-engine:50051
     volumes:
       - ./core-backend/storage:/app/storage
     depends_on:
@@ -73,17 +71,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      core-tts:
+      core-engine:
         condition: service_started
     command: ./main
     restart: unless-stopped
 
-  # 3. Frontend Web Studio (Svelte 5 Dev Server with Hot Module Replacement)
+  # 3. Frontend Web Studio (Svelte Dev Server)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: vieneu-frontend
+    container_name: ai-studio-frontend
     ports:
       - "5173:5173"
     environment:
