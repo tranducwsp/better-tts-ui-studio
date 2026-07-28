@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 
 class SynthesizeRequest(BaseModel):
@@ -28,13 +28,41 @@ class VoiceInfo(BaseModel):
     region: Optional[str] = None
     style: Optional[str] = None
 
-class CoreInfoResponse(BaseModel):
-    engine_name: str = "VieNeu-TTS-Core"
+class RangeConstraint(BaseModel):
+    min: float = 0.5
+    max: float = 2.0
+    default: float = 1.0
+    step: float = 0.1
+
+class EngineConstraints(BaseModel):
+    max_text_length: int = 3000
+    speed_range: RangeConstraint = Field(default_factory=RangeConstraint)
+    pitch_range: RangeConstraint = Field(default_factory=lambda: RangeConstraint(min=-10.0, max=10.0, default=0.0, step=0.5))
+    supported_emotions: List[str] = []
+
+class AudioSpec(BaseModel):
+    supported_formats: List[str] = ["wav", "mp3"]
+    supported_sample_rates: List[int] = [16000, 22050, 24000, 44100]
+    default_format: str = "wav"
+    default_sample_rate: int = 24000
+
+class EngineCapabilities(BaseModel):
+    supports_preset_voices: bool = True
+    supports_cloning: bool = True
+    supports_streaming: bool = True
+    supports_speed: bool = True
+    supports_pitch: bool = False
+    supports_emotion: bool = False
+    supports_ssml: bool = False
+
+class UniversalManifest(BaseModel):
+    engine_id: str = "vieneu-v3turbo"
+    engine_name: str = "VieNeu V3 Turbo Core Engine"
     version: str = "1.0.0"
-    capabilities: Dict[str, bool] = {
-        "supports_cloning": True,
-        "supports_speed": True,
-        "supports_pitch": True
-    }
-    audio_formats: List[str] = ["wav", "mp3"]
-    sample_rates: List[int] = [22050, 24000, 44100]
+    provider: str = "VieNeu Labs"
+    capabilities: EngineCapabilities = Field(default_factory=EngineCapabilities)
+    constraints: EngineConstraints = Field(default_factory=EngineConstraints)
+    audio_spec: AudioSpec = Field(default_factory=AudioSpec)
+
+# Legacy compatibility alias
+CoreInfoResponse = UniversalManifest

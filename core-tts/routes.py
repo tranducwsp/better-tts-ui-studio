@@ -24,10 +24,10 @@ from config import STORAGE_DIR
 
 router = APIRouter()
 
-@router.get("/info", response_model=CoreInfoResponse)
+@router.get("/info", response_model=UniversalManifest)
 def get_core_info():
     """2.1 Capabilities & Manifest API"""
-    return CoreInfoResponse()
+    return UniversalManifest()
 
 @router.get("/voices", response_model=list[VoiceInfo])
 def get_voices():

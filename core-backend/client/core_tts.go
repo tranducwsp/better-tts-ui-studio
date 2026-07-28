@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	"core-backend/types"
+
 	"github.com/bytedance/sonic"
 )
 
@@ -41,22 +43,14 @@ type SynthesizeRequest struct {
 	Engine  string  `json:"engine"`
 }
 
-type CoreInfoResponse struct {
-	EngineName   string          `json:"engine_name"`
-	Version      string          `json:"version"`
-	Capabilities map[string]bool `json:"capabilities"`
-	AudioFormats []string        `json:"audio_formats"`
-	SampleRates  []int           `json:"sample_rates"`
-}
-
-func (c *CoreTTSClient) GetInfo() (*CoreInfoResponse, error) {
+func (c *CoreTTSClient) GetInfo() (*types.UniversalManifest, error) {
 	resp, err := c.HTTPClient.Get(c.BaseURL + "/info")
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	var result CoreInfoResponse
+	var result types.UniversalManifest
 	if err := sonic.ConfigDefault.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
