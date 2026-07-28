@@ -51,7 +51,8 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 	utilsHandler := handlers.NewUtilsHandler()
 
 	r.Route("/api", func(r chi.Router) {
-		// Public Auth routes
+		// Public Auth & Engine Info routes
+		r.Get("/info", handlers.GetEngineInfo)
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
 		r.Post("/logout", authHandler.Logout)

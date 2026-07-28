@@ -34,6 +34,21 @@ func main() {
 	// Core TTS client
 	ttsClient := client.NewCoreTTSClient(cfg.CoreTTSURL, cfg.TTSClientTimeout)
 
+	// Async Background AI Engine Manifest Discovery & RAM Caching loop
+	go func() {
+		for {
+			manifest, err := ttsClient.GetInfo()
+			if err == nil && manifest != nil {
+				state.GlobalManifestState.Set(manifest)
+				log.Printf("🚀 AI Engine Manifest discovered & cached: %s (v%s) [Max Length: %d chars]",
+					manifest.EngineName, manifest.Version, manifest.Constraints.MaxTextLength)
+				break
+			}
+			log.Printf("⏳ Waiting for AI Engine Manifest discovery at %s... Retrying in 3s", cfg.CoreTTSURL)
+			time.Sleep(3 * time.Second)
+		}
+	}()
+
 	// Create Router
 	r := router.NewRouter(cfg, ttsClient)
 
