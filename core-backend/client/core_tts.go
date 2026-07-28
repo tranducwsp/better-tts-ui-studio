@@ -157,31 +157,3 @@ func (c *CoreTTSClient) CloneVoice(fileBytes []byte, filename, name string) (map
 	}
 	return result, nil
 }
-
-func (c *CoreTTSClient) DeleteVoice(voiceID string) (map[string]interface{}, error) {
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/voices/%s", c.BaseURL, voiceID), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Lỗi xóa giọng từ Core TTS: %s", string(respBytes))
-	}
-
-	var result map[string]interface{}
-	if err := sonic.Unmarshal(respBytes, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}

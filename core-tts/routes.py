@@ -157,8 +157,3 @@ async def clone_voice(file: UploadFile = File(...), name: str = Form(...)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@router.delete("/voices/{voice_id}")
-def delete_voice(voice_id: str):
-    """Delete Custom Voice Embedding API (Stateless acknowledgement)"""
-    return {"success": True, "deleted_voice_id": voice_id}

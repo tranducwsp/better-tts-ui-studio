@@ -261,8 +261,6 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 		_ = os.Remove(voice.FilePath)
 	}
 
-	_, _ = h.TTSClient.DeleteVoice(cloneID)
-
 	_ = db.Queries.DeleteUserVoice(r.Context(), sqlc.DeleteUserVoiceParams{
 		ID:     cloneID,
 		UserID: user.ID,
