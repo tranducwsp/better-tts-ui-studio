@@ -16,6 +16,7 @@ type Config struct {
 	SecretKey                string
 	AccessTokenExpireMinutes int
 	CoreTTSURL               string
+	CoreTTSGrpcURL           string
 	DefaultAdminUsername     string
 	DefaultAdminPassword     string
 	DefaultUserUsername      string
@@ -49,6 +50,7 @@ func LoadConfig() *Config {
 	dbURL := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/vieneu_tts?sslmode=disable")
 	secretKey := getEnv("SECRET_KEY", "default_secret_key_change_me")
 	coreTTSURL := getEnv("CORE_TTS_URL", "http://localhost:8001")
+	coreTTSGrpcURL := getEnv("CORE_TTS_GRPC_URL", "localhost:50051")
 
 	redisURL := getEnv("REDIS_URL", "localhost:6379")
 	redisPassword := getEnv("REDIS_PASSWORD", "")
@@ -81,6 +83,7 @@ func LoadConfig() *Config {
 		SecretKey:                 secretKey,
 		AccessTokenExpireMinutes:  expireMin,
 		CoreTTSURL:                coreTTSURL,
+		CoreTTSGrpcURL:            coreTTSGrpcURL,
 		DefaultAdminUsername:      os.Getenv("DEFAULT_ADMIN_USERNAME"),
 		DefaultAdminPassword:      os.Getenv("DEFAULT_ADMIN_PASSWORD"),
 		DefaultUserUsername:       os.Getenv("DEFAULT_USER_USERNAME"),

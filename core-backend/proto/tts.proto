@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package tts;
+
+option go_package = "core-backend/proto/tts";
+
+// Service giao tiếp TTS cao cấp giữa Go Core-Backend và Python Core-TTS Engine
+service TTSService {
+  // SynthesizeStandard stream các đoạn audio tổng hợp chuẩn theo thời gian thực (Server Streaming)
+  rpc SynthesizeStandard (StandardTTSRequest) returns (stream TTSChunkResponse);
+
+  // SynthesizeClone stream các đoạn audio nhân bản giọng nói (Voice Cloning) thời gian thực
+  rpc SynthesizeClone (CloneTTSRequest) returns (stream TTSChunkResponse);
+
+  // SynthesizeFast stream các đoạn audio tốc độ cao (Fast Engine) thời gian thực
+  rpc SynthesizeFast (FastTTSRequest) returns (stream TTSChunkResponse);
+}
+
+message StandardTTSRequest {
+  string text = 1;
+  string voice = 2;
+  double speed = 3;
+}
+
+message CloneTTSRequest {
+  string text = 1;
+  string ref_audio_path = 2;
+  string ref_text = 3;
+  double speed = 4;
+}
+
+message FastTTSRequest {
+  string text = 1;
+  string voice = 2;
+  double speed = 3;
+}
+
+message TTSChunkResponse {
+  int32 chunk_index = 1;
+  int32 total_chunks = 2;
+  bytes audio_bytes = 3;
+  string audio_path = 4;
+  string status = 5;
+  string error_msg = 6;
+}

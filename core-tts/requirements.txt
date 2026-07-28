@@ -9,3 +9,5 @@ edge-tts>=6.1.0
 numpy
 soundfile
 python-multipart
+grpcio>=1.60.0
+grpcio-tools>=1.60.0

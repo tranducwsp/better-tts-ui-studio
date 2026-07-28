@@ -41,6 +41,7 @@ services:
     container_name: vieneu-core-tts
     ports:
       - "8001:8001"
+      - "50051:50051"
     environment:
       - CORE_PORT=8001
       - CORE_HOST=0.0.0.0
@@ -64,6 +65,7 @@ services:
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/vieneu_tts?sslmode=disable
       - REDIS_URL=redis:6379
       - CORE_TTS_URL=http://core-tts:8001
+      - CORE_TTS_GRPC_URL=core-tts:50051
     volumes:
       - ./core-backend/storage:/app/storage
     depends_on:
