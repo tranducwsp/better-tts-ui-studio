@@ -16,6 +16,7 @@ from engine import (
     get_vieneu_engine,
     synthesize_standard_sync,
     synthesize_fast_async,
+    FAST_VOICES,
     tasks_db,
     cloned_voices_cache,
     cleanup_tasks_db
@@ -57,10 +58,25 @@ async def synthesize(req: SynthesizeRequest, background_tasks: BackgroundTasks):
     target_voice = req.voice_id or req.voice or "Minh Đức"
     
     # Rút gọn tên giọng nếu chứa dấu gạch ngang mô tả
+    raw_voice = target_voice
     if " — " in target_voice:
         target_voice = target_voice.split(" — ")[0].strip()
 
-    engine_type = req.engine if req.engine else ("fast" if "Neural" in target_voice or "Hoài Mỹ" in target_voice or "Nam Minh" in target_voice else "standard")
+    is_fast_voice = (
+        raw_voice in FAST_VOICES or
+        target_voice in FAST_VOICES or
+        "Neural" in target_voice or
+        "Hoài Mỹ" in target_voice or
+        "Nam Minh" in target_voice or
+        "nam_minh" in target_voice.lower() or
+        "hoai_my" in target_voice.lower()
+    )
+    if is_fast_voice:
+        engine_type = "fast"
+    elif req.engine:
+        engine_type = req.engine
+    else:
+        engine_type = "standard"
 
     tasks_db[task_id] = {
         "progress": 0,

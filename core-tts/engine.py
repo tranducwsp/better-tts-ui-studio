@@ -105,8 +105,19 @@ def synthesize_standard_sync(text: str, voice: str, speed: float = 1.0) -> bytes
     sf.write(out_io, full_audio, engine.sample_rate, format="WAV")
     return out_io.getvalue()
 
+def get_fast_voice_code(voice: str) -> str:
+    if voice in FAST_VOICES:
+        return FAST_VOICES[voice]
+    clean_voice = voice.split(" — ")[0].strip()
+    if clean_voice in FAST_VOICES:
+        return FAST_VOICES[clean_voice]
+    voice_lower = clean_voice.lower()
+    if "nam" in voice_lower or "minh" in voice_lower:
+        return "vi-VN-NamMinhNeural"
+    return "vi-VN-HoaiMyNeural"
+
 async def synthesize_fast_async(text: str, voice: str, speed: float = 1.0) -> bytes:
-    voice_code = FAST_VOICES.get(voice, voice if "Neural" in voice else "vi-VN-HoaiMyNeural")
+    voice_code = get_fast_voice_code(voice)
     rate_percent = int((speed - 1.0) * 100)
     rate_str = f"{rate_percent:+d}%" if rate_percent != 0 else None
 
