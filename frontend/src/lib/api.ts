@@ -1,4 +1,15 @@
-import type { UserResponse, VoiceOption, Preset, HistoryItem } from './types';
+import type { UserResponse, VoiceOption, Preset, HistoryItem, UniversalManifest } from './types';
+
+export async function fetchManifest(): Promise<UniversalManifest | null> {
+  try {
+    const res = await fetch('/api/info', { credentials: 'include' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.error('Lỗi fetchManifest:', err);
+    return null;
+  }
+}
 
 export async function checkCurrentUser(): Promise<UserResponse | null> {
   try {
@@ -95,7 +106,8 @@ export function parseVoiceItem(v: any): VoiceOption {
       gender: gender,
       region: region,
       description: style,
-      sampleUrl: v[2]
+      sampleUrl: v[2],
+      type: 'standard'
     };
   }
 
@@ -123,13 +135,14 @@ export function parseVoiceItem(v: any): VoiceOption {
     gender: gender || (name.includes('Nữ') ? 'Nữ' : 'Nam'),
     region: region || 'Miền Bắc',
     description: style,
-    sampleUrl: v.sampleUrl || (Array.isArray(v) && v[2] ? v[2] : undefined)
+    sampleUrl: v.sampleUrl || (Array.isArray(v) && v[2] ? v[2] : undefined),
+    type: v.type || 'standard'
   };
 }
 
 export async function fetchVoices(): Promise<VoiceOption[]> {
   try {
-    const res = await fetch('/api/standard/voices', { credentials: 'include' });
+    const res = await fetch('/api/voices', { credentials: 'include' });
     if (!res.ok) throw new Error('Không thể tải giọng');
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -189,21 +202,23 @@ export async function extractTextFromFile(file: File): Promise<string> {
   return data.text || '';
 }
 
-export async function synthesizeStandard(
+export async function synthesize(
   text: string,
   voice: string,
   speed: number,
+  engine: string = 'standard',
   jobId?: string,
   chunkIndex: number = 0,
   totalChunks: number = 1
 ): Promise<string> {
-  const res = await fetch('/api/standard/synthesize', {
+  const res = await fetch('/api/synthesize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       text,
       voice,
       speed,
+      engine,
       job_id: jobId,
       chunk_index: chunkIndex,
       total_chunks: totalChunks,
@@ -215,6 +230,17 @@ export async function synthesizeStandard(
   return data.task_id || data.id || '';
 }
 
+export async function synthesizeStandard(
+  text: string,
+  voice: string,
+  speed: number,
+  jobId?: string,
+  chunkIndex: number = 0,
+  totalChunks: number = 1
+): Promise<string> {
+  return synthesize(text, voice, speed, 'standard', jobId, chunkIndex, totalChunks);
+}
+
 export async function synthesizeFast(
   text: string,
   voice: string,
@@ -223,22 +249,7 @@ export async function synthesizeFast(
   chunkIndex: number = 0,
   totalChunks: number = 1
 ): Promise<string> {
-  const res = await fetch('/api/fasttts/synthesize', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text,
-      voice,
-      speed,
-      job_id: jobId,
-      chunk_index: chunkIndex,
-      total_chunks: totalChunks,
-    }),
-    credentials: 'include',
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || 'Lỗi tổng hợp nhanh');
-  return data.task_id || data.id || '';
+  return synthesize(text, voice, speed, 'fast', jobId, chunkIndex, totalChunks);
 }
 
 export async function synthesizeClone(
@@ -249,22 +260,7 @@ export async function synthesizeClone(
   chunkIndex: number = 0,
   totalChunks: number = 1
 ): Promise<string> {
-  const res = await fetch('/api/clone/synthesize', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text,
-      voice,
-      speed,
-      job_id: jobId,
-      chunk_index: chunkIndex,
-      total_chunks: totalChunks,
-    }),
-    credentials: 'include',
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || 'Lỗi tổng hợp giọng clone');
-  return data.task_id || data.id || '';
+  return synthesize(text, voice, speed, 'clone', jobId, chunkIndex, totalChunks);
 }
 
 export async function cloneVoice(file: File, name: string, gender = 'Nam', region = 'Miền Bắc', style = 'Truyền cảm'): Promise<string> {
