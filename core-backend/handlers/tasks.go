@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -103,7 +102,9 @@ func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request
 		Error:    task.Error,
 	}
 	initBytes, _ := sonic.Marshal(initUpdate)
-	_, _ = fmt.Fprintf(w, "data: %s\n\n", string(initBytes))
+	_, _ = w.Write([]byte("data: "))
+	_, _ = w.Write(initBytes)
+	_, _ = w.Write([]byte("\n\n"))
 	flusher.Flush()
 
 	if task.Status == "done" || task.Status == "error" || task.Status == "cancelled" {
@@ -119,7 +120,9 @@ func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request
 				return
 			}
 			updateBytes, _ := sonic.Marshal(update)
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", string(updateBytes))
+			_, _ = w.Write([]byte("data: "))
+			_, _ = w.Write(updateBytes)
+			_, _ = w.Write([]byte("\n\n"))
 			flusher.Flush()
 
 			if update.Status == "done" || update.Status == "error" || update.Status == "cancelled" {
