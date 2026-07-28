@@ -46,10 +46,20 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var req UserCreateRequest
-	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Dữ liệu JSON không hợp lệ"})
-		return
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "multipart/form-data") || strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
+		req.Username = r.FormValue("username")
+		req.Password = r.FormValue("password")
+	} else {
+		if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil {
+			req.Username = r.FormValue("username")
+			req.Password = r.FormValue("password")
+			if req.Username == "" && req.Password == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Dữ liệu JSON không hợp lệ"})
+				return
+			}
+		}
 	}
 
 	req.Username = strings.TrimSpace(req.Username)
@@ -110,10 +120,20 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var req UserCreateRequest
-	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Dữ liệu JSON không hợp lệ"})
-		return
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "multipart/form-data") || strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
+		req.Username = r.FormValue("username")
+		req.Password = r.FormValue("password")
+	} else {
+		if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil {
+			req.Username = r.FormValue("username")
+			req.Password = r.FormValue("password")
+			if req.Username == "" && req.Password == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Dữ liệu JSON không hợp lệ"})
+				return
+			}
+		}
 	}
 
 	req.Username = strings.TrimSpace(req.Username)

@@ -22,13 +22,10 @@ export async function checkCurrentUser(): Promise<UserResponse | null> {
 }
 
 export async function loginUser(username: string, password: string): Promise<UserResponse> {
-  const formData = new FormData();
-  formData.append('username', username);
-  formData.append('password', password);
-
   const res = await fetch('/api/login', {
     method: 'POST',
-    body: formData,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
     credentials: 'include',
   });
 
