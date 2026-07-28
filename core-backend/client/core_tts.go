@@ -41,18 +41,26 @@ type SynthesizeRequest struct {
 	Engine  string  `json:"engine"`
 }
 
-func (c *CoreTTSClient) GetInfo() (map[string]interface{}, error) {
+type CoreInfoResponse struct {
+	EngineName   string          `json:"engine_name"`
+	Version      string          `json:"version"`
+	Capabilities map[string]bool `json:"capabilities"`
+	AudioFormats []string        `json:"audio_formats"`
+	SampleRates  []int           `json:"sample_rates"`
+}
+
+func (c *CoreTTSClient) GetInfo() (*CoreInfoResponse, error) {
 	resp, err := c.HTTPClient.Get(c.BaseURL + "/info")
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	var result map[string]interface{}
+	var result CoreInfoResponse
 	if err := sonic.ConfigDefault.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return &result, nil
 }
 
 func (c *CoreTTSClient) GetVoices() ([]CoreVoice, error) {
