@@ -13,9 +13,9 @@ from schemas import (
 )
 from engine import (
     get_preset_voices,
+    get_vieneu_engine,
     synthesize_standard_sync,
     synthesize_fast_async,
-    vieneu_engine,
     tasks_db,
     cloned_voices_cache,
     cleanup_tasks_db
@@ -148,7 +148,14 @@ async def clone_voice(file: UploadFile = File(...), name: str = Form(...)):
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
             tmp.write(content)
             tmp.flush()
-            speaker_emb, ref_codes = vieneu_engine.encode_reference(tmp.name)
+            engine = get_vieneu_engine()
+            speaker_emb, ref_codes = engine.encode_reference(tmp.name)
+
+        cloned_voices_cache[clone_id] = {
+            "speaker_emb": speaker_emb,
+            "ref_codes": ref_codes,
+            "name": name
+        }
 
         return {
             "voice_id": clone_id,

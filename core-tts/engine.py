@@ -9,8 +9,15 @@ import soundfile as sf
 import edge_tts
 from vieneu import Vieneu
 
-# Initialize ViNeu AI Model Engine (CPU/Int8 or CUDA)
-vieneu_engine = Vieneu(mode="v3turbo", device="cpu", precision="int8")
+_vieneu_engine = None
+
+def get_vieneu_engine():
+    global _vieneu_engine
+    if _vieneu_engine is None:
+        print("⏳ Loading ViNeu AI Model Engine...")
+        _vieneu_engine = Vieneu(mode="v3turbo", device="cpu", precision="int8")
+        print("✅ ViNeu AI Model Engine Loaded Successfully!")
+    return _vieneu_engine
 
 # Fast TTS Voices Registry (Full Mapping)
 FAST_VOICES = {
@@ -35,21 +42,8 @@ def cleanup_tasks_db():
         tasks_db.pop(tid, None)
 
 def get_preset_voices():
-    preset_list = vieneu_engine.list_preset_voices()
     voices = []
-    for item in preset_list:
-        if isinstance(item, tuple):
-            v_name, v_id = item[0], item[1]
-        else:
-            v_name, v_id = str(item), str(item)
-            
-        voices.append({
-            "id": v_id,
-            "name": v_name,
-            "type": "standard",
-            "language": "vi-VN"
-        })
-        
+    # Fast Edge TTS voices are available immediately without loading ViNeu AI model
     for k, v in FAST_VOICES.items():
         if not any(x["id"] == v for x in voices):
             voices.append({
@@ -58,28 +52,47 @@ def get_preset_voices():
                 "type": "fast",
                 "language": "vi-VN"
             })
+
+    try:
+        engine = get_vieneu_engine()
+        preset_list = engine.list_preset_voices()
+        for item in preset_list:
+            if isinstance(item, tuple):
+                v_name, v_id = item[0], item[1]
+            else:
+                v_name, v_id = str(item), str(item)
+                
+            voices.append({
+                "id": v_id,
+                "name": v_name,
+                "type": "standard",
+                "language": "vi-VN"
+            })
+    except Exception as e:
+        print(f"Warning loading preset voices: {e}")
+
     return voices
 
 def synthesize_standard_sync(text: str, voice: str, speed: float = 1.0) -> bytes:
     if not text.strip().endswith(('.', '?', '!')):
         text = text.strip() + '.'
     
-    # Check if voice is a cloned voice embedding or sample audio file path
+    engine = get_vieneu_engine()
     voice_param = voice
     if voice in cloned_voices_cache:
         voice_data = cloned_voices_cache[voice]
         if "speaker_emb" in voice_data:
             voice_param = voice_data
         elif "path" in voice_data and os.path.exists(voice_data["path"]):
-            speaker_emb, ref_codes = vieneu_engine.encode_reference(voice_data["path"])
+            speaker_emb, ref_codes = engine.encode_reference(voice_data["path"])
             voice_data["speaker_emb"] = speaker_emb
             voice_data["ref_codes"] = ref_codes
             voice_param = voice_data
     elif isinstance(voice, str) and os.path.exists(voice):
-        speaker_emb, ref_codes = vieneu_engine.encode_reference(voice)
+        speaker_emb, ref_codes = engine.encode_reference(voice)
         voice_param = {"speaker_emb": speaker_emb, "ref_codes": ref_codes}
 
-    stream_gen = vieneu_engine.infer_stream(text=text, voice=voice_param, speed=speed)
+    stream_gen = engine.infer_stream(text=text, voice=voice_param, speed=speed)
     audio_chunks = []
     for chunk in stream_gen:
         audio_chunks.append(chunk)
@@ -89,7 +102,7 @@ def synthesize_standard_sync(text: str, voice: str, speed: float = 1.0) -> bytes
         
     full_audio = np.concatenate(audio_chunks)
     out_io = io.BytesIO()
-    sf.write(out_io, full_audio, vieneu_engine.sample_rate, format="WAV")
+    sf.write(out_io, full_audio, engine.sample_rate, format="WAV")
     return out_io.getvalue()
 
 async def synthesize_fast_async(text: str, voice: str, speed: float = 1.0) -> bytes:

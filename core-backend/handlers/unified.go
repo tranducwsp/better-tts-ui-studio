@@ -146,9 +146,22 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 
 	taskItem := state.GlobalTaskManager.GetOrCreate(taskID)
 
-	if req.JobID != nil && *req.JobID != "" && req.ChunkIndex != nil && req.TotalChunks != nil {
-		_ = db.RegisterJobAndChunk(context.Background(), user.ID, *req.JobID, req.Engine, req.Voice, req.Speed, *req.TotalChunks, taskID, *req.ChunkIndex, req.Text)
+	jobID := taskID
+	if req.JobID != nil && *req.JobID != "" {
+		jobID = *req.JobID
 	}
+
+	chunkIndex := 0
+	if req.ChunkIndex != nil {
+		chunkIndex = *req.ChunkIndex
+	}
+
+	totalChunks := 1
+	if req.TotalChunks != nil && *req.TotalChunks > 0 {
+		totalChunks = *req.TotalChunks
+	}
+
+	_ = db.RegisterJobAndChunk(context.Background(), user.ID, jobID, req.Engine, req.Voice, req.Speed, totalChunks, taskID, chunkIndex, req.Text)
 
 	// Async Task Worker Goroutine
 	go func() {
@@ -160,10 +173,8 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 				Progress: taskItem.Progress,
 				Error:    err.Error(),
 			})
-			if req.JobID != nil && *req.JobID != "" {
-				errMsg := err.Error()
-				_ = db.UpdateChunkStatus(bgCtx, taskID, "error", nil, &errMsg)
-			}
+			errMsg := err.Error()
+			_ = db.UpdateChunkStatus(bgCtx, taskID, "error", nil, &errMsg)
 			return
 		}
 
@@ -174,9 +185,7 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		filePath := filepath.Join("storage/temp", fmt.Sprintf("%s.wav", taskID))
 		_ = os.WriteFile(filePath, audioBytes, 0644)
 
-		if req.JobID != nil && *req.JobID != "" {
-			_ = db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil)
-		}
+		_ = db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil)
 
 		taskItem.Notify(state.TaskUpdate{
 			Status:   "done",
