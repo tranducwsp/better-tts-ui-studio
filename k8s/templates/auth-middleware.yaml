@@ -1,12 +1,12 @@
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: {{ include "better-tts-studio.fullname" . }}-auth
-  namespace: {{ .Values.namespace | default "vieneu-studio" }}
+  name: {{ include "ui-studio.fullname" . }}-auth
+  namespace: {{ .Values.namespace | default "ui-studio" }}
   labels:
-    app.kubernetes.io/name: {{ include "better-tts-studio.name" . }}
-    helm.sh/chart: {{ include "better-tts-studio.chart" . }}
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}
+    helm.sh/chart: {{ include "ui-studio.chart" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
   basicAuth:
-    secret: vieneu-studio-secret
+    secret: studio-auth-secret

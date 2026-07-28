@@ -2,11 +2,11 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "better-tts-studio.fullname" . }}-ingress
-  namespace: {{ .Values.namespace | default "vieneu-studio" }}
+  name: {{ include "ui-studio.fullname" . }}-ingress
+  namespace: {{ .Values.namespace | default "ui-studio" }}
   labels:
-    app.kubernetes.io/name: {{ include "better-tts-studio.name" . }}
-    helm.sh/chart: {{ include "better-tts-studio.chart" . }}
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}
+    helm.sh/chart: {{ include "ui-studio.chart" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
   {{- with .Values.ingress.annotations }}
   annotations:
@@ -17,7 +17,7 @@ spec:
   tls:
     - hosts:
         - {{ .Values.ingress.host | quote }}
-      secretName: {{ include "better-tts-studio.fullname" . }}-tls
+      secretName: {{ include "ui-studio.fullname" . }}-tls
   rules:
     - host: {{ .Values.ingress.host | quote }}
       http:
@@ -26,7 +26,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "better-tts-studio.fullname" . }}-backend
+                name: {{ include "ui-studio.fullname" . }}-backend
                 port:
                   number: {{ .Values.backend.service.port }}
 {{- end }}

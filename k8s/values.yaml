@@ -1,14 +1,14 @@
-# Default values for better-tts-studio Helm Chart
-namespace: vieneu-studio
+# Default values for ui-studio Infrastructure Platform Helm Chart
+namespace: ui-studio
 
 global:
-  domain: tts.amoratran.id.vn
+  domain: studio.amoratran.id.vn
 
 # 1. Control Plane Backend (Go Chi)
 backend:
   replicaCount: 1
   image:
-    repository: harbor.amoratran.id.vn/tiny-src/better-tts-backend
+    repository: harbor.amoratran.id.vn/tiny-src/studio-backend
     pullPolicy: Always
     tag: "latest"
   service:
@@ -22,11 +22,11 @@ backend:
       cpu: "2"
       memory: "2Gi"
 
-# 2. AI Core-TTS Engine (Python)
-coreTTS:
+# 2. Core AI Inference Engine
+coreEngine:
   replicaCount: 1
   image:
-    repository: harbor.amoratran.id.vn/tiny-src/better-tts-core
+    repository: harbor.amoratran.id.vn/tiny-src/studio-core-engine
     pullPolicy: Always
     tag: "latest"
   service:
@@ -40,11 +40,11 @@ coreTTS:
       cpu: "4"
       memory: "8Gi"
 
-# 3. Frontend Web Studio (Svelte 5)
+# 3. Frontend Web Studio
 frontend:
   replicaCount: 1
   image:
-    repository: harbor.amoratran.id.vn/tiny-src/better-tts-frontend
+    repository: harbor.amoratran.id.vn/tiny-src/studio-frontend
     pullPolicy: Always
     tag: "latest"
   service:
@@ -60,7 +60,7 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
     ingress.kubernetes.io/proxy-body-size: "0"
-  host: tts.amoratran.id.vn
+  host: studio.amoratran.id.vn
 
 persistence:
   enabled: true
