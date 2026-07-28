@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from schemas import (
     SynthesizeRequest,
     TaskStatusResponse,
-    CoreInfoResponse,
+    UniversalManifest,
     VoiceInfo
 )
 from engine import (

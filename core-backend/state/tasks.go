@@ -97,10 +97,13 @@ func (t *TaskItem) Subscribe() chan TaskUpdate {
 			for msg := range redisCh {
 				var update TaskUpdate
 				if err := sonic.Unmarshal([]byte(msg.Payload), &update); err == nil {
-					select {
-					case ch <- update:
-					default:
-					}
+					func() {
+						defer func() { _ = recover() }()
+						select {
+						case ch <- update:
+						default:
+						}
+					}()
 				}
 			}
 		}()
@@ -115,7 +118,6 @@ func (t *TaskItem) Unsubscribe(ch chan TaskUpdate) {
 
 	if t.subscribers != nil {
 		delete(t.subscribers, ch)
-		close(ch)
 	}
 }
 
@@ -134,10 +136,13 @@ func (t *TaskItem) Notify(update TaskUpdate) {
 
 	// 1. Phát bản tin cho các subscriber cục bộ (Local In-Memory Subscriber)
 	for _, ch := range subscribers {
-		select {
-		case ch <- update:
-		default:
-		}
+		func(c chan TaskUpdate) {
+			defer func() { _ = recover() }()
+			select {
+			case c <- update:
+			default:
+			}
+		}(ch)
 	}
 
 	// 2. Nếu Redis hoạt động, Publish bản tin Pub/Sub và lưu State vào Redis cho các Node khác đọc

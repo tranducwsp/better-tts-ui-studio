@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"core-backend/state"
@@ -51,23 +53,42 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	format := strings.ToLower(r.URL.Query().Get("format"))
 
 	task, ok := state.GlobalTaskManager.Get(taskID)
-	if !ok || task.Status != "done" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Audio chưa sẵn sàng"})
+	if ok && task.Status == "done" {
+		if format == "mp3" && len(task.AudioMP3) > 0 {
+			w.Header().Set("Content-Type", "audio/mpeg")
+			w.Header().Set("Content-Disposition", `attachment; filename="vieneu_tts_audio.mp3"`)
+			_, _ = w.Write(task.AudioMP3)
+			return
+		}
+		if len(task.AudioWAV) > 0 {
+			w.Header().Set("Content-Type", "audio/wav")
+			w.Header().Set("Content-Disposition", `attachment; filename="vieneu_tts_audio.wav"`)
+			_, _ = w.Write(task.AudioWAV)
+			return
+		}
+	}
+
+	// Fallback 1: Đọc file từ đĩa storage/temp/{taskID}.wav
+	filePathWAV := filepath.Join("storage/temp", taskID+".wav")
+	if wavBytes, err := os.ReadFile(filePathWAV); err == nil && len(wavBytes) > 0 {
+		w.Header().Set("Content-Type", "audio/wav")
+		w.Header().Set("Content-Disposition", `attachment; filename="vieneu_tts_audio.wav"`)
+		_, _ = w.Write(wavBytes)
 		return
 	}
 
-	if format == "mp3" && len(task.AudioMP3) > 0 {
+	// Fallback 2: Đọc file từ đĩa storage/temp/{taskID}.mp3
+	filePathMP3 := filepath.Join("storage/temp", taskID+".mp3")
+	if mp3Bytes, err := os.ReadFile(filePathMP3); err == nil && len(mp3Bytes) > 0 {
 		w.Header().Set("Content-Type", "audio/mpeg")
 		w.Header().Set("Content-Disposition", `attachment; filename="vieneu_tts_audio.mp3"`)
-		_, _ = w.Write(task.AudioMP3)
+		_, _ = w.Write(mp3Bytes)
 		return
 	}
 
-	w.Header().Set("Content-Type", "audio/wav")
-	w.Header().Set("Content-Disposition", `attachment; filename="vieneu_tts_audio.wav"`)
-	_, _ = w.Write(task.AudioWAV)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Audio chưa sẵn sàng"})
 }
 
 // StreamTaskProgress truyền dữ liệu tiến độ thời gian thực (Real-time SSE Stream) qua kết nối HTTP Persistent/Event-Stream.
