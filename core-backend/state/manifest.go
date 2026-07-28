@@ -37,8 +37,8 @@ func (s *EngineManifestState) IsLoaded() bool {
 	return s.manifest != nil
 }
 
-// ValidateRequest thực hiện bẫy lỗi động dựa trên thông số Ràng buộc (Constraints) của Manifest.
-func (s *EngineManifestState) ValidateRequest(text string, speed float64) error {
+// ValidateRequest thực hiện bẫy lỗi động dựa trên thông số Ràng buộc (Constraints) và SupportedModes của Manifest.
+func (s *EngineManifestState) ValidateRequest(text string, speed float64, mode string) error {
 	s.mu.RLock()
 	m := s.manifest
 	s.mu.RUnlock()
@@ -58,6 +58,19 @@ func (s *EngineManifestState) ValidateRequest(text string, speed float64) error 
 
 	if m.Constraints.SpeedRange.Max > 0 && speed > m.Constraints.SpeedRange.Max {
 		return fmt.Errorf("tốc độ %.2f vượt quá giới hạn tối đa (%.2f)", speed, m.Constraints.SpeedRange.Max)
+	}
+
+	if mode != "" && len(m.SupportedModes) > 0 {
+		validMode := false
+		for _, sm := range m.SupportedModes {
+			if sm.ID == mode {
+				validMode = true
+				break
+			}
+		}
+		if !validMode {
+			return fmt.Errorf("chế độ engine '%s' không nằm trong danh sách hỗ trợ của AI Engine", mode)
+		}
 	}
 
 	return nil

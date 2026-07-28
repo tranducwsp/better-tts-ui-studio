@@ -28,6 +28,11 @@ class VoiceInfo(BaseModel):
     region: Optional[str] = None
     style: Optional[str] = None
 
+class EngineModeSpec(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+
 class RangeConstraint(BaseModel):
     min: float = 0.5
     max: float = 2.0
@@ -60,6 +65,11 @@ class UniversalManifest(BaseModel):
     engine_name: str = "VieNeu V3 Turbo Core Engine"
     version: str = "1.0.0"
     provider: str = "VieNeu Labs"
+    supported_modes: List[EngineModeSpec] = Field(default_factory=lambda: [
+        EngineModeSpec(id="standard", name="VieNeu Standard Neural", description="High fidelity neural voice inference"),
+        EngineModeSpec(id="fast", name="Fast TTS Edge", description="Low latency streaming TTS"),
+        EngineModeSpec(id="clone", name="Voice Cloning Zero-Shot", description="Reference audio speaker cloning")
+    ])
     capabilities: EngineCapabilities = Field(default_factory=EngineCapabilities)
     constraints: EngineConstraints = Field(default_factory=EngineConstraints)
     audio_spec: AudioSpec = Field(default_factory=AudioSpec)

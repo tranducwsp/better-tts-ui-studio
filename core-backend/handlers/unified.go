@@ -133,7 +133,7 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Universal Validation Gate: Kiểm tra xem Request có tuân thủ Manifest của Engine không
-	if err := state.GlobalManifestState.ValidateRequest(req.Text, req.Speed); err != nil {
+	if err := state.GlobalManifestState.ValidateRequest(req.Text, req.Speed, req.Engine); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return

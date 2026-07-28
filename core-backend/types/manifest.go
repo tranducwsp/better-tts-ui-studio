@@ -1,5 +1,12 @@
 package types
 
+// EngineModeSpec mô tả chi tiết một chế độ xử lý của AI Engine (ví dụ: standard, fast, clone, zero_shot).
+type EngineModeSpec struct {
+	ID          string `json:"id"`          // "standard", "fast", "clone"
+	Name        string `json:"name"`        // "VieNeu Standard", "Fast Edge", "Zero-shot Clone"
+	Description string `json:"description"` // Mô tả ngắn về mode
+}
+
 // RangeConstraint định nghĩa giới hạn tham số số (Min, Max, Default, Step) cho UI Sliders.
 type RangeConstraint struct {
 	Min     float64 `json:"min"`
@@ -37,11 +44,12 @@ type EngineCapabilities struct {
 
 // UniversalManifest là bản thiết kế tiêu chuẩn đầy đủ đại diện cho bất kỳ AI Engine nào.
 type UniversalManifest struct {
-	EngineID     string             `json:"engine_id"`
-	EngineName   string             `json:"engine_name"`
-	Version      string             `json:"version"`
-	Provider     string             `json:"provider"`
-	Capabilities EngineCapabilities `json:"capabilities"`
-	Constraints  EngineConstraints  `json:"constraints"`
-	AudioSpec    AudioSpec          `json:"audio_spec"`
+	EngineID       string             `json:"engine_id"`
+	EngineName     string             `json:"engine_name"`
+	Version        string             `json:"version"`
+	Provider       string             `json:"provider"`
+	SupportedModes []EngineModeSpec   `json:"supported_modes"`
+	Capabilities   EngineCapabilities `json:"capabilities"`
+	Constraints    EngineConstraints  `json:"constraints"`
+	AudioSpec      AudioSpec          `json:"audio_spec"`
 }
