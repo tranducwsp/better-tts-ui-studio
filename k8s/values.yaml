@@ -1,0 +1,70 @@
+# Default values for better-tts-studio Helm Chart
+namespace: vieneu-studio
+
+global:
+  domain: tts.amoratran.id.vn
+
+# 1. Control Plane Backend (Go Chi)
+backend:
+  replicaCount: 1
+  image:
+    repository: harbor.amoratran.id.vn/tiny-src/better-tts-backend
+    pullPolicy: Always
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+
+# 2. AI Core-TTS Engine (Python)
+coreTTS:
+  replicaCount: 1
+  image:
+    repository: harbor.amoratran.id.vn/tiny-src/better-tts-core
+    pullPolicy: Always
+    tag: "latest"
+  service:
+    httpPort: 8001
+    grpcPort: 50051
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+
+# 3. Frontend Web Studio (Svelte 5)
+frontend:
+  replicaCount: 1
+  image:
+    repository: harbor.amoratran.id.vn/tiny-src/better-tts-frontend
+    pullPolicy: Always
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 80
+
+imagePullSecrets:
+  - name: tiny-src-registry-secret
+
+ingress:
+  enabled: true
+  className: "traefik"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    ingress.kubernetes.io/proxy-body-size: "0"
+  host: tts.amoratran.id.vn
+
+persistence:
+  enabled: true
+  storageClass: "local-path"
+  accessMode: "ReadWriteOnce"
+  size: "10Gi"
+  mountPath: "/app/storage"

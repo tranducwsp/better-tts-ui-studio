@@ -1,6 +1,0 @@
-apiVersion: v2
-name: vieneu-tts-api
-description: A Helm chart for VieNeu TTS API (FastAPI)
-type: application
-version: 0.1.0
-appVersion: "1.0"
