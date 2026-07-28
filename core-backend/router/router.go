@@ -49,6 +49,7 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 	fastHandler := handlers.NewTTSFastHandler(ttsClient)
 	tasksHandler := handlers.NewTasksHandler()
 	utilsHandler := handlers.NewUtilsHandler()
+	unifiedHandler := handlers.NewUnifiedHandler(ttsClient)
 
 	r.Route("/api", func(r chi.Router) {
 		// Public Auth & Engine Info routes
@@ -62,6 +63,10 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 			r.Use(middleware.RequireActiveUser)
 
 			r.Get("/me", authHandler.Me)
+
+			// Universal Gateway Endpoints
+			r.Get("/voices", unifiedHandler.GetVoices)
+			r.Post("/synthesize", unifiedHandler.Synthesize)
 
 			// History
 			r.Get("/history", historyHandler.GetUserHistory)

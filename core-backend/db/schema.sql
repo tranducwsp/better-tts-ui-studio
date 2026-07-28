@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS user_voices (
     region VARCHAR(50),
     style VARCHAR(50),
     file_path VARCHAR(512) NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
