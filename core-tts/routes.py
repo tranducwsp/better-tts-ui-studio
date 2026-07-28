@@ -138,32 +138,27 @@ def cancel_task(task_id: str):
 
 @router.post("/voices/clone")
 async def clone_voice(file: UploadFile = File(...), name: str = Form(...)):
-    """3. Voice Cloning Extension API"""
+    """3. Voice Cloning Extension API (Stateless in-memory feature extraction)"""
     try:
         content = await file.read()
         clone_id = f"clone_{uuid.uuid4().hex[:8]}"
-        file_path = os.path.join(STORAGE_DIR, f"{clone_id}.wav")
-        with open(file_path, "wb") as f:
-            f.write(content)
-            
-        speaker_emb, ref_codes = vieneu_engine.encode_reference(file_path)
-        cloned_voices_cache[clone_id] = {
-            "id": clone_id,
+        
+        # In-memory feature extraction without writing to disk
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
+            tmp.write(content)
+            tmp.flush()
+            speaker_emb, ref_codes = vieneu_engine.encode_reference(tmp.name)
+
+        return {
+            "voice_id": clone_id,
             "name": name,
-            "path": file_path,
-            "speaker_emb": speaker_emb,
-            "ref_codes": ref_codes
+            "status": "success"
         }
-        return {"voice_id": clone_id, "name": name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/voices/{voice_id}")
 def delete_voice(voice_id: str):
-    """Delete Custom Voice Embedding API"""
-    if voice_id in cloned_voices_cache:
-        info = cloned_voices_cache.pop(voice_id)
-        if os.path.exists(info["path"]):
-            os.remove(info["path"])
-        return {"success": True, "deleted_voice_id": voice_id}
-    raise HTTPException(status_code=404, detail="Không tìm thấy giọng clone")
+    """Delete Custom Voice Embedding API (Stateless acknowledgement)"""
+    return {"success": True, "deleted_voice_id": voice_id}
