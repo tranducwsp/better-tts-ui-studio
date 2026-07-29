@@ -68,12 +68,46 @@
         text = extracted;
         isReadOnly = false;
         uploadedFileName = file.name;
+        runAutoFormat(false);
         toast.show('Đã tải xong văn bản!', 'success');
       }
     } catch (err: any) {
       toast.show('Lỗi đọc file: ' + err.message, 'error');
     }
     target.value = ''; // Reset input
+  }
+
+  function runAutoFormat(notify = false) {
+    if (!text || isReadOnly) return;
+    let cleaned = text;
+
+    const rules = inputPanelSpec?.auto_format || [
+      { find: '\\r\\n', replace: '\n' },
+      { find: '\\n{3,}', replace: '\n\n' },
+      { find: '\\u00D0', replace: '\u0110' },
+      { find: '([a-zA-ZÀ-ỹ])\\-([a-zA-ZÀ-ỹ])', replace: '$1 $2' },
+      { find: '[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉]', replace: '' },
+      { find: '[^a-zA-Z0-9 \\n\\t\\r.,?!;:\\-\"\'()\\[\\]%/“”‘’À-ỹ]', replace: '' }
+    ];
+
+    for (const rule of rules) {
+      try {
+        const regex = new RegExp(rule.find, 'g');
+        cleaned = cleaned.replace(regex, rule.replace);
+      } catch (err) {
+        console.error('Lỗi quy tắc auto_format:', rule, err);
+      }
+    }
+
+    cleaned = cleaned.trim();
+    if (cleaned !== text) {
+      text = cleaned;
+      if (notify) {
+        toast.show('Đã dọn dẹp & làm sạch văn bản!', 'success');
+      }
+    } else if (notify) {
+      toast.show('Văn bản đã sạch chuẩn!', 'info');
+    }
   }
 
   function toggleRegexMode() {
@@ -241,6 +275,9 @@
             <button class="upload-link" onclick={() => fileInput?.click()} style="background: none; border: none;">
               <i class="fa-solid fa-file-import"></i> Tải file lên
             </button>
+            <button onclick={() => runAutoFormat(true)} disabled={isReadOnly} style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 3px 10px; border-radius: 6px; font-size: 0.8em; font-weight: 500; cursor: {isReadOnly ? 'not-allowed' : 'pointer'}; opacity: {isReadOnly ? 0.5 : 1}; display: flex; align-items: center; gap: 4px;">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Làm sạch
+            </button>
             <input type="file" bind:this={fileInput} onchange={handleFileUpload} accept=".txt,.pdf,.docx,.odt" class="hidden" />
           </div>
         {/if}
@@ -263,6 +300,7 @@
           spellcheck="false"
           bind:value={text}
           readonly={isReadOnly}
+          onblur={() => runAutoFormat(false)}
           placeholder="Nhập văn bản tiếng Việt của bạn vào đây..."
           style="opacity: {isReadOnly ? 0.7 : 1}; cursor: {isReadOnly ? 'not-allowed' : 'text'};"
         ></textarea>

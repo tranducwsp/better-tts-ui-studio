@@ -69,13 +69,22 @@ class NoticeBannerSpec(BaseModel):
     level: str = "warning"
     message: str
 
+DEFAULT_AUTO_FORMAT_RULES = [
+    AutoFormatRule(find=r"\r\n", replace="\n"),
+    AutoFormatRule(find=r"\n{3,}", replace="\n\n"),
+    AutoFormatRule(find=r"\u00D0", replace="\u0110"),  # Ð -> Đ (Eth to Vietnamese Đ)
+    AutoFormatRule(find=r"([a-zA-ZÀ-ỹ])\-([a-zA-ZÀ-ỹ])", replace=r"\1 \2"), # Un-hyphenate words
+    AutoFormatRule(find=r"[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉]", replace=""), # Remove superscript/subscript footnote numbers
+    AutoFormatRule(find=r"[^a-zA-Z0-9 \n\t\r.,?!;:\-\"'()\[\]%/“”‘’À-ỹ]", replace="") # Clean non-Vietnamese strange characters
+]
+
 class InputPanelSpec(BaseModel):
     file_serve: bool = True
     closeable: bool = False
     find_mode: str = "expert" # "express" (tìm kiếm chuỗi đơn giản) | "expert" (cho phép bật/tắt công cụ Regex)
     replace_tool: bool = True
     enable_chunk_box: bool = True
-    auto_format: List[AutoFormatRule] = Field(default_factory=list)
+    auto_format: List[AutoFormatRule] = Field(default_factory=lambda: DEFAULT_AUTO_FORMAT_RULES)
 
 class VoiceMetadataFieldSpec(BaseModel):
     key: str
