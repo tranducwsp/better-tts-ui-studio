@@ -2,9 +2,7 @@
   import { onMount } from 'svelte';
   import Header from './lib/components/Header.svelte';
   import TextInputPanel from './lib/components/TextInputPanel.svelte';
-  import FastTtsTab from './lib/components/FastTtsTab.svelte';
-  import StandardTtsTab from './lib/components/StandardTtsTab.svelte';
-  import CloneTtsTab from './lib/components/CloneTtsTab.svelte';
+  import GenericEnginePanel from './lib/components/GenericEnginePanel.svelte';
   import HistoryModal from './lib/components/HistoryModal.svelte';
   import AuthModal from './lib/components/AuthModal.svelte';
   import AdminModal from './lib/components/AdminModal.svelte';
@@ -49,6 +47,18 @@
       ...m,
       icon: m.id === 'fast' ? 'fa-bolt' : m.id === 'standard' ? 'fa-wave-square' : m.id === 'clone' ? 'fa-users-viewfinder' : 'fa-sliders'
     }));
+  });
+
+  // Derived current mode specification for active tab
+  let currentModeSpec = $derived.by(() => {
+    const found = (manifest?.supported_modes || []).find((m) => m.id === activeTab);
+    return (
+      found || {
+        id: activeTab,
+        name: activeTab.toUpperCase(),
+        description: 'Universal Neural Voice Engine'
+      }
+    );
   });
 
   // Modals
@@ -167,16 +177,18 @@
       </div>
     </div>
 
-    <!-- Audio Settings & Generation Panel -->
-    <div class="glass-panel" style="margin-bottom: 1.5rem;">
-      {#if activeTab === 'fast' || activeTab === 'fasttts'}
-        <FastTtsTab text={mainText} {voices} {reloadedJob} modelOption={manifest?.ui_schema?.option_panel?.fast || null} />
-      {:else if activeTab === 'standard'}
-        <StandardTtsTab text={mainText} {voices} {reloadedJob} modelOption={manifest?.ui_schema?.option_panel?.standard || null} />
-      {:else if activeTab === 'clone'}
-        <CloneTtsTab text={mainText} {reloadedJob} />
-      {/if}
-    </div>
+    <!-- Universal Dynamic Audio Settings & Generation Panel -->
+    {#if manifest}
+      <div class="glass-panel" style="margin-bottom: 1.5rem;">
+        <GenericEnginePanel
+          text={mainText}
+          activeMode={currentModeSpec}
+          {manifest}
+          bind:voices={voices}
+          {reloadedJob}
+        />
+      </div>
+    {/if}
   </main>
 
   <footer>

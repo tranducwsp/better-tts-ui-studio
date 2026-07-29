@@ -1,0 +1,328 @@
+<script lang="ts">
+  import type { VoiceOption, UniversalManifest, EngineModeSpec } from '../types';
+  import VoiceSelect from './VoiceSelect.svelte';
+  import StreamingPanel from './StreamingPanel.svelte';
+  import WaveformTrimmer from './WaveformTrimmer.svelte';
+  import CreateVoiceModal from './CreateVoiceModal.svelte';
+  import { synthesize, subscribeTaskStream, fetchVoices, cloneVoiceTemp } from '../api';
+  import { toast } from '../toast.svelte';
+
+  interface Props {
+    text: string;
+    activeMode: EngineModeSpec;
+    manifest: UniversalManifest;
+    voices: VoiceOption[];
+    reloadedJob?: any | null;
+  }
+
+  let { text, activeMode, manifest, voices = $bindable([]), reloadedJob = null }: Props = $props();
+
+  // Mode option spec derived from manifest ui_schema
+  let modelOption = $derived(manifest?.ui_schema?.option_panel?.[activeMode.id] || null);
+
+  // States
+  let selectedVoice = $state('');
+  let speed = $state(manifest?.constraints?.speed_range?.default || 1.0);
+  let pitch = $state(manifest?.constraints?.pitch_range?.default || 0.0);
+  let selectedEmotion = $state('');
+  let referenceAudioPath = $state('');
+  let isCloningTemp = $state(false);
+  let isCreateModalOpen = $state(false);
+
+  // Streaming / Loading States
+  let isLoading = $state(false);
+  let isStreaming = $state(false);
+  let progress = $state(0);
+  let wavBlobUrl = $state<string | null>(null);
+  let mp3AudioUrl = $state<string | null>(null);
+  let unsubscribeStream = $state<(() => void) | null>(null);
+
+  // Ensure voices loaded if preset voices supported
+  $effect(() => {
+    if (manifest?.capabilities?.supports_preset_voices && (!voices || voices.length === 0)) {
+      fetchVoices().then((v) => {
+        if (v && v.length > 0) voices = v;
+      });
+    }
+  });
+
+  // Set default voice when voices list changes
+  $effect(() => {
+    if (voices && voices.length > 0 && !selectedVoice) {
+      selectedVoice = voices[0].id || voices[0].name;
+    }
+  });
+
+  // Handle reloaded job state
+  $effect(() => {
+    if (reloadedJob && reloadedJob.engine === activeMode.id) {
+      if (reloadedJob.voice) selectedVoice = reloadedJob.voice;
+      if (reloadedJob.speed) speed = reloadedJob.speed;
+      if (reloadedJob.chunks && reloadedJob.chunks.length > 0) {
+        isStreaming = true;
+      }
+    }
+  });
+
+  async function handleFileUpload(e: Event) {
+    const target = e.target as HTMLInputElement;
+    if (!target.files?.length) return;
+    const file = target.files[0];
+    isCloningTemp = true;
+    toast.show('Đang xử lý file âm thanh mẫu...', 'info');
+    try {
+      const tempPath = await cloneVoiceTemp(file);
+      referenceAudioPath = tempPath;
+      toast.show('Đã nạp file âm thanh mẫu thành công!', 'success');
+    } catch (err: any) {
+      toast.show('Lỗi nạp file mẫu: ' + err.message, 'error');
+    } finally {
+      isCloningTemp = false;
+      target.value = '';
+    }
+  }
+
+  function handleTrimmedAudio(blob: Blob) {
+    const file = new File([blob], 'trimmed_reference.wav', { type: 'audio/wav' });
+    isCloningTemp = true;
+    toast.show('Đang tải lên đoạn âm thanh đã cắt...', 'info');
+    cloneVoiceTemp(file)
+      .then((path) => {
+        referenceAudioPath = path;
+        toast.show('Đã cập nhật file mẫu từ bộ cắt âm thanh!', 'success');
+      })
+      .catch((err) => {
+        toast.show('Lỗi tải file đã cắt: ' + err.message, 'error');
+      })
+      .finally(() => {
+        isCloningTemp = false;
+      });
+  }
+
+  async function handleSynthesize() {
+    if (!text.trim()) {
+      toast.show('Vui lòng nhập nội dung văn bản!', 'error');
+      return;
+    }
+
+    if (manifest.capabilities.supports_cloning && !referenceAudioPath && !selectedVoice) {
+      toast.show('Vui lòng tải lên file âm thanh mẫu hoặc chọn giọng clone!', 'error');
+      return;
+    }
+
+    isLoading = true;
+    isStreaming = false;
+    progress = 0;
+    wavBlobUrl = null;
+    mp3AudioUrl = null;
+
+    try {
+      const voiceParam = referenceAudioPath || selectedVoice;
+      const taskId = await synthesize(text, voiceParam, speed, activeMode.id);
+
+      if (manifest.capabilities.supports_streaming) {
+        isStreaming = true;
+        unsubscribeStream = subscribeTaskStream(
+          taskId,
+          (prog) => {
+            progress = prog;
+          },
+          (doneWavUrl) => {
+            isLoading = false;
+            wavBlobUrl = doneWavUrl;
+            toast.show('Tổng hợp âm thanh hoàn tất!', 'success');
+          },
+          (err) => {
+            isLoading = false;
+            toast.show('Lỗi tiến trình: ' + err, 'error');
+          }
+        );
+      } else {
+        toast.show('Yêu cầu đã gửi thành công!', 'success');
+        isLoading = false;
+      }
+    } catch (err: any) {
+      isLoading = false;
+      toast.show('Lỗi tổng hợp: ' + err.message, 'error');
+    }
+  }
+
+  function handleCancel() {
+    if (unsubscribeStream) {
+      unsubscribeStream();
+      unsubscribeStream = null;
+    }
+    isLoading = false;
+    toast.show('Đã hủy tiến trình', 'info');
+  }
+</script>
+
+<div class="tab-content active" id="{activeMode.id}-tab">
+  <!-- Dynamic Notice Banner from Manifest -->
+  {#if modelOption?.notice_banner}
+    <div style="background: {modelOption.notice_banner.level === 'danger' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 193, 7, 0.12)'}; border: 1px solid {modelOption.notice_banner.level === 'danger' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 193, 7, 0.3)'}; border-radius: 8px; padding: 10px 14px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; color: {modelOption.notice_banner.level === 'danger' ? '#ef4444' : '#ffc107'}; font-size: 0.88em;">
+      <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.1em; flex-shrink: 0;"></i>
+      <span>{modelOption.notice_banner.message}</span>
+    </div>
+  {/if}
+
+  <!-- Voice Cloning / Reference Audio Section -->
+  {#if manifest.capabilities.supports_cloning || activeMode.id === 'clone'}
+    <div class="form-group" style="margin-bottom: 1.2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <label for="ref-audio-file" style="margin-bottom: 0;">Âm thanh mẫu (Reference Audio)</label>
+        <button
+          onclick={() => isCreateModalOpen = true}
+          style="background: rgba(99,102,241,0.2); border: 1px solid var(--primary); color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.8em; cursor: pointer; display: flex; align-items: center; gap: 5px;"
+        >
+          <i class="fa-solid fa-plus"></i> Tạo Giọng Clone Mới
+        </button>
+      </div>
+
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <input
+          type="file"
+          id="ref-audio-file"
+          accept="audio/*"
+          onchange={handleFileUpload}
+          disabled={isCloningTemp}
+          style="flex: 1; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white;"
+        />
+      </div>
+
+      {#if referenceAudioPath}
+        <div style="margin-top: 10px;">
+          <WaveformTrimmer audioUrl={referenceAudioPath} onTrimComplete={handleTrimmedAudio} />
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Preset Voice Selection Widget -->
+  {#if manifest.capabilities.supports_preset_voices && voices.length > 0}
+    <div class="form-group">
+      <label for="generic-voice-select">Giọng đọc</label>
+      {#if modelOption?.voice_type === 'radio'}
+        <div style="display: flex; gap: 15px; margin-top: 8px; flex-wrap: wrap;">
+          {#each voices as v (v.id)}
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; background: {selectedVoice === v.id || selectedVoice === v.name ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)'}; padding: 10px 18px; border-radius: 8px; border: 1px solid {selectedVoice === v.id || selectedVoice === v.name ? 'var(--primary)' : 'rgba(255,255,255,0.15)'}; font-weight: 500; transition: all 0.2s;">
+              <input
+                type="radio"
+                name="generic-voice-radio"
+                value={v.id || v.name}
+                bind:group={selectedVoice}
+                style="accent-color: var(--primary); transform: scale(1.2);"
+              />
+              <span>{v.name}</span>
+            </label>
+          {/each}
+        </div>
+      {:else}
+        <VoiceSelect
+          {voices}
+          selectedVoiceId={selectedVoice}
+          onSelect={(v) => selectedVoice = v.id || v.name}
+        />
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Speed Control Widget -->
+  {#if manifest.capabilities.supports_speed}
+    <div class="form-group">
+      <label for="generic-speed">Tốc độ: <span>{speed.toFixed(1)}x</span></label>
+      {#if modelOption?.speed_type === 'number'}
+        <input
+          type="number"
+          id="generic-speed"
+          min={manifest.constraints.speed_range?.min || 0.5}
+          max={manifest.constraints.speed_range?.max || 2.0}
+          step={manifest.constraints.speed_range?.step || 0.1}
+          bind:value={speed}
+          style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
+        />
+      {:else}
+        <input
+          type="range"
+          id="generic-speed"
+          min={manifest.constraints.speed_range?.min || 0.5}
+          max={manifest.constraints.speed_range?.max || 2.0}
+          step={manifest.constraints.speed_range?.step || 0.1}
+          bind:value={speed}
+        />
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Pitch Control Widget (Dynamic) -->
+  {#if manifest.capabilities.supports_pitch}
+    <div class="form-group">
+      <label for="generic-pitch">Cao độ (Pitch): <span>{pitch.toFixed(1)}</span></label>
+      <input
+        type="range"
+        id="generic-pitch"
+        min={manifest.constraints.pitch_range?.min || -10}
+        max={manifest.constraints.pitch_range?.max || 10}
+        step={manifest.constraints.pitch_range?.step || 0.5}
+        bind:value={pitch}
+      />
+    </div>
+  {/if}
+
+  <!-- Emotion Control Widget (Dynamic) -->
+  {#if manifest.capabilities.supports_emotion && manifest.constraints.supported_emotions?.length > 0}
+    <div class="form-group">
+      <label for="generic-emotion">Cảm xúc (Emotion)</label>
+      <select
+        id="generic-emotion"
+        bind:value={selectedEmotion}
+        style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
+      >
+        <option value="">Mặc định (Tự nhiên)</option>
+        {#each manifest.constraints.supported_emotions as em}
+          <option value={em}>{em}</option>
+        {/each}
+      </select>
+    </div>
+  {/if}
+
+  <!-- Synthesize Actions -->
+  <div class="action-buttons">
+    {#if isLoading}
+      <button onclick={handleCancel} class="btn secondary-btn" style="flex: 1; border-color: var(--danger); color: var(--danger);">
+        <i class="fa-solid fa-ban"></i> Hủy tiến trình
+      </button>
+    {:else}
+      <button onclick={handleSynthesize} class="btn primary-btn">
+        <i class="fa-solid fa-play"></i> Tổng hợp âm thanh ({activeMode.name})
+      </button>
+    {/if}
+  </div>
+
+  <!-- Loading / Streaming Panel -->
+  {#if isLoading}
+    <div class="loading-indicator">
+      <div class="spinner"></div>
+      <p>Đang xử lý âm thanh AI ({progress}%)...</p>
+      <div class="progress-wrapper">
+        <div class="progress-bar" style="width: {progress}%;"></div>
+      </div>
+    </div>
+  {/if}
+
+  {#if isStreaming}
+    <StreamingPanel {wavBlobUrl} {mp3AudioUrl} />
+  {/if}
+</div>
+
+<!-- Modal Tạo Giọng Clone Mới -->
+{#if isCreateModalOpen}
+  <CreateVoiceModal
+    isOpen={isCreateModalOpen}
+    onClose={() => isCreateModalOpen = false}
+    onSuccess={() => {
+      isCreateModalOpen = false;
+      fetchVoices().then((v) => { if (v) voices = v; });
+    }}
+  />
+{/if}
