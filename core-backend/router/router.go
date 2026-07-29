@@ -77,12 +77,6 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 			r.Get("/clone/voices", cloneHandler.GetUserVoices)
 			r.Delete("/clone/voices/{clone_id}", cloneHandler.DeleteUserVoice)
 
-			// Legacy Compatibility Aliases to Universal Gateway
-			r.Get("/standard/voices", unifiedHandler.GetVoices)
-			r.Post("/standard/synthesize", unifiedHandler.Synthesize)
-			r.Get("/fasttts/voices", unifiedHandler.GetVoices)
-			r.Post("/fasttts/synthesize", unifiedHandler.Synthesize)
-			r.Post("/clone/synthesize", unifiedHandler.Synthesize)
 
 			// Tasks
 			r.Get("/tasks/{task_id}", tasksHandler.GetTaskStatus)
