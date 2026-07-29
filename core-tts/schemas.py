@@ -68,7 +68,7 @@ class NoticeBannerSpec(BaseModel):
 class InputPanelSpec(BaseModel):
     file_serve: bool = True
     closeable: bool = False
-    find_mode: str = "express"
+    find_mode: str = "expert" # "express" (tìm kiếm chuỗi đơn giản) | "expert" (cho phép bật/tắt công cụ Regex)
     replace_tool: bool = True
     enable_chunk_box: bool = True
     auto_format: List[AutoFormatRule] = Field(default_factory=list)
