@@ -3,7 +3,7 @@ package types
 // EngineModeSpec mô tả chi tiết một chế độ xử lý của AI Engine (ví dụ: standard, fast, clone, zero_shot).
 type EngineModeSpec struct {
 	ID          string `json:"id"`          // "standard", "fast", "clone"
-	Name        string `json:"name"`        // "VieNeu Standard", "Fast Edge", "Zero-shot Clone"
+	Name        string `json:"name"`        // "Standard Neural", "Fast Streaming", "Zero-shot Clone"
 	Description string `json:"description"` // Mô tả ngắn về mode
 }
 

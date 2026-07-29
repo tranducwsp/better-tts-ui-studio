@@ -13,7 +13,7 @@ func HealthCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"status":  "ok",
-		"service": "vieneu-core-backend-go",
+		"service": "ai-core-backend-go",
 	})
 }
 

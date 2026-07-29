@@ -1,11 +1,12 @@
+import os
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 
 class SynthesizeRequest(BaseModel):
     text: str
-    voice_id: Optional[str] = "minh_duc"
+    voice_id: Optional[str] = None
     voice: Optional[str] = None
-    engine: Optional[str] = "standard" # "standard" | "fast" | "clone"
+    engine: Optional[str] = None # "standard" | "fast" | "clone"
     speed: float = 1.0
     pitch: float = 0.0
     output_format: str = "wav"
@@ -43,11 +44,11 @@ class EngineConstraints(BaseModel):
     max_text_length: int = 3000
     speed_range: RangeConstraint = Field(default_factory=RangeConstraint)
     pitch_range: RangeConstraint = Field(default_factory=lambda: RangeConstraint(min=-10.0, max=10.0, default=0.0, step=0.5))
-    supported_emotions: List[str] = []
+    supported_emotions: List[str] = Field(default_factory=list)
 
 class AudioSpec(BaseModel):
-    supported_formats: List[str] = ["wav", "mp3"]
-    supported_sample_rates: List[int] = [16000, 22050, 24000, 44100]
+    supported_formats: List[str] = Field(default_factory=lambda: ["wav", "mp3"])
+    supported_sample_rates: List[int] = Field(default_factory=lambda: [16000, 22050, 24000, 44100])
     default_format: str = "wav"
     default_sample_rate: int = 24000
 
@@ -61,14 +62,14 @@ class EngineCapabilities(BaseModel):
     supports_ssml: bool = False
 
 class UniversalManifest(BaseModel):
-    engine_id: str = "vieneu-v3turbo"
-    engine_name: str = "VieNeu V3 Turbo Core Engine"
-    version: str = "1.0.0"
-    provider: str = "VieNeu Labs"
+    engine_id: str = Field(default_factory=lambda: os.getenv("ENGINE_ID", "core-engine-v1"))
+    engine_name: str = Field(default_factory=lambda: os.getenv("ENGINE_NAME", "Universal Core AI Engine"))
+    version: str = Field(default_factory=lambda: os.getenv("ENGINE_VERSION", "1.0.0"))
+    provider: str = Field(default_factory=lambda: os.getenv("ENGINE_PROVIDER", "Universal AI Platform"))
     supported_modes: List[EngineModeSpec] = Field(default_factory=lambda: [
-        EngineModeSpec(id="standard", name="VieNeu Standard Neural", description="High fidelity neural voice inference"),
-        EngineModeSpec(id="fast", name="Fast TTS Edge", description="Low latency streaming TTS"),
-        EngineModeSpec(id="clone", name="Voice Cloning Zero-Shot", description="Reference audio speaker cloning")
+        EngineModeSpec(id="standard", name="Standard Neural Engine", description="High fidelity neural voice inference"),
+        EngineModeSpec(id="fast", name="Fast Streaming Engine", description="Low latency streaming TTS"),
+        EngineModeSpec(id="clone", name="Voice Cloning Engine", description="Reference audio speaker cloning")
     ])
     capabilities: EngineCapabilities = Field(default_factory=EngineCapabilities)
     constraints: EngineConstraints = Field(default_factory=EngineConstraints)
