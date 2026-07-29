@@ -62,11 +62,8 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 
 			r.Get("/me", authHandler.Me)
 
-			// Universal Gateway Dynamic Endpoints (Hỗ trợ truy vấn toàn cục hoặc lọc theo model_id)
-			r.Get("/voices", unifiedHandler.GetVoices)
+			// Universal Gateway Dynamic Endpoints (bắt buộc trích xuất theo model_id)
 			r.Get("/voices/{model_id}", unifiedHandler.GetVoices)
-
-			r.Post("/synthesize", unifiedHandler.Synthesize)
 			r.Post("/synthesize/{model_id}", unifiedHandler.Synthesize)
 
 			// History
