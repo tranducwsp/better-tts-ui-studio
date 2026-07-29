@@ -362,6 +362,7 @@
   <CreateVoiceModal
     isOpen={isCreateModalOpen}
     modelId={activeMode.id}
+    metadataSchema={modelOption?.voice_metadata_schema}
     onClose={() => isCreateModalOpen = false}
     onSaved={(voiceId, voiceName) => {
       isCreateModalOpen = false;

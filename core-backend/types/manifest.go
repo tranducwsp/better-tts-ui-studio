@@ -68,14 +68,25 @@ type InputPanelSpec struct {
 	AutoFormat     []AutoFormatRule `json:"auto_format,omitempty"`
 }
 
+// VoiceMetadataFieldSpec định nghĩa cấu hình một trường thông tin khi tạo giọng mẫu mới.
+type VoiceMetadataFieldSpec struct {
+	Key         string   `json:"key"`
+	Label       string   `json:"label"`
+	Type        string   `json:"type"`                  // "text", "select"
+	Required    bool     `json:"required,omitempty"`
+	Placeholder string   `json:"placeholder,omitempty"`
+	Options     []string `json:"options,omitempty"`
+}
+
 // ModelOptionSpec cấu hình các widget điều khiển dành riêng cho từng model.
 type ModelOptionSpec struct {
-	NoticeBanner *NoticeBannerSpec   `json:"notice_banner,omitempty"`
-	VoiceType    string              `json:"voice_type,omitempty"` // "select", "radio"
-	SpeedType    string              `json:"speed_type,omitempty"` // "slider", "number", "stepped"
-	PitchType    string              `json:"pitch_type,omitempty"`
-	EmotionType  string              `json:"emotion_type,omitempty"`
-	PresetVoices []map[string]string `json:"preset_voices,omitempty"`
+	NoticeBanner        *NoticeBannerSpec        `json:"notice_banner,omitempty"`
+	VoiceType           string                   `json:"voice_type,omitempty"` // "select", "radio"
+	SpeedType           string                   `json:"speed_type,omitempty"` // "slider", "number", "stepped"
+	PitchType           string                   `json:"pitch_type,omitempty"`
+	EmotionType         string                   `json:"emotion_type,omitempty"`
+	PresetVoices        []map[string]string      `json:"preset_voices,omitempty"`
+	VoiceMetadataSchema []VoiceMetadataFieldSpec `json:"voice_metadata_schema,omitempty"`
 }
 
 // UISchemaSpec chứa toàn bộ cấu hình bố trí giao diện động do Core Engine quy định.

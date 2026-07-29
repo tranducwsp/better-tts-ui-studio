@@ -2,31 +2,50 @@
   import WaveformTrimmer from './WaveformTrimmer.svelte';
   import { cloneVoice } from '../api';
   import { toast } from '../toast.svelte';
+  import type { VoiceMetadataFieldSpec } from '../types';
 
   interface Props {
     isOpen: boolean;
     onClose: () => void;
     onSaved: (newVoiceId: string, newVoiceName: string) => void;
     modelId?: string;
+    metadataSchema?: VoiceMetadataFieldSpec[];
   }
 
-  let { isOpen, onClose, onSaved, modelId = 'clone' }: Props = $props();
+  let { isOpen, onClose, onSaved, modelId = 'clone', metadataSchema }: Props = $props();
 
   let fileInput = $state<HTMLInputElement | null>(null);
   let selectedFile = $state<File | null>(null);
   let trimmedFile = $state<File | null>(null);
-  let name = $state('');
-  let gender = $state('Nam');
-  let region = $state('Miền Bắc');
-  let style = $state('Truyền cảm');
   let isSaving = $state(false);
+
+  let formData = $state<Record<string, string>>({
+    name: '',
+    gender: 'Nam',
+    region: 'Miền Bắc',
+    style: 'Truyền cảm'
+  });
+
+  let fields = $derived.by(() => {
+    if (metadataSchema && metadataSchema.length > 0) {
+      return metadataSchema;
+    }
+    return [
+      { key: 'name', label: 'Tên giọng mẫu', type: 'text', required: true, placeholder: 'Ví dụ: Giọng MC Nam...' },
+      { key: 'gender', label: 'Giới tính', type: 'select', options: ['Nam', 'Nữ', 'Khác'] },
+      { key: 'region', label: 'Vùng miền', type: 'select', options: ['Miền Bắc', 'Miền Nam', 'Miền Trung', 'Khác'] },
+      { key: 'style', label: 'Phong cách', type: 'select', options: ['Truyền cảm', 'Tin tức / Thời sự', 'Đọc truyện / Đọc sách', 'Diễn cảm / Kịch tính', 'Tự nhiên / Trò chuyện', 'Quảng cáo / Review', 'Khác'] }
+    ];
+  });
 
   function handleFileSelect(e: Event) {
     const target = e.target as HTMLInputElement;
     if (target.files && target.files.length > 0) {
       selectedFile = target.files[0];
       trimmedFile = selectedFile;
-      if (!name) name = selectedFile.name.replace(/\.[^/.]+$/, '');
+      if (!formData['name']) {
+        formData['name'] = selectedFile.name.replace(/\.[^/.]+$/, '');
+      }
     }
   }
 
@@ -36,7 +55,8 @@
       toast.show('Vui lòng chọn file âm thanh mẫu!', 'error');
       return;
     }
-    if (!name.trim()) {
+    const nameVal = formData['name'] || '';
+    if (!nameVal.trim()) {
       toast.show('Vui lòng nhập tên giọng mẫu!', 'error');
       return;
     }
@@ -44,10 +64,14 @@
     isSaving = true;
     toast.show('Đang tải lên & lưu đặc trưng giọng...', 'info');
 
+    const genderVal = formData['gender'] || 'Nam';
+    const regionVal = formData['region'] || 'Miền Bắc';
+    const styleVal = formData['style'] || 'Truyền cảm';
+
     try {
-      const voiceId = await cloneVoice(fileToUpload, name, gender, region, style, modelId);
+      const voiceId = await cloneVoice(fileToUpload, nameVal, genderVal, regionVal, styleVal, modelId);
       toast.show('Lưu giọng mới thành công!', 'success');
-      onSaved(voiceId, name);
+      onSaved(voiceId, nameVal);
       onClose();
     } catch (err: any) {
       toast.show('Lỗi lưu giọng mẫu: ' + err.message, 'error');
@@ -70,15 +94,15 @@
       </div>
 
       <!-- Upload area -->
-      <div class="upload-drop-zone" onclick={() => fileInput?.click()} style="margin-bottom: 1rem;">
-        <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.5rem; color: var(--primary); margin-bottom: 10px;"></i>
+      <button type="button" class="upload-drop-zone" onclick={() => fileInput?.click()} style="width: 100%; margin-bottom: 1rem; background: none; border: 2px dashed rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center; cursor: pointer;">
+        <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.5rem; color: var(--primary); margin-bottom: 10px; display: block;"></i>
         {#if selectedFile}
-          <p style="color: var(--success); font-weight: 600;">{selectedFile.name}</p>
+          <p style="color: var(--success); font-weight: 600; margin: 0;">{selectedFile.name}</p>
         {:else}
-          <p>Kéo thả file âm thanh .wav hoặc <span style="color: var(--primary);">chọn file</span></p>
+          <p style="margin: 0; color: #94a3b8;">Kéo thả file âm thanh .wav hoặc <span style="color: var(--primary);">chọn file</span></p>
         {/if}
         <input type="file" bind:this={fileInput} onchange={handleFileSelect} accept=".wav,audio/wav" class="hidden" />
-      </div>
+      </button>
 
       <!-- Trimmer if file loaded -->
       {#if selectedFile}
@@ -91,61 +115,33 @@
           <i class="fa-solid fa-bookmark"></i> Thông tin nhãn mác giọng mẫu
         </h4>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-          <div>
-            <label for="modal-voice-name-input" style="font-size: 0.85rem; color: #94a3b8; display: block; margin-bottom: 4px;">Tên giọng mẫu *</label>
-            <input
-              id="modal-voice-name-input"
-              type="text"
-              bind:value={name}
-              placeholder="Ví dụ: Giọng MC Nam..."
-              style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.1); color: white;"
-            />
-          </div>
-          <div>
-            <label for="modal-voice-gender-select" style="font-size: 0.85rem; color: #94a3b8; display: block; margin-bottom: 4px;">Giới tính</label>
-            <select
-              id="modal-voice-gender-select"
-              bind:value={gender}
-              style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.1); color: white;"
-            >
-              <option value="Nam">Nam</option>
-              <option value="Nữ">Nữ</option>
-              <option value="Khác">Khác</option>
-            </select>
-          </div>
-        </div>
-
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-          <div>
-            <label for="modal-voice-region-select" style="font-size: 0.85rem; color: #94a3b8; display: block; margin-bottom: 4px;">Vùng miền</label>
-            <select
-              id="modal-voice-region-select"
-              bind:value={region}
-              style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.1); color: white;"
-            >
-              <option value="Miền Bắc">Miền Bắc</option>
-              <option value="Miền Nam">Miền Nam</option>
-              <option value="Miền Trung">Miền Trung</option>
-              <option value="Khác">Khác</option>
-            </select>
-          </div>
-          <div>
-            <label for="modal-voice-style-select" style="font-size: 0.85rem; color: #94a3b8; display: block; margin-bottom: 4px;">Phong cách</label>
-            <select
-              id="modal-voice-style-select"
-              bind:value={style}
-              style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.1); color: white;"
-            >
-              <option value="Truyền cảm">Truyền cảm</option>
-              <option value="Tin tức / Thời sự">Tin tức / Thời sự</option>
-              <option value="Đọc truyện / Đọc sách">Đọc truyện / Đọc sách</option>
-              <option value="Diễn cảm / Kịch tính">Diễn cảm / Kịch tính</option>
-              <option value="Tự nhiên / Trò chuyện">Tự nhiên / Trò chuyện</option>
-              <option value="Quảng cáo / Review">Quảng cáo / Review</option>
-              <option value="Khác">Khác</option>
-            </select>
-          </div>
+          {#each fields as field}
+            <div>
+              <label for="field-{field.key}" style="font-size: 0.85rem; color: #94a3b8; display: block; margin-bottom: 4px;">
+                {field.label} {field.required ? '*' : ''}
+              </label>
+              {#if field.type === 'select' && field.options}
+                <select
+                  id="field-{field.key}"
+                  bind:value={formData[field.key]}
+                  style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.1); color: white;"
+                >
+                  {#each field.options as opt}
+                    <option value={opt}>{opt}</option>
+                  {/each}
+                </select>
+              {:else}
+                <input
+                  id="field-{field.key}"
+                  type="text"
+                  bind:value={formData[field.key]}
+                  placeholder={field.placeholder || ''}
+                  style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.1); color: white;"
+                />
+              {/if}
+            </div>
+          {/each}
         </div>
       </div>
 

@@ -93,6 +93,15 @@ export interface InputPanelSpec {
   auto_format?: AutoFormatRule[];
 }
 
+export interface VoiceMetadataFieldSpec {
+  key: string;
+  label: string;
+  type: 'text' | 'select' | string;
+  required?: boolean;
+  placeholder?: string;
+  options?: string[];
+}
+
 export interface ModelOptionSpec {
   notice_banner?: NoticeBannerSpec;
   voice_type?: string;
@@ -100,6 +109,7 @@ export interface ModelOptionSpec {
   pitch_type?: string;
   emotion_type?: string;
   preset_voices?: Array<{ id: string; name: string; gender?: string }>;
+  voice_metadata_schema?: VoiceMetadataFieldSpec[];
 }
 
 export interface UISchemaSpec {

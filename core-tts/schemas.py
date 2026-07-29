@@ -77,6 +77,14 @@ class InputPanelSpec(BaseModel):
     enable_chunk_box: bool = True
     auto_format: List[AutoFormatRule] = Field(default_factory=list)
 
+class VoiceMetadataFieldSpec(BaseModel):
+    key: str
+    label: str
+    type: str = "text" # "text", "select"
+    required: Optional[bool] = False
+    placeholder: Optional[str] = None
+    options: Optional[List[str]] = None
+
 class ModelOptionSpec(BaseModel):
     notice_banner: Optional[NoticeBannerSpec] = None
     voice_type: Optional[str] = None # "select", "radio"
@@ -84,6 +92,7 @@ class ModelOptionSpec(BaseModel):
     pitch_type: Optional[str] = None
     emotion_type: Optional[str] = None
     preset_voices: Optional[List[Dict[str, str]]] = None
+    voice_metadata_schema: Optional[List[VoiceMetadataFieldSpec]] = None
 
 class UISchemaSpec(BaseModel):
     input_panel: InputPanelSpec = Field(default_factory=InputPanelSpec)
@@ -107,7 +116,13 @@ class UISchemaSpec(BaseModel):
         ),
         "clone": ModelOptionSpec(
             voice_type="select",
-            speed_type="slider"
+            speed_type="slider",
+            voice_metadata_schema=[
+                VoiceMetadataFieldSpec(key="name", label="Tên giọng mẫu", type="text", required=True, placeholder="Ví dụ: Giọng MC Nam..."),
+                VoiceMetadataFieldSpec(key="gender", label="Giới tính", type="select", options=["Nam", "Nữ", "Khác"]),
+                VoiceMetadataFieldSpec(key="region", label="Vùng miền", type="select", options=["Miền Bắc", "Miền Nam", "Miền Trung", "Khác"]),
+                VoiceMetadataFieldSpec(key="style", label="Phong cách", type="select", options=["Truyền cảm", "Tin tức / Thời sự", "Đọc truyện / Đọc sách", "Diễn cảm / Kịch tính", "Tự nhiên / Trò chuyện", "Quảng cáo / Review", "Khác"])
+            ]
         )
     })
 
