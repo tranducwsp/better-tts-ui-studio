@@ -37,6 +37,9 @@ export interface EngineModeSpec {
   id: string;
   name: string;
   description: string;
+  supports_preset_voices?: boolean;
+  supports_cloning?: boolean;
+  supports_streaming?: boolean;
 }
 
 export interface RangeConstraint {

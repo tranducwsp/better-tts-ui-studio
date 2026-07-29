@@ -2,9 +2,12 @@ package types
 
 // EngineModeSpec mô tả chi tiết một chế độ xử lý của AI Engine (ví dụ: standard, fast, clone, zero_shot).
 type EngineModeSpec struct {
-	ID          string `json:"id"`          // "standard", "fast", "clone"
-	Name        string `json:"name"`        // "Standard Neural", "Fast Streaming", "Zero-shot Clone"
-	Description string `json:"description"` // Mô tả ngắn về mode
+	ID                   string `json:"id"`                    // "standard", "fast", "clone"
+	Name                 string `json:"name"`                  // "Standard Neural", "Fast Streaming", "Zero-shot Clone"
+	Description          string `json:"description"`           // Mô tả ngắn về mode
+	SupportsPresetVoices bool   `json:"supports_preset_voices"` // Có hỗ trợ chọn giọng đọc có sẵn không
+	SupportsCloning      bool   `json:"supports_cloning"`       // Có hỗ trợ upload file mẫu / clone giọng không
+	SupportsStreaming    bool   `json:"supports_streaming"`     // Có hỗ trợ luồng phát âm thanh streaming không
 }
 
 // RangeConstraint định nghĩa giới hạn tham số số (Min, Max, Default, Step) cho UI Sliders.

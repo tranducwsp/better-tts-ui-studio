@@ -20,6 +20,17 @@
   // Mode option spec derived from manifest ui_schema
   let modelOption = $derived(manifest?.ui_schema?.option_panel?.[activeMode.id] || null);
 
+  // Per-mode capabilities derived from activeMode with manifest fallbacks
+  let supportsCloning = $derived(
+    activeMode?.supports_cloning ?? (activeMode?.id === 'clone')
+  );
+  let supportsPresetVoices = $derived(
+    activeMode?.supports_preset_voices ?? manifest?.capabilities?.supports_preset_voices ?? true
+  );
+  let supportsStreaming = $derived(
+    activeMode?.supports_streaming ?? manifest?.capabilities?.supports_streaming ?? true
+  );
+
   // Active voice list: use modelOption.preset_voices if specified by manifest, else global voices
   let activeVoices = $derived.by(() => {
     if (modelOption?.preset_voices && modelOption.preset_voices.length > 0) {
@@ -113,7 +124,7 @@
       return;
     }
 
-    if (manifest.capabilities.supports_cloning && !referenceAudioPath && !selectedVoice) {
+    if (supportsCloning && !referenceAudioPath && !selectedVoice) {
       toast.show('Vui lòng tải lên file âm thanh mẫu hoặc chọn giọng clone!', 'error');
       return;
     }
@@ -128,7 +139,7 @@
       const voiceParam = referenceAudioPath || selectedVoice;
       const taskId = await synthesize(text, voiceParam, speed, activeMode.id);
 
-      if (manifest.capabilities.supports_streaming) {
+      if (supportsStreaming) {
         isStreaming = true;
         unsubscribeStream = subscribeTaskStream(
           taskId,
@@ -175,11 +186,11 @@
   {/if}
 
   <!-- Preset Voice Selection Widget -->
-  {#if manifest.capabilities.supports_preset_voices && activeVoices.length > 0}
+  {#if supportsPresetVoices && activeVoices.length > 0}
     <div class="form-group" style="margin-bottom: 1.2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
         <label for="generic-voice-select" style="margin-bottom: 0;">Giọng đọc</label>
-        {#if manifest.capabilities.supports_cloning || activeMode.id === 'clone'}
+        {#if supportsCloning}
           <button
             onclick={() => isCreateModalOpen = true}
             type="button"
@@ -222,7 +233,7 @@
   {/if}
 
   <!-- Voice Cloning / Reference Audio Section -->
-  {#if manifest.capabilities.supports_cloning || activeMode.id === 'clone'}
+  {#if supportsCloning}
     <div class="clone-setup" style="margin-top: 1.2rem; margin-bottom: 1.2rem;">
       <label for="temp-voice-dropzone" style="font-weight: 600; color: #94a3b8; display: block; margin-bottom: 6px; font-size: 0.95rem;">
         <i class="fa-solid fa-bolt" style="color: #fbbf24;"></i> Hoặc tải mẫu âm thanh dùng tạm 1 lần (.wav):
