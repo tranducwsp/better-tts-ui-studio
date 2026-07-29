@@ -24,6 +24,9 @@
   let supportsCloning = $derived(
     activeMode?.supports_cloning ?? (activeMode?.id === 'clone')
   );
+  let supportsVoiceSaving = $derived(
+    activeMode?.supports_voice_saving ?? (activeMode?.id === 'clone')
+  );
   let supportsPresetVoices = $derived(
     activeMode?.supports_preset_voices ?? manifest?.capabilities?.supports_preset_voices ?? true
   );
@@ -190,7 +193,7 @@
     <div class="form-group" style="margin-bottom: 1.2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
         <label for="generic-voice-select" style="margin-bottom: 0;">Giọng đọc</label>
-        {#if supportsCloning}
+        {#if supportsVoiceSaving}
           <button
             onclick={() => isCreateModalOpen = true}
             type="button"

@@ -39,6 +39,7 @@ export interface EngineModeSpec {
   description: string;
   supports_preset_voices?: boolean;
   supports_cloning?: boolean;
+  supports_voice_saving?: boolean;
   supports_streaming?: boolean;
 }
 

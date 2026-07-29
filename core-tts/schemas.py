@@ -31,6 +31,7 @@ class EngineModeSpec(BaseModel):
     description: str = ""
     supports_preset_voices: bool = True
     supports_cloning: bool = False
+    supports_voice_saving: bool = False
     supports_streaming: bool = True
 
 class RangeConstraint(BaseModel):
@@ -116,9 +117,9 @@ class UniversalManifest(BaseModel):
     version: str = Field(default_factory=lambda: os.getenv("ENGINE_VERSION", "1.0.0"))
     provider: str = Field(default_factory=lambda: os.getenv("ENGINE_PROVIDER", "Universal AI Platform"))
     supported_modes: List[EngineModeSpec] = Field(default_factory=lambda: [
-        EngineModeSpec(id="standard", name="Standard Neural Engine", description="High fidelity neural voice inference", supports_preset_voices=True, supports_cloning=False, supports_streaming=True),
-        EngineModeSpec(id="fast", name="Fast Streaming Engine", description="Low latency streaming TTS", supports_preset_voices=True, supports_cloning=False, supports_streaming=True),
-        EngineModeSpec(id="clone", name="Voice Cloning Engine", description="Reference audio speaker cloning", supports_preset_voices=True, supports_cloning=True, supports_streaming=True)
+        EngineModeSpec(id="standard", name="Standard Neural Engine", description="High fidelity neural voice inference", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
+        EngineModeSpec(id="fast", name="Fast Streaming Engine", description="Low latency streaming TTS", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
+        EngineModeSpec(id="clone", name="Voice Cloning Engine", description="Reference audio speaker cloning", supports_preset_voices=True, supports_cloning=True, supports_voice_saving=True, supports_streaming=True)
     ])
     capabilities: EngineCapabilities = Field(default_factory=EngineCapabilities)
     constraints: EngineConstraints = Field(default_factory=EngineConstraints)

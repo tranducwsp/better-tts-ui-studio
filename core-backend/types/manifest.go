@@ -6,7 +6,8 @@ type EngineModeSpec struct {
 	Name                 string `json:"name"`                  // "Standard Neural", "Fast Streaming", "Zero-shot Clone"
 	Description          string `json:"description"`           // Mô tả ngắn về mode
 	SupportsPresetVoices bool   `json:"supports_preset_voices"` // Có hỗ trợ chọn giọng đọc có sẵn không
-	SupportsCloning      bool   `json:"supports_cloning"`       // Có hỗ trợ upload file mẫu / clone giọng không
+	SupportsCloning      bool   `json:"supports_cloning"`       // Có hỗ trợ upload file mẫu dùng tạm 1 lần không
+	SupportsVoiceSaving  bool   `json:"supports_voice_saving"`  // Có hỗ trợ tạo & lưu giọng mới vào thư viện không
 	SupportsStreaming    bool   `json:"supports_streaming"`     // Có hỗ trợ luồng phát âm thanh streaming không
 }
 
