@@ -52,11 +52,16 @@ def get_preset_voices():
     # 1. Fast Edge TTS voices
     for k, v in FAST_VOICES.items():
         if not any(x["id"] == v for x in voices):
+            gender = "Nữ" if "Nữ" in k else "Nam"
+            region = "Miền Nam" if "Hoài Mỹ" in k else "Miền Bắc"
             voices.append({
                 "id": v,
                 "name": k,
                 "type": "fast",
-                "language": "vi-VN"
+                "language": "vi-VN",
+                "gender": gender,
+                "region": region,
+                "style": "Tự nhiên"
             })
 
     # 2. Standard voices (Use loaded instance if available, else default list without forcing heavy load)

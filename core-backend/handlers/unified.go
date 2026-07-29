@@ -30,15 +30,12 @@ type UnifiedSynthesizeRequest struct {
 	TaskID      *string `json:"task_id"`
 }
 
-// UnifiedVoiceResponse cấu trúc chung phản hồi danh sách giọng đọc cho Frontend.
+// UnifiedVoiceResponse cấu trúc gọn tối giản cho Frontend: ID, Name, Descriptions.
 type UnifiedVoiceResponse struct {
-	ID        string  `json:"id"`
-	Name      string  `json:"name"`
-	Type      string  `json:"type"` // "standard" | "fast" | "clone"
-	Gender    *string `json:"gender,omitempty"`
-	Region    *string `json:"region,omitempty"`
-	Style     *string `json:"style,omitempty"`
-	CreatedAt string  `json:"created_at,omitempty"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Descriptions []string `json:"descriptions,omitempty"`
+	CreatedAt    string   `json:"created_at,omitempty"`
 }
 
 type UnifiedHandler struct {
@@ -49,7 +46,7 @@ func NewUnifiedHandler(ttsClient *client.CoreTTSClient) *UnifiedHandler {
 	return &UnifiedHandler{TTSClient: ttsClient}
 }
 
-// GetVoices hỗ trợ lấy danh sách giọng đọc toàn cục hoặc lọc động theo Mode (/voices/{mode} hoặc ?mode=...).
+// GetVoices lấy danh sách giọng đọc đơn giản hóa theo model_id
 func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)
@@ -82,10 +79,22 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 				if (modelID == "standard" || modelID == "fast") && vType != modelID {
 					continue
 				}
+
+				var desc []string
+				if v.Gender != "" {
+					desc = append(desc, v.Gender)
+				}
+				if v.Region != "" {
+					desc = append(desc, v.Region)
+				}
+				if v.Style != "" {
+					desc = append(desc, v.Style)
+				}
+
 				unifiedList = append(unifiedList, UnifiedVoiceResponse{
-					ID:   v.ID,
-					Name: v.Name,
-					Type: vType,
+					ID:           v.ID,
+					Name:         v.Name,
+					Descriptions: desc,
 				})
 			}
 		}
@@ -96,15 +105,15 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 		userVoices, err := db.Queries.ListUserVoices(r.Context(), user.ID)
 		if err == nil {
 			for _, v := range userVoices {
-				var genderPtr, regionPtr, stylePtr *string
-				if v.Gender.Valid {
-					genderPtr = &v.Gender.String
+				var desc []string
+				if v.Gender.Valid && v.Gender.String != "" {
+					desc = append(desc, v.Gender.String)
 				}
-				if v.Region.Valid {
-					regionPtr = &v.Region.String
+				if v.Region.Valid && v.Region.String != "" {
+					desc = append(desc, v.Region.String)
 				}
-				if v.Style.Valid {
-					stylePtr = &v.Style.String
+				if v.Style.Valid && v.Style.String != "" {
+					desc = append(desc, v.Style.String)
 				}
 
 				createdStr := ""
@@ -113,13 +122,10 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 				}
 
 				unifiedList = append(unifiedList, UnifiedVoiceResponse{
-					ID:        v.ID,
-					Name:      v.Name,
-					Type:      "clone",
-					Gender:    genderPtr,
-					Region:    regionPtr,
-					Style:     stylePtr,
-					CreatedAt: createdStr,
+					ID:           v.ID,
+					Name:         v.Name,
+					Descriptions: desc,
+					CreatedAt:    createdStr,
 				})
 			}
 		}

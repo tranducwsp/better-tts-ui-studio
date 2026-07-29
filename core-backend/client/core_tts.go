@@ -32,9 +32,12 @@ func NewCoreTTSClient(baseURL string, timeoutSeconds int) *CoreTTSClient {
 }
 
 type CoreVoice struct {
-	ID   string `json:"id,omitempty"`
-	Name string `json:"name"`
-	Type string `json:"type,omitempty"`
+	ID     string `json:"id,omitempty"`
+	Name   string `json:"name"`
+	Type   string `json:"type,omitempty"`
+	Gender string `json:"gender,omitempty"`
+	Region string `json:"region,omitempty"`
+	Style  string `json:"style,omitempty"`
 }
 
 type SynthesizeRequest struct {
