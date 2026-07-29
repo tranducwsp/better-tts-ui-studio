@@ -56,13 +56,13 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	if ok && task.Status == "done" {
 		if format == "mp3" && len(task.AudioMP3) > 0 {
 			w.Header().Set("Content-Type", "audio/mpeg")
-			w.Header().Set("Content-Disposition", `attachment; filename="vieneu_tts_audio.mp3"`)
+			w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.mp3"`)
 			_, _ = w.Write(task.AudioMP3)
 			return
 		}
 		if len(task.AudioWAV) > 0 {
 			w.Header().Set("Content-Type", "audio/wav")
-			w.Header().Set("Content-Disposition", `attachment; filename="vieneu_tts_audio.wav"`)
+			w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.wav"`)
 			_, _ = w.Write(task.AudioWAV)
 			return
 		}
@@ -72,7 +72,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	filePathWAV := filepath.Join("storage/temp", taskID+".wav")
 	if wavBytes, err := os.ReadFile(filePathWAV); err == nil && len(wavBytes) > 0 {
 		w.Header().Set("Content-Type", "audio/wav")
-		w.Header().Set("Content-Disposition", `attachment; filename="vieneu_tts_audio.wav"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.wav"`)
 		_, _ = w.Write(wavBytes)
 		return
 	}
@@ -81,7 +81,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	filePathMP3 := filepath.Join("storage/temp", taskID+".mp3")
 	if mp3Bytes, err := os.ReadFile(filePathMP3); err == nil && len(mp3Bytes) > 0 {
 		w.Header().Set("Content-Type", "audio/mpeg")
-		w.Header().Set("Content-Disposition", `attachment; filename="vieneu_tts_audio.mp3"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.mp3"`)
 		_, _ = w.Write(mp3Bytes)
 		return
 	}

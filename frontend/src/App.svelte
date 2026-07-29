@@ -14,7 +14,7 @@
   // Svelte 5 states using runes
   let activeTab = $state<string>('fast');
   let mainText = $state(
-    'Xin chào! Đây là ứng dụng tổng hợp giọng nói tiếng Việt VieNeu TTS Studio được xây dựng lại với Svelte 5. Chúc bạn có những trải nghiệm thật thú vị!'
+    'Xin chào! Chào mừng bạn đến với AI Voice Studio. Chúc bạn có những trải nghiệm thật thú vị!'
   );
   let isReadOnly = $state(false);
   let reloadedJob = $state<any | null>(null);
