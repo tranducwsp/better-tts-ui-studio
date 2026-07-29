@@ -66,11 +66,12 @@ type InputPanelSpec struct {
 
 // ModelOptionSpec cấu hình các widget điều khiển dành riêng cho từng model.
 type ModelOptionSpec struct {
-	NoticeBanner *NoticeBannerSpec `json:"notice_banner,omitempty"`
-	VoiceType    string            `json:"voice_type,omitempty"` // "select", "radio"
-	SpeedType    string            `json:"speed_type,omitempty"` // "slider", "number", "stepped"
-	PitchType    string            `json:"pitch_type,omitempty"`
-	EmotionType  string            `json:"emotion_type,omitempty"`
+	NoticeBanner *NoticeBannerSpec   `json:"notice_banner,omitempty"`
+	VoiceType    string              `json:"voice_type,omitempty"` // "select", "radio"
+	SpeedType    string              `json:"speed_type,omitempty"` // "slider", "number", "stepped"
+	PitchType    string              `json:"pitch_type,omitempty"`
+	EmotionType  string              `json:"emotion_type,omitempty"`
+	PresetVoices []map[string]string `json:"preset_voices,omitempty"`
 }
 
 // UISchemaSpec chứa toàn bộ cấu hình bố trí giao diện động do Core Engine quy định.

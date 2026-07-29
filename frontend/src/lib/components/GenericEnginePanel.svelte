@@ -20,6 +20,14 @@
   // Mode option spec derived from manifest ui_schema
   let modelOption = $derived(manifest?.ui_schema?.option_panel?.[activeMode.id] || null);
 
+  // Active voice list: use modelOption.preset_voices if specified by manifest, else global voices
+  let activeVoices = $derived.by(() => {
+    if (modelOption?.preset_voices && modelOption.preset_voices.length > 0) {
+      return modelOption.preset_voices;
+    }
+    return voices;
+  });
+
   // States
   let selectedVoice = $state('');
   let speed = $state(manifest?.constraints?.speed_range?.default || 1.0);
@@ -46,10 +54,10 @@
     }
   });
 
-  // Set default voice when voices list changes
+  // Set default voice when activeVoices list changes
   $effect(() => {
-    if (voices && voices.length > 0 && !selectedVoice) {
-      selectedVoice = voices[0].id || voices[0].name;
+    if (activeVoices && activeVoices.length > 0 && !selectedVoice) {
+      selectedVoice = activeVoices[0].id || activeVoices[0].name;
     }
   });
 
@@ -167,7 +175,7 @@
   {/if}
 
   <!-- Preset Voice Selection Widget -->
-  {#if manifest.capabilities.supports_preset_voices && voices.length > 0}
+  {#if manifest.capabilities.supports_preset_voices && activeVoices.length > 0}
     <div class="form-group" style="margin-bottom: 1.2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
         <label for="generic-voice-select" style="margin-bottom: 0;">Giọng đọc</label>
@@ -185,7 +193,7 @@
 
       {#if modelOption?.voice_type === 'radio'}
         <div style="display: flex; gap: 15px; margin-top: 8px; flex-wrap: wrap;">
-          {#each voices as v (v.id)}
+          {#each activeVoices as v (v.id)}
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; background: {selectedVoice === v.id || selectedVoice === v.name ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)'}; padding: 10px 18px; border-radius: 8px; border: 1px solid {selectedVoice === v.id || selectedVoice === v.name ? 'var(--primary)' : 'rgba(255,255,255,0.15)'}; font-weight: 500; transition: all 0.2s;">
               <input
                 type="radio"
@@ -194,13 +202,18 @@
                 bind:group={selectedVoice}
                 style="accent-color: var(--primary); transform: scale(1.2);"
               />
+              {#if v.gender === 'female'}
+                <i class="fa-solid fa-venus" style="color: #ff75a0;"></i>
+              {:else if v.gender === 'male'}
+                <i class="fa-solid fa-mars" style="color: #4da6ff;"></i>
+              {/if}
               <span>{v.name}</span>
             </label>
           {/each}
         </div>
       {:else}
         <VoiceSelect
-          {voices}
+          voices={activeVoices}
           selectedVoiceId={selectedVoice}
           onSelect={(v) => selectedVoice = v.id || v.name}
         />

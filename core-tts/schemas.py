@@ -75,10 +75,11 @@ class InputPanelSpec(BaseModel):
 
 class ModelOptionSpec(BaseModel):
     notice_banner: Optional[NoticeBannerSpec] = None
-    voice_type: Optional[str] = "select"
-    speed_type: Optional[str] = "slider"
+    voice_type: Optional[str] = None # "select", "radio"
+    speed_type: Optional[str] = None # "slider", "number", "stepped"
     pitch_type: Optional[str] = None
     emotion_type: Optional[str] = None
+    preset_voices: Optional[List[Dict[str, str]]] = None
 
 class UISchemaSpec(BaseModel):
     input_panel: InputPanelSpec = Field(default_factory=InputPanelSpec)
@@ -90,7 +91,11 @@ class UISchemaSpec(BaseModel):
                 message="Lưu ý: Giọng đọc này kết nối qua cloud. Đối với dữ liệu cần bảo mật thì không nên dùng!"
             ),
             voice_type="radio",
-            speed_type="slider"
+            speed_type="slider",
+            preset_voices=[
+                {"id": "Hoài Mỹ (Nữ)", "name": "Hoài Mỹ (Nữ)", "gender": "female"},
+                {"id": "Nam Minh (Nam)", "name": "Nam Minh (Nam)", "gender": "male"}
+            ]
         ),
         "standard": ModelOptionSpec(
             voice_type="select",

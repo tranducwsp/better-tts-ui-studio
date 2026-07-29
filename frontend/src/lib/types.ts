@@ -95,6 +95,7 @@ export interface ModelOptionSpec {
   speed_type?: string;
   pitch_type?: string;
   emotion_type?: string;
+  preset_voices?: Array<{ id: string; name: string; gender?: string }>;
 }
 
 export interface UISchemaSpec {
