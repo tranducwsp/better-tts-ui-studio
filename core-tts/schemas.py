@@ -57,6 +57,51 @@ class EngineCapabilities(BaseModel):
     supports_emotion: bool = False
     supports_ssml: bool = False
 
+class AutoFormatRule(BaseModel):
+    find: str
+    replace: str
+
+class NoticeBannerSpec(BaseModel):
+    level: str = "warning"
+    message: str
+
+class InputPanelSpec(BaseModel):
+    file_serve: bool = True
+    closeable: bool = False
+    find_mode: str = "express"
+    replace_tool: bool = True
+    enable_chunk_box: bool = True
+    auto_format: List[AutoFormatRule] = Field(default_factory=list)
+
+class ModelOptionSpec(BaseModel):
+    notice_banner: Optional[NoticeBannerSpec] = None
+    voice_type: Optional[str] = "select"
+    speed_type: Optional[str] = "slider"
+    pitch_type: Optional[str] = None
+    emotion_type: Optional[str] = None
+
+class UISchemaSpec(BaseModel):
+    input_panel: InputPanelSpec = Field(default_factory=InputPanelSpec)
+    model_sort: List[str] = Field(default_factory=lambda: ["fast", "standard", "clone"])
+    option_panel: Dict[str, ModelOptionSpec] = Field(default_factory=lambda: {
+        "fast": ModelOptionSpec(
+            notice_banner=NoticeBannerSpec(
+                level="warning",
+                message="Lưu ý: Giọng đọc này kết nối qua cloud. Đối với dữ liệu cần bảo mật thì không nên dùng!"
+            ),
+            voice_type="radio",
+            speed_type="slider"
+        ),
+        "standard": ModelOptionSpec(
+            voice_type="select",
+            speed_type="slider"
+        ),
+        "clone": ModelOptionSpec(
+            voice_type="select",
+            speed_type="slider"
+        )
+    })
+
 class UniversalManifest(BaseModel):
     engine_id: str = Field(default_factory=lambda: os.getenv("ENGINE_ID", "core-engine-v1"))
     engine_name: str = Field(default_factory=lambda: os.getenv("ENGINE_NAME", "Universal Core AI Engine"))
@@ -70,6 +115,7 @@ class UniversalManifest(BaseModel):
     capabilities: EngineCapabilities = Field(default_factory=EngineCapabilities)
     constraints: EngineConstraints = Field(default_factory=EngineConstraints)
     audio_spec: AudioSpec = Field(default_factory=AudioSpec)
+    ui_schema: Optional[UISchemaSpec] = Field(default_factory=UISchemaSpec)
 
 # Legacy compatibility alias
 CoreInfoResponse = UniversalManifest

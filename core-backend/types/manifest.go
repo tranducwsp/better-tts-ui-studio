@@ -42,6 +42,44 @@ type EngineCapabilities struct {
 	SupportsSsml         bool `json:"supports_ssml"`
 }
 
+// AutoFormatRule định nghĩa quy tắc thay thế văn bản Regex tự động.
+type AutoFormatRule struct {
+	Find    string `json:"find"`
+	Replace string `json:"replace"`
+}
+
+// NoticeBannerSpec định nghĩa thông báo cảnh báo hiển thị trên UI.
+type NoticeBannerSpec struct {
+	Level   string `json:"level"`   // "info", "warning", "danger", "success"
+	Message string `json:"message"` // Nội dung cảnh báo
+}
+
+// InputPanelSpec cấu hình các tính năng cho khung nhập văn bản.
+type InputPanelSpec struct {
+	FileServe      bool             `json:"file_serve"`
+	Closeable      bool             `json:"closeable"`
+	FindMode       string           `json:"find_mode"` // "expert", "express"
+	ReplaceTool    bool             `json:"replace_tool"`
+	EnableChunkBox bool             `json:"enable_chunk_box"`
+	AutoFormat     []AutoFormatRule `json:"auto_format,omitempty"`
+}
+
+// ModelOptionSpec cấu hình các widget điều khiển dành riêng cho từng model.
+type ModelOptionSpec struct {
+	NoticeBanner *NoticeBannerSpec `json:"notice_banner,omitempty"`
+	VoiceType    string            `json:"voice_type,omitempty"` // "select", "radio"
+	SpeedType    string            `json:"speed_type,omitempty"` // "slider", "number", "stepped"
+	PitchType    string            `json:"pitch_type,omitempty"`
+	EmotionType  string            `json:"emotion_type,omitempty"`
+}
+
+// UISchemaSpec chứa toàn bộ cấu hình bố trí giao diện động do Core Engine quy định.
+type UISchemaSpec struct {
+	InputPanel  InputPanelSpec             `json:"input_panel"`
+	ModelSort   []string                   `json:"model_sort,omitempty"`
+	OptionPanel map[string]ModelOptionSpec `json:"option_panel,omitempty"`
+}
+
 // UniversalManifest là bản thiết kế tiêu chuẩn đầy đủ đại diện cho bất kỳ AI Engine nào.
 type UniversalManifest struct {
 	EngineID       string             `json:"engine_id"` 
@@ -52,4 +90,5 @@ type UniversalManifest struct {
 	Capabilities   EngineCapabilities `json:"capabilities"`
 	Constraints    EngineConstraints  `json:"constraints"`
 	AudioSpec      AudioSpec          `json:"audio_spec"`
+	UISchema       *UISchemaSpec      `json:"ui_schema,omitempty"`
 }
