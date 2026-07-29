@@ -12,14 +12,15 @@ import (
 )
 
 const createUserVoice = `-- name: CreateUserVoice :one
-INSERT INTO user_voices (id, user_id, name, gender, region, style, file_path)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, name, gender, region, style, file_path, created_at
+INSERT INTO user_voices (id, user_id, model_id, name, gender, region, style, file_path)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, user_id, model_id, name, gender, region, style, file_path, created_at
 `
 
 type CreateUserVoiceParams struct {
 	ID       string      `json:"id"`
 	UserID   string      `json:"user_id"`
+	ModelID  string      `json:"model_id"`
 	Name     string      `json:"name"`
 	Gender   pgtype.Text `json:"gender"`
 	Region   pgtype.Text `json:"region"`
@@ -31,6 +32,7 @@ func (q *Queries) CreateUserVoice(ctx context.Context, arg CreateUserVoiceParams
 	row := q.db.QueryRow(ctx, createUserVoice,
 		arg.ID,
 		arg.UserID,
+		arg.ModelID,
 		arg.Name,
 		arg.Gender,
 		arg.Region,
@@ -41,6 +43,7 @@ func (q *Queries) CreateUserVoice(ctx context.Context, arg CreateUserVoiceParams
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.ModelID,
 		&i.Name,
 		&i.Gender,
 		&i.Region,
@@ -67,7 +70,7 @@ func (q *Queries) DeleteUserVoice(ctx context.Context, arg DeleteUserVoiceParams
 }
 
 const getUserVoiceByID = `-- name: GetUserVoiceByID :one
-SELECT id, user_id, name, gender, region, style, file_path, created_at FROM user_voices
+SELECT id, user_id, model_id, name, gender, region, style, file_path, created_at FROM user_voices
 WHERE id = $1 AND user_id = $2 LIMIT 1
 `
 
@@ -82,6 +85,7 @@ func (q *Queries) GetUserVoiceByID(ctx context.Context, arg GetUserVoiceByIDPara
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.ModelID,
 		&i.Name,
 		&i.Gender,
 		&i.Region,
@@ -93,7 +97,7 @@ func (q *Queries) GetUserVoiceByID(ctx context.Context, arg GetUserVoiceByIDPara
 }
 
 const listUserVoices = `-- name: ListUserVoices :many
-SELECT id, user_id, name, gender, region, style, file_path, created_at FROM user_voices
+SELECT id, user_id, model_id, name, gender, region, style, file_path, created_at FROM user_voices
 WHERE user_id = $1
 ORDER BY created_at DESC
 `
@@ -110,6 +114,48 @@ func (q *Queries) ListUserVoices(ctx context.Context, userID string) ([]UserVoic
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
+			&i.ModelID,
+			&i.Name,
+			&i.Gender,
+			&i.Region,
+			&i.Style,
+			&i.FilePath,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserVoicesByModel = `-- name: ListUserVoicesByModel :many
+SELECT id, user_id, model_id, name, gender, region, style, file_path, created_at FROM user_voices
+WHERE user_id = $1 AND model_id = $2
+ORDER BY created_at DESC
+`
+
+type ListUserVoicesByModelParams struct {
+	UserID  string `json:"user_id"`
+	ModelID string `json:"model_id"`
+}
+
+func (q *Queries) ListUserVoicesByModel(ctx context.Context, arg ListUserVoicesByModelParams) ([]UserVoice, error) {
+	rows, err := q.db.Query(ctx, listUserVoicesByModel, arg.UserID, arg.ModelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UserVoice{}
+	for rows.Next() {
+		var i UserVoice
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ModelID,
 			&i.Name,
 			&i.Gender,
 			&i.Region,

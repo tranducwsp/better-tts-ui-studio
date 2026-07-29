@@ -55,6 +55,11 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	modelID := r.FormValue("model_id")
+	if modelID == "" {
+		modelID = "clone"
+	}
+
 	gender := r.FormValue("gender")
 	region := r.FormValue("region")
 	style := r.FormValue("style")
@@ -74,8 +79,8 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Lưu file mẫu vào thư mục lưu trữ người dùng
-	userDir := filepath.Join("storage", user.ID, "voice")
+	// 1. Lưu file mẫu vào thư mục lưu trữ người dùng phân tầng theo model_id
+	userDir := filepath.Join("storage", modelID, user.ID, "voice")
 	_ = os.MkdirAll(userDir, 0755)
 
 	cloneID := uuid.NewString()
@@ -103,6 +108,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	params := sqlc.CreateUserVoiceParams{
 		ID:       coreCloneID,
 		UserID:   user.ID,
+		ModelID:  modelID,
 		Name:     name,
 		FilePath: filePath,
 	}
@@ -189,7 +195,7 @@ type UserVoiceResponse struct {
 	CreatedAt string  `json:"created_at"`
 }
 
-// GetUserVoices lấy danh sách tất cả các giọng nhân bản của người dùng hiện tại.
+// GetUserVoices lấy danh sách tất cả các giọng nhân bản của người dùng hiện tại (lọc theo model_id nếu có).
 func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)
@@ -199,7 +205,19 @@ func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	voices, err := db.Queries.ListUserVoices(r.Context(), user.ID)
+	modelID := r.URL.Query().Get("model_id")
+	var voices []sqlc.UserVoice
+	var err error
+
+	if modelID != "" {
+		voices, err = db.Queries.ListUserVoicesByModel(r.Context(), sqlc.ListUserVoicesByModelParams{
+			UserID:  user.ID,
+			ModelID: modelID,
+		})
+	} else {
+		voices, err = db.Queries.ListUserVoices(r.Context(), user.ID)
+	}
+
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})

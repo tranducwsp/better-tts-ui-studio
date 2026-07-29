@@ -359,10 +359,11 @@
 {#if isCreateModalOpen}
   <CreateVoiceModal
     isOpen={isCreateModalOpen}
+    modelId={activeMode.id}
     onClose={() => isCreateModalOpen = false}
-    onSuccess={() => {
+    onSaved={(voiceId, voiceName) => {
       isCreateModalOpen = false;
-      fetchVoices().then((v) => { if (v) voices = v; });
+      selectedVoice = voiceId || voiceName;
     }}
   />
 {/if}

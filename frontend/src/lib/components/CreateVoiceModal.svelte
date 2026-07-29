@@ -7,9 +7,10 @@
     isOpen: boolean;
     onClose: () => void;
     onSaved: (newVoiceId: string, newVoiceName: string) => void;
+    modelId?: string;
   }
 
-  let { isOpen, onClose, onSaved }: Props = $props();
+  let { isOpen, onClose, onSaved, modelId = 'clone' }: Props = $props();
 
   let fileInput = $state<HTMLInputElement | null>(null);
   let selectedFile = $state<File | null>(null);
@@ -44,7 +45,7 @@
     toast.show('Đang tải lên & lưu đặc trưng giọng...', 'info');
 
     try {
-      const voiceId = await cloneVoice(fileToUpload, name);
+      const voiceId = await cloneVoice(fileToUpload, name, gender, region, style, modelId);
       toast.show('Lưu giọng mới thành công!', 'success');
       onSaved(voiceId, name);
       onClose();

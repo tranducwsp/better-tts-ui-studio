@@ -41,6 +41,7 @@ type User struct {
 type UserVoice struct {
 	ID        string             `json:"id"`
 	UserID    string             `json:"user_id"`
+	ModelID   string             `json:"model_id"`
 	Name      string             `json:"name"`
 	Gender    pgtype.Text        `json:"gender"`
 	Region    pgtype.Text        `json:"region"`

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS user_voices (
     id VARCHAR(64) PRIMARY KEY,
     user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    model_id VARCHAR(50) NOT NULL DEFAULT 'clone',
     name VARCHAR(255) NOT NULL,
     gender VARCHAR(50),
     region VARCHAR(50),

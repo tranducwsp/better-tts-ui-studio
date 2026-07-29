@@ -1,11 +1,16 @@
 -- name: CreateUserVoice :one
-INSERT INTO user_voices (id, user_id, name, gender, region, style, file_path)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO user_voices (id, user_id, model_id, name, gender, region, style, file_path)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: ListUserVoices :many
 SELECT * FROM user_voices
 WHERE user_id = $1
+ORDER BY created_at DESC;
+
+-- name: ListUserVoicesByModel :many
+SELECT * FROM user_voices
+WHERE user_id = $1 AND model_id = $2
 ORDER BY created_at DESC;
 
 -- name: GetUserVoiceByID :one

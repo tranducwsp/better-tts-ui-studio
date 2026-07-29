@@ -108,9 +108,10 @@ export async function fetchVoices(modelId: string = 'standard'): Promise<VoiceOp
   }
 }
 
-export async function fetchPresets(): Promise<Preset[]> {
+export async function fetchPresets(modelId?: string): Promise<Preset[]> {
   try {
-    const res = await fetch('/api/clone/voices', { credentials: 'include' });
+    const url = modelId ? `/api/clone/voices?model_id=${encodeURIComponent(modelId)}` : '/api/clone/voices';
+    const res = await fetch(url, { credentials: 'include' });
     if (!res.ok) return [];
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -213,13 +214,14 @@ export async function synthesizeClone(
   return synthesize(text, voice, speed, 'clone', jobId, chunkIndex, totalChunks);
 }
 
-export async function cloneVoice(file: File, name: string, gender = 'Nam', region = 'Miền Bắc', style = 'Truyền cảm'): Promise<string> {
+export async function cloneVoice(file: File, name: string, gender = 'Nam', region = 'Miền Bắc', style = 'Truyền cảm', modelId = 'clone'): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('name', name);
   formData.append('gender', gender);
   formData.append('region', region);
   formData.append('style', style);
+  formData.append('model_id', modelId);
   const res = await fetch('/api/clone/upload', {
     method: 'POST',
     body: formData,
@@ -230,9 +232,10 @@ export async function cloneVoice(file: File, name: string, gender = 'Nam', regio
   return data.id || data.clone_id || '';
 }
 
-export async function cloneVoiceTemp(file: File): Promise<string> {
+export async function cloneVoiceTemp(file: File, modelId = 'clone'): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('model_id', modelId);
   const res = await fetch('/api/clone/upload-temp', {
     method: 'POST',
     body: formData,

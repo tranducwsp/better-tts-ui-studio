@@ -96,8 +96,10 @@ async def synthesize(req: SynthesizeRequest, background_tasks: BackgroundTasks):
             tasks_db[task_id]["status"] = "done"
             tasks_db[task_id]["progress"] = 100
             
-            # File Response
-            file_path = os.path.join(STORAGE_DIR, f"{task_id}.mp3")
+            # File Response (Organized by model_id storage subfolder)
+            model_temp_dir = os.path.join("storage", engine_type, "temp")
+            os.makedirs(model_temp_dir, exist_ok=True)
+            file_path = os.path.join(model_temp_dir, f"{task_id}.mp3")
             with open(file_path, "wb") as f:
                 f.write(audio_bytes)
                 
@@ -108,7 +110,9 @@ async def synthesize(req: SynthesizeRequest, background_tasks: BackgroundTasks):
             tasks_db[task_id]["status"] = "done"
             tasks_db[task_id]["progress"] = 100
             
-            file_path = os.path.join(STORAGE_DIR, f"{task_id}.wav")
+            model_temp_dir = os.path.join("storage", engine_type, "temp")
+            os.makedirs(model_temp_dir, exist_ok=True)
+            file_path = os.path.join(model_temp_dir, f"{task_id}.wav")
             with open(file_path, "wb") as f:
                 f.write(audio_bytes)
                 
