@@ -192,7 +192,7 @@
   </main>
 
   <footer>
-    <p>VieNeu TTS Studio &copy; 2026 - Powered by Svelte 5 & FastAPI</p>
+    <p>AI Voice Studio &copy; 2026 - Powered by Svelte 5, Go Chi & Core AI Engine</p>
   </footer>
 </div>
 
