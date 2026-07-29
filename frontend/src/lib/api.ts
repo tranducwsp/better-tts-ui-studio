@@ -137,9 +137,9 @@ export function parseVoiceItem(v: any): VoiceOption {
   };
 }
 
-export async function fetchVoices(): Promise<VoiceOption[]> {
+export async function fetchVoices(modelId: string = 'standard'): Promise<VoiceOption[]> {
   try {
-    const res = await fetch('/api/voices', { credentials: 'include' });
+    const res = await fetch(`/api/voices/${modelId}`, { credentials: 'include' });
     if (!res.ok) throw new Error('Không thể tải giọng');
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -208,7 +208,7 @@ export async function synthesize(
   chunkIndex: number = 0,
   totalChunks: number = 1
 ): Promise<string> {
-  const res = await fetch('/api/synthesize', {
+  const res = await fetch(`/api/synthesize/${engine}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
