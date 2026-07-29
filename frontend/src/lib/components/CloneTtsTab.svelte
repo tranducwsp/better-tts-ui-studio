@@ -24,9 +24,7 @@
     return presets.map((p) => ({
       id: p.id,
       name: p.name || p.speaker,
-      gender: (p as any).gender || 'Nữ',
-      region: (p as any).region || 'Bắc',
-      description: (p as any).style || ''
+      descriptions: (p as any).descriptions || [(p as any).gender, (p as any).region, (p as any).style].filter(Boolean)
     }));
   });
 

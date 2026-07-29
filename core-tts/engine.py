@@ -41,10 +41,21 @@ def cleanup_tasks_db():
     for tid in expired:
         tasks_db.pop(tid, None)
 
-DEFAULT_PRESET_NAMES = [
-    'Minh Đức', 'Phạm Tuyên', 'Thái Sơn', 'Xuân Vĩnh', 'Thanh Bình',
-    'Trúc Ly', 'Ngọc Linh', 'Đoan Trang', 'Mai Anh', 'Thục Đoan',
-    'Minh Triết', 'Thùy Dung', 'Quang Sơn', 'Ngọc Trân'
+DEFAULT_PRESET_VOICES = [
+    {"id": "Minh Đức", "name": "Minh Đức", "descriptions": ["Nam", "Miền Bắc", "Truyền cảm"]},
+    {"id": "Phạm Tuyên", "name": "Phạm Tuyên", "descriptions": ["Nam", "Miền Nam", "Báo chí"]},
+    {"id": "Thái Sơn", "name": "Thái Sơn", "descriptions": ["Nam", "Miền Trung", "Tự nhiên"]},
+    {"id": "Xuân Vĩnh", "name": "Xuân Vĩnh", "descriptions": ["Nam", "Miền Bắc", "Truyện đọc"]},
+    {"id": "Thanh Bình", "name": "Thanh Bình", "descriptions": ["Nam", "Miền Nam", "Trầm ấm"]},
+    {"id": "Trúc Ly", "name": "Trúc Ly", "descriptions": ["Nữ", "Miền Nam", "Tự nhiên"]},
+    {"id": "Ngọc Linh", "name": "Ngọc Linh", "descriptions": ["Nữ", "Miền Bắc", "Truyền cảm"]},
+    {"id": "Đoan Trang", "name": "Đoan Trang", "descriptions": ["Nữ", "Miền Bắc", "Trang trọng"]},
+    {"id": "Mai Anh", "name": "Mai Anh", "descriptions": ["Nữ", "Miền Nam", "Nhẹ nhàng"]},
+    {"id": "Thục Đoan", "name": "Thục Đoan", "descriptions": ["Nữ", "Miền Nam", "Ấm áp"]},
+    {"id": "Minh Triết", "name": "Minh Triết", "descriptions": ["Nam", "Miền Bắc", "Thuyết minh"]},
+    {"id": "Thùy Dung", "name": "Thùy Dung", "descriptions": ["Nữ", "Miền Trung", "Tự nhiên"]},
+    {"id": "Quang Sơn", "name": "Quang Sơn", "descriptions": ["Nam", "Miền Bắc", "Trầm ấm"]},
+    {"id": "Ngọc Trân", "name": "Ngọc Trân", "descriptions": ["Nữ", "Miền Nam", "Trong trẻo"]}
 ]
 
 def get_preset_voices():
@@ -60,19 +71,9 @@ def get_preset_voices():
                 "descriptions": [gender, region, "Tự nhiên"]
             })
 
-    # 2. Standard voices (Use loaded instance if available, else default list without forcing heavy load)
-    if _vieneu_engine is not None:
-        try:
-            preset_list = _vieneu_engine.list_preset_voices()
-            for item in preset_list:
-                name = item[0] if isinstance(item, tuple) else str(item)
-                id_ = item[1] if isinstance(item, tuple) else str(item)
-                voices.append({"id": id_, "name": name, "descriptions": []})
-        except Exception:
-            pass
-    else:
-        for name in DEFAULT_PRESET_NAMES:
-            voices.append({"id": name, "name": name, "descriptions": []})
+    # 2. Standard voices
+    for p in DEFAULT_PRESET_VOICES:
+        voices.append(p)
 
     return voices
 
