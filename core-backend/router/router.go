@@ -44,9 +44,7 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 	// Handlers
 	authHandler := handlers.NewAuthHandler(cfg)
 	historyHandler := handlers.NewHistoryHandler()
-	standardHandler := handlers.NewTTSStandardHandler(ttsClient)
 	cloneHandler := handlers.NewTTSCloneHandler(ttsClient)
-	fastHandler := handlers.NewTTSFastHandler(ttsClient)
 	tasksHandler := handlers.NewTasksHandler()
 	utilsHandler := handlers.NewUtilsHandler()
 	unifiedHandler := handlers.NewUnifiedHandler(ttsClient)
@@ -73,20 +71,18 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 			r.Get("/history/{job_id}", historyHandler.GetJobDetail)
 			r.Post("/jobs/init", historyHandler.InitJob)
 
-			// Standard TTS
-			r.Get("/standard/voices", standardHandler.GetVoices)
-			r.Post("/standard/synthesize", standardHandler.Synthesize)
-
-			// Clone TTS
+			// Voice Management & Custom Voice Cloning
 			r.Post("/clone/upload", cloneHandler.UploadVoice)
 			r.Post("/clone/upload-temp", cloneHandler.UploadTempVoice)
 			r.Get("/clone/voices", cloneHandler.GetUserVoices)
 			r.Delete("/clone/voices/{clone_id}", cloneHandler.DeleteUserVoice)
-			r.Post("/clone/synthesize", cloneHandler.Synthesize)
 
-			// Fast TTS
-			r.Get("/fasttts/voices", fastHandler.GetVoices)
-			r.Post("/fasttts/synthesize", fastHandler.Synthesize)
+			// Legacy Compatibility Aliases to Universal Gateway
+			r.Get("/standard/voices", unifiedHandler.GetVoices)
+			r.Post("/standard/synthesize", unifiedHandler.Synthesize)
+			r.Get("/fasttts/voices", unifiedHandler.GetVoices)
+			r.Post("/fasttts/synthesize", unifiedHandler.Synthesize)
+			r.Post("/clone/synthesize", unifiedHandler.Synthesize)
 
 			// Tasks
 			r.Get("/tasks/{task_id}", tasksHandler.GetTaskStatus)
