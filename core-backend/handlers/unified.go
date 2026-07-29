@@ -68,18 +68,11 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 
 	unifiedList := []UnifiedVoiceResponse{}
 
-	// 1. Lấy danh sách giọng Preset từ AI Engine nếu modelID rỗng, "all", "standard" hoặc "fast"
-	if modelID == "" || modelID == "all" || modelID == "standard" || modelID == "fast" {
+	// 1. Lấy danh sách giọng Preset từ AI Engine ngoại trừ khi chỉ lấy giọng clone
+	if modelID == "" || modelID == "all" || modelID != "clone" {
 		presetVoices, err := h.TTSClient.GetVoices()
 		if err == nil {
 			for _, v := range presetVoices {
-				if modelID == "fast" && !strings.HasPrefix(v.ID, "vi-VN-") {
-					continue
-				}
-				if modelID == "standard" && strings.HasPrefix(v.ID, "vi-VN-") {
-					continue
-				}
-
 				unifiedList = append(unifiedList, UnifiedVoiceResponse{
 					ID:           v.ID,
 					Name:         v.Name,
@@ -89,45 +82,43 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. Lấy danh sách giọng Clone cá nhân của User từ PostgreSQL nếu modelID rỗng, "all" hoặc "clone"
-	if modelID == "" || modelID == "all" || modelID == "clone" {
-		var userVoices []sqlc.UserVoice
-		var err error
+	// 2. Lấy danh sách giọng Clone cá nhân của User từ PostgreSQL
+	var userVoices []sqlc.UserVoice
+	var err error
 
-		if modelID != "" && modelID != "all" {
-			userVoices, err = db.Queries.ListUserVoicesByModel(r.Context(), sqlc.ListUserVoicesByModelParams{
-				UserID:  user.ID,
-				ModelID: modelID,
-			})
-		} else {
-			userVoices, err = db.Queries.ListUserVoices(r.Context(), user.ID)
-		}
+	if modelID != "" && modelID != "all" {
+		userVoices, err = db.Queries.ListUserVoicesByModel(r.Context(), sqlc.ListUserVoicesByModelParams{
+			UserID:  user.ID,
+			ModelID: modelID,
+		})
+	} else {
+		userVoices, err = db.Queries.ListUserVoices(r.Context(), user.ID)
+	}
 
-		if err == nil {
-			for _, v := range userVoices {
-				var desc []string
-				if v.Gender.Valid && v.Gender.String != "" {
-					desc = append(desc, v.Gender.String)
-				}
-				if v.Region.Valid && v.Region.String != "" {
-					desc = append(desc, v.Region.String)
-				}
-				if v.Style.Valid && v.Style.String != "" {
-					desc = append(desc, v.Style.String)
-				}
-
-				createdStr := ""
-				if v.CreatedAt.Valid {
-					createdStr = v.CreatedAt.Time.Format("2006-01-02T15:04:05Z")
-				}
-
-				unifiedList = append(unifiedList, UnifiedVoiceResponse{
-					ID:           v.ID,
-					Name:         v.Name,
-					Descriptions: desc,
-					CreatedAt:    createdStr,
-				})
+	if err == nil {
+		for _, v := range userVoices {
+			var desc []string
+			if v.Gender.Valid && v.Gender.String != "" {
+				desc = append(desc, v.Gender.String)
 			}
+			if v.Region.Valid && v.Region.String != "" {
+				desc = append(desc, v.Region.String)
+			}
+			if v.Style.Valid && v.Style.String != "" {
+				desc = append(desc, v.Style.String)
+			}
+
+			createdStr := ""
+			if v.CreatedAt.Valid {
+				createdStr = v.CreatedAt.Time.Format("2006-01-02T15:04:05Z")
+			}
+
+			unifiedList = append(unifiedList, UnifiedVoiceResponse{
+				ID:           v.ID,
+				Name:         v.Name,
+				Descriptions: desc,
+				CreatedAt:    createdStr,
+			})
 		}
 	}
 

@@ -21,12 +21,8 @@
   let modelOption = $derived(manifest?.ui_schema?.option_panel?.[activeMode.id] || null);
 
   // Per-mode capabilities derived from activeMode with manifest fallbacks
-  let supportsCloning = $derived(
-    activeMode?.supports_cloning ?? (activeMode?.id === 'clone')
-  );
-  let supportsVoiceSaving = $derived(
-    activeMode?.supports_voice_saving ?? (activeMode?.id === 'clone')
-  );
+  let supportsCloning = $derived(activeMode?.supports_cloning ?? false);
+  let supportsVoiceSaving = $derived(activeMode?.supports_voice_saving ?? false);
   let supportsPresetVoices = $derived(
     activeMode?.supports_preset_voices ?? manifest?.capabilities?.supports_preset_voices ?? true
   );
