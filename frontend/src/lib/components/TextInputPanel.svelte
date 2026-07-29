@@ -1,13 +1,15 @@
 <script lang="ts">
+  import type { InputPanelSpec } from '../types';
   import { extractTextFromFile } from '../api';
   import { toast } from '../toast.svelte';
 
   interface Props {
     text: string;
     isReadOnly?: boolean;
+    inputPanelSpec?: InputPanelSpec | null;
   }
 
-  let { text = $bindable(), isReadOnly = $bindable(false) }: Props = $props();
+  let { text = $bindable(), isReadOnly = $bindable(false), inputPanelSpec = null }: Props = $props();
 
   let isCollapsed = $state(false);
   let isRegexMode = $state(false);
@@ -229,17 +231,19 @@
         {/if}
       </label>
       <div style="display: flex; align-items: center; gap: 8px;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          {#if uploadedFileName}
-            <span style="font-size: 0.8rem; color: var(--success); font-style: italic; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-              <i class="fa-solid fa-check"></i> {uploadedFileName}
-            </span>
-          {/if}
-          <button class="upload-link" onclick={() => fileInput?.click()} style="background: none; border: none;">
-            <i class="fa-solid fa-file-import"></i> Tải file lên
-          </button>
-          <input type="file" bind:this={fileInput} onchange={handleFileUpload} accept=".txt,.pdf,.docx,.odt" class="hidden" />
-        </div>
+        {#if inputPanelSpec === null || inputPanelSpec.file_serve}
+          <div style="display: flex; align-items: center; gap: 8px;">
+            {#if uploadedFileName}
+              <span style="font-size: 0.8rem; color: var(--success); font-style: italic; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <i class="fa-solid fa-check"></i> {uploadedFileName}
+              </span>
+            {/if}
+            <button class="upload-link" onclick={() => fileInput?.click()} style="background: none; border: none;">
+              <i class="fa-solid fa-file-import"></i> Tải file lên
+            </button>
+            <input type="file" bind:this={fileInput} onchange={handleFileUpload} accept=".txt,.pdf,.docx,.odt" class="hidden" />
+          </div>
+        {/if}
         <button
           onclick={() => isCollapsed = !isCollapsed}
           style="background: rgba(255,255,255,0.1); border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.8em; display: flex; align-items: center; gap: 5px; cursor: pointer;"
@@ -264,54 +268,58 @@
         ></textarea>
 
         <!-- Tool thay thế rác / tìm kiếm -->
-        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; background: rgba(0,0,0,0.2); padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-          <!-- Hàng 1: Dò tìm (Luôn mở) -->
-          <div style="display: flex; gap: 10px; align-items: center;">
-            <button
-              onmousedown={(e) => e.preventDefault()}
-              onclick={toggleRegexMode}
-              style="background: rgba(255,255,255,0.1); color: {isRegexMode ? 'var(--primary)' : 'var(--text-muted)'}; border: none; padding: 6px 10px; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 0.8em; min-width: 85px;"
-            >
-              <i class="fa-solid {isRegexMode ? 'fa-code' : 'fa-font'}"></i> {isRegexMode ? 'Regex' : 'Cơ bản'}
-            </button>
-            <input
-              type="text"
-              bind:value={findQuery}
-              placeholder={isRegexMode ? 'Nhập Regex (VD: \\[\d+\\])' : 'Tìm rác (VD: hhhggg)'}
-              style="flex: 1; padding: 6px 10px; font-size: 0.9em; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;"
-            />
-            <button
-              onmousedown={(e) => e.preventDefault()}
-              onclick={handleCustomSearch}
-              style="background: rgba(255,255,255,0.15); color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 5px; font-size: 0.9em; white-space: nowrap;"
-            >
-              <i class="fa-solid fa-magnifying-glass"></i> Dò tìm
-            </button>
-          </div>
+        {#if inputPanelSpec === null || inputPanelSpec.replace_tool}
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; background: rgba(0,0,0,0.2); padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+            <!-- Hàng 1: Dò tìm (Luôn mở) -->
+            <div style="display: flex; gap: 10px; align-items: center;">
+              {#if inputPanelSpec === null || inputPanelSpec.find_mode === 'expert'}
+                <button
+                  onmousedown={(e) => e.preventDefault()}
+                  onclick={toggleRegexMode}
+                  style="background: rgba(255,255,255,0.1); color: {isRegexMode ? 'var(--primary)' : 'var(--text-muted)'}; border: none; padding: 6px 10px; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 0.8em; min-width: 85px;"
+                >
+                  <i class="fa-solid {isRegexMode ? 'fa-code' : 'fa-font'}"></i> {isRegexMode ? 'Regex' : 'Cơ bản'}
+                </button>
+              {/if}
+              <input
+                type="text"
+                bind:value={findQuery}
+                placeholder={isRegexMode ? 'Nhập Regex (VD: \\[\d+\\])' : 'Tìm rác (VD: hhhggg)'}
+                style="flex: 1; padding: 6px 10px; font-size: 0.9em; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;"
+              />
+              <button
+                onmousedown={(e) => e.preventDefault()}
+                onclick={handleCustomSearch}
+                style="background: rgba(255,255,255,0.15); color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 5px; font-size: 0.9em; white-space: nowrap;"
+              >
+                <i class="fa-solid fa-magnifying-glass"></i> Dò tìm
+              </button>
+            </div>
 
-          <!-- Hàng 2: Thay thế (Khóa khi isReadOnly = true) -->
-          <div style="display: flex; gap: 10px; align-items: center;">
-            <div style="min-width: 85px; text-align: center; color: var(--text-muted);"><i class="fa-solid fa-arrow-down"></i></div>
-            <input
-              type="text"
-              bind:value={replaceQuery}
-              readonly={isReadOnly}
-              placeholder={isReadOnly ? 'Đã khóa khi xem Lịch sử' : 'Sửa thành (Để trống = Xóa)'}
-              style="flex: 1; padding: 6px 10px; font-size: 0.9em; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; opacity: {isReadOnly ? 0.7 : 1}; cursor: {isReadOnly ? 'not-allowed' : 'text'};"
-            />
-            <button
-              onmousedown={(e) => e.preventDefault()}
-              onclick={handleCustomReplace}
-              disabled={isReadOnly}
-              style="background: var(--primary); color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 500; cursor: {isReadOnly ? 'not-allowed' : 'pointer'}; opacity: {isReadOnly ? 0.5 : 1}; font-size: 0.9em; min-width: 88px;"
-            >
-              <i class="fa-solid fa-check"></i> Thay thế
-            </button>
+            <!-- Hàng 2: Thay thế (Khóa khi isReadOnly = true) -->
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <div style="min-width: 85px; text-align: center; color: var(--text-muted);"><i class="fa-solid fa-arrow-down"></i></div>
+              <input
+                type="text"
+                bind:value={replaceQuery}
+                readonly={isReadOnly}
+                placeholder={isReadOnly ? 'Đã khóa khi xem Lịch sử' : 'Sửa thành (Để trống = Xóa)'}
+                style="flex: 1; padding: 6px 10px; font-size: 0.9em; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; opacity: {isReadOnly ? 0.7 : 1}; cursor: {isReadOnly ? 'not-allowed' : 'text'};"
+              />
+              <button
+                onmousedown={(e) => e.preventDefault()}
+                onclick={handleCustomReplace}
+                disabled={isReadOnly}
+                style="background: var(--primary); color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 500; cursor: {isReadOnly ? 'not-allowed' : 'pointer'}; opacity: {isReadOnly ? 0.5 : 1}; font-size: 0.9em; min-width: 88px;"
+              >
+                <i class="fa-solid fa-check"></i> Thay thế
+              </button>
+            </div>
           </div>
-        </div>
+        {/if}
 
         <!-- Visual Chunks Indicator -->
-        {#if chunks.length > 1}
+        {#if chunks.length > 1 && (inputPanelSpec === null || inputPanelSpec.enable_chunk_box)}
           <div style="margin-top: 15px; background: rgba(0,0,0,0.15); padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);">
             <div style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 12px;">
               <span><i class="fa-solid fa-layer-group"></i> Văn bản đã chia nhỏ thành <strong style="color: var(--primary); font-size: 1.1em;">{chunks.length}</strong> đoạn (bấm để định vị):</span>

@@ -70,6 +70,39 @@ export interface EngineCapabilities {
   supports_ssml: boolean;
 }
 
+export interface AutoFormatRule {
+  find: string;
+  replace: string;
+}
+
+export interface NoticeBannerSpec {
+  level: 'info' | 'warning' | 'danger' | 'success' | string;
+  message: string;
+}
+
+export interface InputPanelSpec {
+  file_serve: boolean;
+  closeable: boolean;
+  find_mode: 'express' | 'expert' | string;
+  replace_tool: boolean;
+  enable_chunk_box: boolean;
+  auto_format?: AutoFormatRule[];
+}
+
+export interface ModelOptionSpec {
+  notice_banner?: NoticeBannerSpec;
+  voice_type?: string;
+  speed_type?: string;
+  pitch_type?: string;
+  emotion_type?: string;
+}
+
+export interface UISchemaSpec {
+  input_panel: InputPanelSpec;
+  model_sort?: string[];
+  option_panel?: Record<string, ModelOptionSpec>;
+}
+
 export interface UniversalManifest {
   engine_id: string;
   engine_name: string;
@@ -79,4 +112,5 @@ export interface UniversalManifest {
   capabilities: EngineCapabilities;
   constraints: EngineConstraints;
   audio_spec: AudioSpec;
+  ui_schema?: UISchemaSpec;
 }

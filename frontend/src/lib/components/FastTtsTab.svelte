@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { VoiceOption } from '../types';
+  import type { VoiceOption, ModelOptionSpec } from '../types';
   import StreamingPanel from './StreamingPanel.svelte';
   import { synthesizeFast, subscribeTaskStream } from '../api';
   import { toast } from '../toast.svelte';
@@ -8,9 +8,10 @@
     text: string;
     voices?: VoiceOption[];
     reloadedJob?: any | null;
+    modelOption?: ModelOptionSpec | null;
   }
 
-  let { text, reloadedJob = null }: Props = $props();
+  let { text, reloadedJob = null, modelOption = null }: Props = $props();
 
   let selectedVoice = $state('Hoài Mỹ (Nữ)');
   let speed = $state(1.0);
@@ -90,11 +91,13 @@
 </script>
 
 <div class="tab-content active" id="fasttts-tab">
-  <!-- Cảnh báo Bảo mật -->
-  <div style="background: rgba(255, 193, 7, 0.12); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 8px; padding: 10px 14px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; color: #ffc107; font-size: 0.88em;">
-    <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.1em; flex-shrink: 0;"></i>
-    <span><strong>Lưu ý:</strong> Giọng đọc này kết nối qua cloud. <em>Đối với dữ liệu cần bảo mật thì không nên dùng!</em></span>
-  </div>
+  <!-- Cảnh báo Bảo mật từ Manifest -->
+  {#if modelOption?.notice_banner}
+    <div style="background: {modelOption.notice_banner.level === 'danger' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 193, 7, 0.12)'}; border: 1px solid {modelOption.notice_banner.level === 'danger' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 193, 7, 0.3)'}; border-radius: 8px; padding: 10px 14px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; color: {modelOption.notice_banner.level === 'danger' ? '#ef4444' : '#ffc107'}; font-size: 0.88em;">
+      <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.1em; flex-shrink: 0;"></i>
+      <span>{modelOption.notice_banner.message}</span>
+    </div>
+  {/if}
 
   <!-- Chọn Giọng Đọc (Radio Buttons) -->
   <div class="form-group">

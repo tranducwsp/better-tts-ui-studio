@@ -9,9 +9,9 @@
   import AuthModal from './lib/components/AuthModal.svelte';
   import AdminModal from './lib/components/AdminModal.svelte';
   import Toast from './lib/components/Toast.svelte';
-  import { fetchVoices, checkCurrentUser, logout, type UserResponse } from './lib/api';
+  import { fetchVoices, fetchManifest, checkCurrentUser, logout, type UserResponse } from './lib/api';
   import { toast } from './lib/toast.svelte';
-  import type { VoiceOption } from './lib/types';
+  import type { VoiceOption, UniversalManifest } from './lib/types';
 
   // Svelte 5 states using runes
   let activeTab = $state<'fasttts' | 'standard' | 'clone'>('fasttts');
@@ -22,6 +22,7 @@
   let reloadedJob = $state<any | null>(null);
   let voices = $state<VoiceOption[]>([]);
   let currentUser = $state<UserResponse | null>(null);
+  let manifest = $state<UniversalManifest | null>(null);
 
   // Modals
   let isAuthOpen = $state(false);
@@ -35,12 +36,24 @@
     checkCurrentUser().then((user) => {
       currentUser = user;
       if (user) {
-        loadVoices();
+        loadData();
       } else {
         isAuthOpen = true;
       }
     });
   });
+
+  async function loadData() {
+    loadVoices();
+    try {
+      const m = await fetchManifest();
+      if (m) {
+        manifest = m;
+      }
+    } catch (e) {
+      console.error('Failed to load manifest', e);
+    }
+  }
 
   function loadVoices() {
     fetchVoices().then((v) => {
@@ -53,7 +66,7 @@
   function handleAuthSuccess(user: UserResponse) {
     currentUser = user;
     isAuthOpen = false;
-    loadVoices();
+    loadData();
   }
 
   async function handleLogout() {
@@ -109,7 +122,7 @@
 
   <main>
     <!-- Text Content Input Panel -->
-    <TextInputPanel bind:text={mainText} bind:isReadOnly={isReadOnly} />
+    <TextInputPanel bind:text={mainText} bind:isReadOnly={isReadOnly} inputPanelSpec={manifest?.ui_schema?.input_panel || null} />
 
     <!-- Main Tabs -->
     <div id="main-tabs-container" style="margin-bottom: 1.5rem; width: 100%;">
@@ -144,7 +157,7 @@
     <!-- Audio Settings & Generation Panel -->
     <div class="glass-panel" style="margin-bottom: 1.5rem;">
       {#if activeTab === 'fasttts'}
-        <FastTtsTab text={mainText} {voices} {reloadedJob} />
+        <FastTtsTab text={mainText} {voices} {reloadedJob} modelOption={manifest?.ui_schema?.option_panel?.fast || null} />
       {:else if activeTab === 'standard'}
         <StandardTtsTab text={mainText} {voices} {reloadedJob} />
       {:else if activeTab === 'clone'}
