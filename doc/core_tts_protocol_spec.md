@@ -7,20 +7,20 @@ Architecture: Universal Control Plane (Backend) <-> Compute Engine (Core TTS Mic
 
 ## 1. Architecture & Design Philosophy
 
-This specification defines the standard, lightweight RESTful protocol between the **Web Backend Control Plane** (handling Auth, Rate-limiting, User Management, Database History, Chunk Splitting, and Frontend UI) and any **Core TTS Compute Engine Microservice** (handling PyTorch / ONNX / CUDA Model Inference).
+This specification defines the standard, lightweight RESTful protocol between the **Web Backend Control Plane** (handling Auth, Rate-limiting, User Management, Database History, Chunk Splitting, and Dynamic UI Rendering) and any **Core TTS Compute Engine Microservice** (handling PyTorch / ONNX / CUDA Model Inference).
 
-### Key Design Principle: Chunk-Based Async REST Architecture
-Instead of requiring complex low-level audio streaming protocols (SSE / WebSocket), the Control Plane splits long text into small, natural sentence chunks (<1,000 characters). Each chunk is processed rapidly by the Core TTS Engine via clean, stateless REST requests. This simplifies implementation for AI Engineers while delivering sub-second response times.
+### Key Design Principle: Schema-Driven & Chunk-Based REST Architecture
+Instead of hardcoding engine features in the UI or Control Plane, the **Core TTS Compute Engine** exposes a dynamic Manifest via `GET /info`. The Control Plane automatically adapts UI controls, text normalization rules, and voice metadata creation forms dynamically based on this manifest.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        WEB BACKEND CONTROL PLANE                       │
-│       (FastAPI / Node.js / Go + Auth + DB + Chunk Splitting + UI)      │
+│      (Go Chi Engine Gateway + Auth + DB + Chunk Splitting + Svelte UI) │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                   LIGHTWEIGHT REST CORE PROTOCOL INTERFACE
      ┌──────────────────────────────┼──────────────────────────────┐
-     │ GET /info (Capabilities)     │ POST /synthesize             │
+     │ GET /info (UI Manifest)      │ POST /synthesize             │
      │ GET /health (GPU Heartbeat)  │ GET  /tasks/{id} (Status)    │
      │ GET /voices (Voice List)     │ DELETE /tasks/{id} (Cancel)  │
      └──────────────────────────────┴──────────────────────────────┘
@@ -35,24 +35,86 @@ Instead of requiring complex low-level audio streaming protocols (SSE / WebSocke
 
 ## 2. Core REST APIs (Mandatory Spec)
 
-Every Core TTS Microservice MUST implement the following 5 RESTful endpoints:
+Every Core TTS Microservice MUST implement the following RESTful endpoints:
 
 ### 2.1 Capabilities & Manifest API
 * **Endpoint**: `GET /info` (or `GET /manifest`)
-* **Description**: Returns model metadata, supported languages, audio formats, and feature capabilities.
+* **Description**: Returns model metadata, supported modes, audio specifications, and UI configuration schema.
 
 #### Response Example (`application/json`):
 ```json
 {
-  "engine_name": "VieNeu-TTS-Core",
+  "engine_id": "core-engine-v1",
+  "engine_name": "Universal Core AI Engine",
   "version": "1.0.0",
+  "provider": "Universal AI Platform",
+  "supported_modes": [
+    {
+      "id": "fast",
+      "name": "Fast Streaming Engine",
+      "description": "Low latency streaming TTS",
+      "supports_preset_voices": true,
+      "supports_cloning": false,
+      "supports_voice_saving": false,
+      "supports_streaming": true
+    },
+    {
+      "id": "clone",
+      "name": "Voice Cloning Engine",
+      "description": "Reference audio speaker cloning",
+      "supports_preset_voices": true,
+      "supports_cloning": true,
+      "supports_voice_saving": true,
+      "supports_streaming": true
+    }
+  ],
   "capabilities": {
+    "supports_preset_voices": true,
     "supports_cloning": true,
+    "supports_streaming": true,
     "supports_speed": true,
-    "supports_pitch": true
+    "supports_pitch": false,
+    "supports_emotion": false
   },
-  "audio_formats": ["wav", "mp3"],
-  "sample_rates": [22050, 24000, 44100]
+  "constraints": {
+    "max_text_length": 3000,
+    "speed_range": { "min": 0.5, "max": 2.0, "default": 1.0, "step": 0.1 }
+  },
+  "audio_spec": {
+    "supported_formats": ["wav", "mp3"],
+    "supported_sample_rates": [16000, 22050, 24000, 44100],
+    "default_format": "wav",
+    "default_sample_rate": 24000
+  },
+  "ui_schema": {
+    "input_panel": {
+      "file_serve": true,
+      "closeable": false,
+      "find_mode": "expert",
+      "replace_tool": true,
+      "enable_chunk_box": true,
+      "auto_format": [
+        { "find": "\\r\\n", "replace": "\n" },
+        { "find": "\\n{3,}", "replace": "\n\n" },
+        { "find": "\\u00D0", "replace": "Đ" },
+        { "find": "([a-zA-ZÀ-ỹ])\\-([a-zA-ZÀ-ỹ])", "replace": "$1 $2" },
+        { "find": "[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉]", "replace": "" },
+        { "find": "[^a-zA-Z0-9 \\n\\t\\r.,?!;:\\-\"'()\\[\\]%/“”‘’À-ỹ]", "replace": "" }
+      ]
+    },
+    "model_sort": ["fast", "standard", "clone"],
+    "option_panel": {
+      "clone": {
+        "voice_type": "select",
+        "speed_type": "slider",
+        "voice_metadata_schema": [
+          { "key": "name", "label": "Tên giọng mẫu", "type": "text", "required": true },
+          { "key": "gender", "label": "Giới tính", "type": "select", "options": ["Nam", "Nữ", "Khác"] },
+          { "key": "region", "label": "Vùng miền", "type": "select", "options": ["Miền Bắc", "Miền Nam", "Miền Trung", "Khác"] }
+        ]
+      }
+    }
+  }
 }
 ```
 
@@ -72,14 +134,6 @@ Every Core TTS Microservice MUST implement the following 5 RESTful endpoints:
     "region": "North",
     "style": "News",
     "language": "vi-VN"
-  },
-  {
-    "id": "hoai_my",
-    "name": "Hoài Mỹ",
-    "gender": "female",
-    "region": "South",
-    "style": "Casual",
-    "language": "vi-VN"
   }
 ]
 ```
@@ -88,7 +142,7 @@ Every Core TTS Microservice MUST implement the following 5 RESTful endpoints:
 
 ### 2.3 Healthcheck & Metrics API
 * **Endpoint**: `GET /health`
-* **Description**: Returns Core service liveness, GPU VRAM utilization, and active task count for Load Balancing.
+* **Description**: Returns Core service liveness, GPU VRAM utilization, and active task count.
 
 #### Response Example (`application/json`):
 ```json
@@ -119,32 +173,11 @@ Every Core TTS Microservice MUST implement the following 5 RESTful endpoints:
 }
 ```
 
-#### Response:
-- **Direct Output**: Binary WAV/MP3 bytes (`Content-Type: audio/wav`).
-- **Async Output**: Task ID object:
-  ```json
-  {
-    "task_id": "task_839210",
-    "status": "processing"
-  }
-  ```
-
 ---
 
 ### 2.5 Task Status & Cancellation API
-* **Endpoint**: `GET /tasks/{task_id}` (Status) & `DELETE /tasks/{task_id}` (Cancellation)
-* **Description**: Polls task progress or interrupts CUDA inference to release GPU memory.
-
-#### GET Response (`application/json`):
-```json
-{
-  "task_id": "task_839210",
-  "status": "done",
-  "progress": 100,
-  "audio_url": "/audio/task_839210.wav",
-  "error": null
-}
-```
+* **Endpoint**: `GET /tasks/{task_id}` & `DELETE /tasks/{task_id}`
+* **Description**: Polls task progress or interrupts CUDA inference.
 
 ---
 
@@ -152,5 +185,5 @@ Every Core TTS Microservice MUST implement the following 5 RESTful endpoints:
 
 For Voice Cloning supported engines (e.g. XTTS, GPT-SoVITS, Fish-Speech):
 
-* **`POST /voices/clone`**: Uploads 3-10s audio WAV sample -> extracts Latent Embedding -> returns `voice_id`.
+* **`POST /voices/clone`**: Uploads reference audio WAV sample -> extracts Latent Embedding -> returns `voice_id`.
 * **`DELETE /voices/{voice_id}`**: Deletes custom voice embedding from storage.
