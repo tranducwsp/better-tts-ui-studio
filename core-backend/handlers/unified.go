@@ -59,16 +59,19 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mode := chi.URLParam(r, "mode")
-	if mode == "" {
-		mode = r.URL.Query().Get("mode")
+	modelID := chi.URLParam(r, "model_id")
+	if modelID == "" {
+		modelID = r.URL.Query().Get("model_id")
 	}
-	mode = strings.ToLower(strings.TrimSpace(mode))
+	if modelID == "" {
+		modelID = r.URL.Query().Get("mode")
+	}
+	modelID = strings.ToLower(strings.TrimSpace(modelID))
 
 	unifiedList := []UnifiedVoiceResponse{}
 
-	// 1. Lấy danh sách giọng Preset từ AI Engine nếu mode rỗng, "all", "standard" hoặc "fast"
-	if mode == "" || mode == "all" || mode == "standard" || mode == "fast" {
+	// 1. Lấy danh sách giọng Preset từ AI Engine nếu modelID rỗng, "all", "standard" hoặc "fast"
+	if modelID == "" || modelID == "all" || modelID == "standard" || modelID == "fast" {
 		presetVoices, err := h.TTSClient.GetVoices()
 		if err == nil {
 			for _, v := range presetVoices {
@@ -76,7 +79,7 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 				if vType == "" {
 					vType = "standard"
 				}
-				if (mode == "standard" || mode == "fast") && vType != mode {
+				if (modelID == "standard" || modelID == "fast") && vType != modelID {
 					continue
 				}
 				unifiedList = append(unifiedList, UnifiedVoiceResponse{
@@ -88,8 +91,8 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. Lấy danh sách giọng Clone cá nhân của User từ PostgreSQL nếu mode rỗng, "all" hoặc "clone"
-	if mode == "" || mode == "all" || mode == "clone" {
+	// 2. Lấy danh sách giọng Clone cá nhân của User từ PostgreSQL nếu modelID rỗng, "all" hoặc "clone"
+	if modelID == "" || modelID == "all" || modelID == "clone" {
 		userVoices, err := db.Queries.ListUserVoices(r.Context(), user.ID)
 		if err == nil {
 			for _, v := range userVoices {
@@ -146,9 +149,12 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		req.Speed = 1.0
 	}
 
-	urlMode := chi.URLParam(r, "mode")
-	if urlMode != "" {
-		req.Engine = urlMode
+	urlModelID := chi.URLParam(r, "model_id")
+	if urlModelID == "" {
+		urlModelID = chi.URLParam(r, "mode")
+	}
+	if urlModelID != "" {
+		req.Engine = urlModelID
 	} else if req.Engine == "" {
 		req.Engine = "standard"
 	}
