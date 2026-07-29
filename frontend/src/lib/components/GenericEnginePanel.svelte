@@ -166,42 +166,23 @@
     </div>
   {/if}
 
-  <!-- Voice Cloning / Reference Audio Section -->
-  {#if manifest.capabilities.supports_cloning || activeMode.id === 'clone'}
-    <div class="form-group" style="margin-bottom: 1.2rem;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <label for="ref-audio-file" style="margin-bottom: 0;">Âm thanh mẫu (Reference Audio)</label>
-        <button
-          onclick={() => isCreateModalOpen = true}
-          style="background: rgba(99,102,241,0.2); border: 1px solid var(--primary); color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.8em; cursor: pointer; display: flex; align-items: center; gap: 5px;"
-        >
-          <i class="fa-solid fa-plus"></i> Tạo Giọng Clone Mới
-        </button>
-      </div>
-
-      <div style="display: flex; gap: 10px; align-items: center;">
-        <input
-          type="file"
-          id="ref-audio-file"
-          accept="audio/*"
-          onchange={handleFileUpload}
-          disabled={isCloningTemp}
-          style="flex: 1; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white;"
-        />
-      </div>
-
-      {#if referenceAudioPath}
-        <div style="margin-top: 10px;">
-          <WaveformTrimmer audioUrl={referenceAudioPath} onTrimComplete={handleTrimmedAudio} />
-        </div>
-      {/if}
-    </div>
-  {/if}
-
   <!-- Preset Voice Selection Widget -->
   {#if manifest.capabilities.supports_preset_voices && voices.length > 0}
-    <div class="form-group">
-      <label for="generic-voice-select">Giọng đọc</label>
+    <div class="form-group" style="margin-bottom: 1.2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <label for="generic-voice-select" style="margin-bottom: 0;">Giọng đọc</label>
+        {#if manifest.capabilities.supports_cloning || activeMode.id === 'clone'}
+          <button
+            onclick={() => isCreateModalOpen = true}
+            type="button"
+            style="flex: 0 0 auto; padding: 6px 14px; border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; background: linear-gradient(135deg, #a855f7, #6366f1); color: white; border: none; cursor: pointer;"
+            title="Tạo giọng mới lưu vào thư viện"
+          >
+            <i class="fa-solid fa-plus"></i> <span>Lưu giọng mới</span>
+          </button>
+        {/if}
+      </div>
+
       {#if modelOption?.voice_type === 'radio'}
         <div style="display: flex; gap: 15px; margin-top: 8px; flex-wrap: wrap;">
           {#each voices as v (v.id)}
@@ -223,6 +204,38 @@
           selectedVoiceId={selectedVoice}
           onSelect={(v) => selectedVoice = v.id || v.name}
         />
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Voice Cloning / Reference Audio Section -->
+  {#if manifest.capabilities.supports_cloning || activeMode.id === 'clone'}
+    <div class="clone-setup" style="margin-top: 1.2rem; margin-bottom: 1.2rem;">
+      <label for="temp-voice-dropzone" style="font-weight: 600; color: #94a3b8; display: block; margin-bottom: 6px; font-size: 0.95rem;">
+        <i class="fa-solid fa-bolt" style="color: #fbbf24;"></i> Hoặc tải mẫu âm thanh dùng tạm 1 lần (.wav):
+      </label>
+
+      <div
+        id="temp-voice-dropzone"
+        role="button"
+        tabindex="0"
+        class="upload-drop-zone"
+        onclick={() => fileInput?.click()}
+        onkeydown={(e) => e.key === 'Enter' && fileInput?.click()}
+      >
+        <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.5rem; color: var(--primary); margin-bottom: 10px;"></i>
+        {#if referenceAudioPath}
+          <p style="color: var(--success); font-weight: 600;"><i class="fa-solid fa-file-audio"></i> Đã kích hoạt file âm thanh mẫu</p>
+        {:else}
+          <p>Kéo thả file âm thanh .wav hoặc <span style="color: var(--primary);">chọn file</span></p>
+        {/if}
+        <input type="file" bind:this={fileInput} onchange={handleFileUpload} accept=".wav,audio/wav" class="hidden" />
+      </div>
+
+      {#if referenceAudioPath}
+        <div style="margin-top: 10px;">
+          <WaveformTrimmer audioUrl={referenceAudioPath} onTrimComplete={handleTrimmedAudio} />
+        </div>
       {/if}
     </div>
   {/if}
@@ -294,7 +307,7 @@
       </button>
     {:else}
       <button onclick={handleSynthesize} class="btn primary-btn">
-        <i class="fa-solid fa-play"></i> Tổng hợp âm thanh ({activeMode.name})
+        <i class="fa-solid fa-play"></i> Tổng hợp âm thanh
       </button>
     {/if}
   </div>
