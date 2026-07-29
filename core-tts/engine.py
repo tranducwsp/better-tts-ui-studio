@@ -57,11 +57,7 @@ def get_preset_voices():
             voices.append({
                 "id": v,
                 "name": k,
-                "type": "fast",
-                "language": "vi-VN",
-                "gender": gender,
-                "region": region,
-                "style": "Tự nhiên"
+                "descriptions": [gender, region, "Tự nhiên"]
             })
 
     # 2. Standard voices (Use loaded instance if available, else default list without forcing heavy load)
@@ -71,12 +67,12 @@ def get_preset_voices():
             for item in preset_list:
                 name = item[0] if isinstance(item, tuple) else str(item)
                 id_ = item[1] if isinstance(item, tuple) else str(item)
-                voices.append({"id": id_, "name": name, "type": "standard", "language": "vi-VN"})
+                voices.append({"id": id_, "name": name, "descriptions": []})
         except Exception:
             pass
     else:
         for name in DEFAULT_PRESET_NAMES:
-            voices.append({"id": name, "name": name, "type": "standard", "language": "vi-VN"})
+            voices.append({"id": name, "name": name, "descriptions": []})
 
     return voices
 

@@ -417,10 +417,11 @@ input[type=range]::-webkit-slider-runnable-track {
     font-weight: 500;
 }
 
-.badge.gender-nam { color: #60a5fa; background: rgba(59, 130, 246, 0.15); }
-.badge.gender-nu { color: #f472b6; background: rgba(236, 72, 153, 0.15); }
-.badge.region { color: #34d399; background: rgba(16, 185, 129, 0.15); }
-.badge.style { color: #fbbf24; background: rgba(245, 158, 11, 0.15); }
+.badge.gender-nam, .badge.badge-blue { color: #60a5fa; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); }
+.badge.gender-nu, .badge.badge-purple { color: #c084fc; background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); }
+.badge.region, .badge.badge-emerald { color: #34d399; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); }
+.badge.style, .badge.badge-amber { color: #fbbf24; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); }
+.badge.badge-rose { color: #fb7185; background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.3); }
 
 /* Progress Bar */
 .progress-bar-container {

@@ -1,11 +1,8 @@
 export interface VoiceOption {
   id: string;
   name: string;
-  gender: string;
-  region: string;
-  description?: string;
+  descriptions?: string[];
   sampleUrl?: string;
-  type?: string;
 }
 
 export interface Preset {

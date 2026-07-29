@@ -72,29 +72,17 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 		presetVoices, err := h.TTSClient.GetVoices()
 		if err == nil {
 			for _, v := range presetVoices {
-				vType := strings.ToLower(strings.TrimSpace(v.Type))
-				if vType == "" {
-					vType = "standard"
-				}
-				if (modelID == "standard" || modelID == "fast") && vType != modelID {
+				if modelID == "fast" && !strings.HasPrefix(v.ID, "vi-VN-") {
 					continue
 				}
-
-				var desc []string
-				if v.Gender != "" {
-					desc = append(desc, v.Gender)
-				}
-				if v.Region != "" {
-					desc = append(desc, v.Region)
-				}
-				if v.Style != "" {
-					desc = append(desc, v.Style)
+				if modelID == "standard" && strings.HasPrefix(v.ID, "vi-VN-") {
+					continue
 				}
 
 				unifiedList = append(unifiedList, UnifiedVoiceResponse{
 					ID:           v.ID,
 					Name:         v.Name,
-					Descriptions: desc,
+					Descriptions: v.Descriptions,
 				})
 			}
 		}

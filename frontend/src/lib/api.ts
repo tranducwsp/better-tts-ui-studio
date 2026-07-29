@@ -75,65 +75,18 @@ export async function approveUser(userId: string): Promise<void> {
 }
 
 export function parseVoiceItem(v: any): VoiceOption {
-  if (Array.isArray(v)) {
-    const optionText = v[0] || '';
-    const optionValue = v[1] || optionText || '';
-    let name = optionText;
-    let gender = '';
-    let region = '';
-    let style = '';
-
-    if (optionText.includes('—')) {
-      const parts = optionText.split('—').map((s: string) => s.trim());
-      name = parts[0];
-      if (parts[1]) {
-        const tags = parts[1].split('·').map((s: string) => s.trim());
-        gender = tags[0] || '';
-        region = tags[1] || '';
-        style = tags[2] || '';
-      }
-    } else {
-      gender = name.includes('Nữ') ? 'Nữ' : 'Nam';
-      region = name.includes('Nam') ? 'Miền Nam' : (name.includes('Trung') ? 'Miền Trung' : 'Miền Bắc');
-    }
-
-    return {
-      id: optionValue,
-      name: name,
-      gender: gender,
-      region: region,
-      description: style,
-      sampleUrl: v[2],
-      type: 'standard'
-    };
-  }
-
-  const id = v.id || v.voice_id || v.name || v;
-  const rawName = v.name || v.id || v;
-  let name = rawName;
-  let gender = v.gender || '';
-  let region = v.region || '';
-  let style = v.style || v.description || '';
-
-  if (typeof rawName === 'string' && rawName.includes('—')) {
-    const parts = rawName.split('—').map((s: string) => s.trim());
-    name = parts[0];
-    if (parts[1]) {
-      const tags = parts[1].split('·').map((s: string) => s.trim());
-      if (!gender) gender = tags[0] || '';
-      if (!region) region = tags[1] || '';
-      if (!style) style = tags[2] || '';
-    }
+  let descriptions: string[] = [];
+  if (Array.isArray(v.descriptions)) {
+    descriptions = v.descriptions.filter((d: any) => typeof d === 'string' && d.trim() !== '');
+  } else if (Array.isArray(v)) {
+    descriptions = [v[0], v[1]].filter(Boolean);
   }
 
   return {
-    id: id,
-    name: name,
-    gender: gender || (name.includes('Nữ') ? 'Nữ' : 'Nam'),
-    region: region || 'Miền Bắc',
-    description: style,
+    id: v.id || v.voice_id || v.name || v,
+    name: v.name || v.id || v,
+    descriptions,
     sampleUrl: v.sampleUrl || (Array.isArray(v) && v[2] ? v[2] : undefined),
-    type: v.type || 'standard'
   };
 }
 

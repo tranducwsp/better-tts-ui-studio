@@ -23,11 +23,7 @@ class TaskStatusResponse(BaseModel):
 class VoiceInfo(BaseModel):
     id: str
     name: str
-    type: str = "standard"
-    language: str = "vi-VN"
-    gender: Optional[str] = None
-    region: Optional[str] = None
-    style: Optional[str] = None
+    descriptions: List[str] = Field(default_factory=list)
 
 class EngineModeSpec(BaseModel):
     id: str
