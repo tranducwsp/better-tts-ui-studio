@@ -14,7 +14,7 @@
   import type { VoiceOption, UniversalManifest } from './lib/types';
 
   // Svelte 5 states using runes
-  let activeTab = $state<'fasttts' | 'standard' | 'clone'>('fasttts');
+  let activeTab = $state<string>('fast');
   let mainText = $state(
     'Xin chào! Đây là ứng dụng tổng hợp giọng nói tiếng Việt VieNeu TTS Studio được xây dựng lại với Svelte 5. Chúc bạn có những trải nghiệm thật thú vị!'
   );
@@ -23,6 +23,33 @@
   let voices = $state<VoiceOption[]>([]);
   let currentUser = $state<UserResponse | null>(null);
   let manifest = $state<UniversalManifest | null>(null);
+
+  // Dynamic tab ordering derived from manifest ui_schema
+  let activeModes = $derived.by(() => {
+    if (!manifest) {
+      return [
+        { id: 'fast', name: 'Siêu Nhanh', icon: 'fa-bolt' },
+        { id: 'standard', name: 'TTS Cơ Bản', icon: 'fa-wave-square' },
+        { id: 'clone', name: 'Giọng Clone', icon: 'fa-users-viewfinder' }
+      ];
+    }
+    const sortOrder = manifest.ui_schema?.model_sort;
+    const allModes = manifest.supported_modes || [];
+    if (sortOrder && sortOrder.length > 0) {
+      return sortOrder.map((id) => {
+        const modeSpec = allModes.find((m) => m.id === id);
+        return {
+          id,
+          name: modeSpec ? modeSpec.name : id.toUpperCase(),
+          icon: id === 'fast' ? 'fa-bolt' : id === 'standard' ? 'fa-wave-square' : id === 'clone' ? 'fa-users-viewfinder' : 'fa-sliders'
+        };
+      });
+    }
+    return allModes.map((m) => ({
+      ...m,
+      icon: m.id === 'fast' ? 'fa-bolt' : m.id === 'standard' ? 'fa-wave-square' : m.id === 'clone' ? 'fa-users-viewfinder' : 'fa-sliders'
+    }));
+  });
 
   // Modals
   let isAuthOpen = $state(false);
@@ -124,42 +151,28 @@
     <!-- Text Content Input Panel -->
     <TextInputPanel bind:text={mainText} bind:isReadOnly={isReadOnly} inputPanelSpec={manifest?.ui_schema?.input_panel || null} />
 
-    <!-- Main Tabs -->
+    <!-- Main Tabs dynamically ordered by Manifest -->
     <div id="main-tabs-container" style="margin-bottom: 1.5rem; width: 100%;">
       <div class="tabs" style="margin-bottom: 0; width: 100%; display: flex; gap: 10px;">
-        <button
-          class="tab-btn"
-          class:active={activeTab === 'fasttts'}
-          onclick={() => selectTab('fasttts')}
-          style="flex: 1;"
-        >
-          <i class="fa-solid fa-bolt"></i> Siêu Nhanh
-        </button>
-        <button
-          class="tab-btn"
-          class:active={activeTab === 'standard'}
-          onclick={() => selectTab('standard')}
-          style="flex: 1;"
-        >
-          <i class="fa-solid fa-wave-square"></i> TTS Cơ Bản
-        </button>
-        <button
-          class="tab-btn"
-          class:active={activeTab === 'clone'}
-          onclick={() => selectTab('clone')}
-          style="flex: 1;"
-        >
-          <i class="fa-solid fa-users-viewfinder"></i> Giọng Clone
-        </button>
+        {#each activeModes as mode (mode.id)}
+          <button
+            class="tab-btn"
+            class:active={activeTab === mode.id || (activeTab === 'fasttts' && mode.id === 'fast')}
+            onclick={() => activeTab = mode.id}
+            style="flex: 1;"
+          >
+            <i class="fa-solid {mode.icon}"></i> {mode.name}
+          </button>
+        {/each}
       </div>
     </div>
 
     <!-- Audio Settings & Generation Panel -->
     <div class="glass-panel" style="margin-bottom: 1.5rem;">
-      {#if activeTab === 'fasttts'}
+      {#if activeTab === 'fast' || activeTab === 'fasttts'}
         <FastTtsTab text={mainText} {voices} {reloadedJob} modelOption={manifest?.ui_schema?.option_panel?.fast || null} />
       {:else if activeTab === 'standard'}
-        <StandardTtsTab text={mainText} {voices} {reloadedJob} />
+        <StandardTtsTab text={mainText} {voices} {reloadedJob} modelOption={manifest?.ui_schema?.option_panel?.standard || null} />
       {:else if activeTab === 'clone'}
         <CloneTtsTab text={mainText} {reloadedJob} />
       {/if}

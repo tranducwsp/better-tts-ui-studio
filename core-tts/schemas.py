@@ -82,7 +82,7 @@ class ModelOptionSpec(BaseModel):
 
 class UISchemaSpec(BaseModel):
     input_panel: InputPanelSpec = Field(default_factory=InputPanelSpec)
-    model_sort: List[str] = Field(default_factory=lambda: ["fast", "standard", "clone"])
+    model_sort: List[str] = Field(default_factory=lambda: ["standard", "fast", "clone"])
     option_panel: Dict[str, ModelOptionSpec] = Field(default_factory=lambda: {
         "fast": ModelOptionSpec(
             notice_banner=NoticeBannerSpec(
@@ -93,8 +93,12 @@ class UISchemaSpec(BaseModel):
             speed_type="slider"
         ),
         "standard": ModelOptionSpec(
-            voice_type="select",
-            speed_type="slider"
+            notice_banner=NoticeBannerSpec(
+                level="info",
+                message="Thông báo: Chế độ TTS Cơ Bản đã được Core Engine ưu tiên hiển thị đầu tiên!"
+            ),
+            voice_type="radio",
+            speed_type="number"
         ),
         "clone": ModelOptionSpec(
             voice_type="select",
