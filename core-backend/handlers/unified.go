@@ -14,6 +14,7 @@ import (
 	"core-backend/state"
 
 	"github.com/bytedance/sonic"
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
@@ -48,7 +49,7 @@ func NewUnifiedHandler(ttsClient *client.CoreTTSClient) *UnifiedHandler {
 	return &UnifiedHandler{TTSClient: ttsClient}
 }
 
-// GetVoices hợp nhất toàn bộ Giọng Preset của AI Engine và Giọng Clone của User vào 1 API duy nhất.
+// GetVoices hỗ trợ lấy danh sách giọng đọc toàn cục hoặc lọc động theo Mode (/voices/{mode} hoặc ?mode=...).
 func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := middleware.GetCurrentUser(r)
@@ -58,49 +59,66 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mode := chi.URLParam(r, "mode")
+	if mode == "" {
+		mode = r.URL.Query().Get("mode")
+	}
+	mode = strings.ToLower(strings.TrimSpace(mode))
+
 	unifiedList := []UnifiedVoiceResponse{}
 
-	// 1. Lấy danh sách giọng Preset từ AI Engine
-	presetVoices, err := h.TTSClient.GetVoices()
-	if err == nil {
-		for _, v := range presetVoices {
-			unifiedList = append(unifiedList, UnifiedVoiceResponse{
-				ID:   v.ID,
-				Name: v.Name,
-				Type: "standard",
-			})
+	// 1. Lấy danh sách giọng Preset từ AI Engine nếu mode rỗng, "all", "standard" hoặc "fast"
+	if mode == "" || mode == "all" || mode == "standard" || mode == "fast" {
+		presetVoices, err := h.TTSClient.GetVoices()
+		if err == nil {
+			for _, v := range presetVoices {
+				vType := strings.ToLower(strings.TrimSpace(v.Type))
+				if vType == "" {
+					vType = "standard"
+				}
+				if (mode == "standard" || mode == "fast") && vType != mode {
+					continue
+				}
+				unifiedList = append(unifiedList, UnifiedVoiceResponse{
+					ID:   v.ID,
+					Name: v.Name,
+					Type: vType,
+				})
+			}
 		}
 	}
 
-	// 2. Lấy danh sách giọng Clone cá nhân của User từ PostgreSQL
-	userVoices, err := db.Queries.ListUserVoices(r.Context(), user.ID)
-	if err == nil {
-		for _, v := range userVoices {
-			var genderPtr, regionPtr, stylePtr *string
-			if v.Gender.Valid {
-				genderPtr = &v.Gender.String
-			}
-			if v.Region.Valid {
-				regionPtr = &v.Region.String
-			}
-			if v.Style.Valid {
-				stylePtr = &v.Style.String
-			}
+	// 2. Lấy danh sách giọng Clone cá nhân của User từ PostgreSQL nếu mode rỗng, "all" hoặc "clone"
+	if mode == "" || mode == "all" || mode == "clone" {
+		userVoices, err := db.Queries.ListUserVoices(r.Context(), user.ID)
+		if err == nil {
+			for _, v := range userVoices {
+				var genderPtr, regionPtr, stylePtr *string
+				if v.Gender.Valid {
+					genderPtr = &v.Gender.String
+				}
+				if v.Region.Valid {
+					regionPtr = &v.Region.String
+				}
+				if v.Style.Valid {
+					stylePtr = &v.Style.String
+				}
 
-			createdStr := ""
-			if v.CreatedAt.Valid {
-				createdStr = v.CreatedAt.Time.Format("2006-01-02T15:04:05Z")
-			}
+				createdStr := ""
+				if v.CreatedAt.Valid {
+					createdStr = v.CreatedAt.Time.Format("2006-01-02T15:04:05Z")
+				}
 
-			unifiedList = append(unifiedList, UnifiedVoiceResponse{
-				ID:        v.ID,
-				Name:      v.Name,
-				Type:      "clone",
-				Gender:    genderPtr,
-				Region:    regionPtr,
-				Style:     stylePtr,
-				CreatedAt: createdStr,
-			})
+				unifiedList = append(unifiedList, UnifiedVoiceResponse{
+					ID:        v.ID,
+					Name:      v.Name,
+					Type:      "clone",
+					Gender:    genderPtr,
+					Region:    regionPtr,
+					Style:     stylePtr,
+					CreatedAt: createdStr,
+				})
+			}
 		}
 	}
 
@@ -128,7 +146,10 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		req.Speed = 1.0
 	}
 
-	if req.Engine == "" {
+	urlMode := chi.URLParam(r, "mode")
+	if urlMode != "" {
+		req.Engine = urlMode
+	} else if req.Engine == "" {
 		req.Engine = "standard"
 	}
 

@@ -41,9 +41,15 @@ def cleanup_tasks_db():
     for tid in expired:
         tasks_db.pop(tid, None)
 
+DEFAULT_PRESET_NAMES = [
+    'Minh Đức', 'Phạm Tuyên', 'Thái Sơn', 'Xuân Vĩnh', 'Thanh Bình',
+    'Trúc Ly', 'Ngọc Linh', 'Đoan Trang', 'Mai Anh', 'Thục Đoan',
+    'Minh Triết', 'Thùy Dung', 'Quang Sơn', 'Ngọc Trân'
+]
+
 def get_preset_voices():
     voices = []
-    # Fast Edge TTS voices are available immediately without loading ViNeu AI model
+    # 1. Fast Edge TTS voices
     for k, v in FAST_VOICES.items():
         if not any(x["id"] == v for x in voices):
             voices.append({
@@ -53,23 +59,19 @@ def get_preset_voices():
                 "language": "vi-VN"
             })
 
-    try:
-        engine = get_vieneu_engine()
-        preset_list = engine.list_preset_voices()
-        for item in preset_list:
-            if isinstance(item, tuple):
-                v_name, v_id = item[0], item[1]
-            else:
-                v_name, v_id = str(item), str(item)
-                
-            voices.append({
-                "id": v_id,
-                "name": v_name,
-                "type": "standard",
-                "language": "vi-VN"
-            })
-    except Exception as e:
-        print(f"Warning loading preset voices: {e}")
+    # 2. Standard voices (Use loaded instance if available, else default list without forcing heavy load)
+    if _vieneu_engine is not None:
+        try:
+            preset_list = _vieneu_engine.list_preset_voices()
+            for item in preset_list:
+                name = item[0] if isinstance(item, tuple) else str(item)
+                id_ = item[1] if isinstance(item, tuple) else str(item)
+                voices.append({"id": id_, "name": name, "type": "standard", "language": "vi-VN"})
+        except Exception:
+            pass
+    else:
+        for name in DEFAULT_PRESET_NAMES:
+            voices.append({"id": name, "name": name, "type": "standard", "language": "vi-VN"})
 
     return voices
 
