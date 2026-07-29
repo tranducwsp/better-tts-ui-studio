@@ -34,12 +34,14 @@
     activeMode?.supports_streaming ?? manifest?.capabilities?.supports_streaming ?? true
   );
 
-  // Active voice list: use modelOption.preset_voices if specified by manifest, else global voices
+  let modeVoices = $state<VoiceOption[]>([]);
+
+  // Active voice list: use modelOption.preset_voices if specified by manifest, else modeVoices
   let activeVoices = $derived.by(() => {
     if (modelOption?.preset_voices && modelOption.preset_voices.length > 0) {
       return modelOption.preset_voices;
     }
-    return voices;
+    return modeVoices;
   });
 
   // States
@@ -59,18 +61,22 @@
   let mp3AudioUrl = $state<string | null>(null);
   let unsubscribeStream = $state<(() => void) | null>(null);
 
-  // Ensure voices loaded if preset voices supported
+  // Dynamically load mode-specific voices when activeMode changes
   $effect(() => {
-    if (manifest?.capabilities?.supports_preset_voices && (!voices || voices.length === 0)) {
-      fetchVoices().then((v) => {
-        if (v && v.length > 0) voices = v;
+    const currentModeId = activeMode.id;
+    if (supportsPresetVoices || supportsVoiceSaving) {
+      fetchVoices(currentModeId).then((v) => {
+        modeVoices = v || [];
+        if (modeVoices.length > 0 && !selectedVoice) {
+          selectedVoice = modeVoices[0].id || modeVoices[0].name;
+        }
       });
     }
   });
 
   // Set default voice when activeVoices list changes
   $effect(() => {
-    if (activeVoices && activeVoices.length > 0 && !selectedVoice) {
+    if (activeVoices && activeVoices.length > 0 && (!selectedVoice || !activeVoices.some(v => (v.id || v.name) === selectedVoice))) {
       selectedVoice = activeVoices[0].id || activeVoices[0].name;
     }
   });
@@ -363,7 +369,10 @@
     onClose={() => isCreateModalOpen = false}
     onSaved={(voiceId, voiceName) => {
       isCreateModalOpen = false;
-      selectedVoice = voiceId || voiceName;
+      fetchVoices(activeMode.id).then((v) => {
+        modeVoices = v || [];
+        selectedVoice = voiceId || voiceName;
+      });
     }}
   />
 {/if}

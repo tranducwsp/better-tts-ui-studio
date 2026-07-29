@@ -10,6 +10,7 @@ import (
 
 	"core-backend/client"
 	"core-backend/db"
+	"core-backend/db/sqlc"
 	"core-backend/middleware"
 	"core-backend/state"
 
@@ -90,7 +91,18 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Lấy danh sách giọng Clone cá nhân của User từ PostgreSQL nếu modelID rỗng, "all" hoặc "clone"
 	if modelID == "" || modelID == "all" || modelID == "clone" {
-		userVoices, err := db.Queries.ListUserVoices(r.Context(), user.ID)
+		var userVoices []sqlc.UserVoice
+		var err error
+
+		if modelID != "" && modelID != "all" {
+			userVoices, err = db.Queries.ListUserVoicesByModel(r.Context(), sqlc.ListUserVoicesByModelParams{
+				UserID:  user.ID,
+				ModelID: modelID,
+			})
+		} else {
+			userVoices, err = db.Queries.ListUserVoices(r.Context(), user.ID)
+		}
+
 		if err == nil {
 			for _, v := range userVoices {
 				var desc []string
