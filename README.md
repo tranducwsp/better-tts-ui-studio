@@ -70,10 +70,12 @@ Access the application in your browser:
 
 ## 📚 Documentation
 
-Detailed documentation is available in the [`doc/`](./doc/) directory:
+Detailed documentation is available in the [`docs/`](./docs/) directory:
 
-- 📖 [**AI Engineer Integration Guide**](./doc/ENGINEER_INTEGRATION_GUIDE.md): How to plug your custom AI Model into the system using Python schemas.
-- 📜 [**Universal TTS Core Protocol Specification**](./doc/core_tts_protocol_spec.md): Complete REST & gRPC API protocol reference.
+- 📖 [**Frontend Overview (Giới thiệu chung FE)**](./docs/frontend_overview.md): High-level overview of the Svelte 5 Studio interface, features, and UI/UX design.
+- 🛠️ [**Frontend Technical & Engineering Spec**](./docs/frontend_tech_and_engineering.md): Detailed technical spec on Svelte 5 Runes, Web Audio API binary handling, streaming, and build pipeline.
+- 📖 [**AI Engineer Integration Guide**](./docs/ENGINEER_INTEGRATION_GUIDE.md): How to plug your custom AI Model into the system using Python schemas.
+- 📜 [**Universal TTS Core Protocol Specification**](./docs/core_tts_protocol_spec.md): Complete REST & gRPC API protocol reference.
 
 ---
 
