@@ -87,7 +87,8 @@
           <p>No history records found.</p>
         </div>
       {:else}
-        <table class="glass-table" style="font-size: 0.85rem; width: 100%;">
+        <div class="glass-table-wrapper" style="overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch;">
+          <table class="glass-table" style="font-size: 0.85rem; width: 100%;">
           <thead>
             <tr>
               <th style="padding: 10px; min-width: 100px;">Time</th>
@@ -141,6 +142,7 @@
             {/each}
           </tbody>
         </table>
+      </div>
       {/if}
     </div>
   </div>
