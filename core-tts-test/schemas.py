@@ -133,10 +133,16 @@ class UISchemaSpec(BaseModel):
         "zero_shot_clone": ModelOptionSpec(
             notice_banner=NoticeBannerSpec(
                 level="info",
-                message="⚡ Instant Zero-Shot Clone: Supports temporary audio upload without saving voice profiles to account."
+                message="⚡ Instant Zero-Shot Clone: Supports reference audio upload & saving voice profiles to account."
             ),
             voice_type="select",
-            speed_type="slider"
+            speed_type="slider",
+            voice_metadata_schema=[
+                VoiceMetadataFieldSpec(key="name", label="Voice Name", type="text", required=True, placeholder="e.g. My Cloned Voice..."),
+                VoiceMetadataFieldSpec(key="gender", label="Gender", type="select", options=["Male", "Female", "Other"]),
+                VoiceMetadataFieldSpec(key="region", label="Accent / Region", type="select", options=["North American", "British", "Australian", "Other"]),
+                VoiceMetadataFieldSpec(key="style", label="Style", type="select", options=["Expressive", "News / Broadcast", "Audiobook / Reading", "Dramatic", "Natural / Conversational", "Commercial", "Other"])
+            ]
         ),
         "multilingual": ModelOptionSpec(
             notice_banner=NoticeBannerSpec(
@@ -181,7 +187,7 @@ class UniversalManifest(BaseModel):
         EngineModeSpec(id="standard", name="Mock Standard", description="Fast mock audio generator", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
         EngineModeSpec(id="fast", name="Mock Fast", description="Instant mock audio generator", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
         EngineModeSpec(id="express", name="Mock Express", description="Ultra-low latency streaming model", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
-        EngineModeSpec(id="zero_shot_clone", name="Mock Instant Zero-Shot Clone", description="Instant voice cloning from uploaded reference audio without saving to library", supports_preset_voices=False, supports_cloning=True, supports_voice_saving=False, supports_streaming=True),
+        EngineModeSpec(id="zero_shot_clone", name="Mock Instant Zero-Shot Clone", description="Instant voice cloning from uploaded reference audio with voice saving support", supports_preset_voices=True, supports_cloning=True, supports_voice_saving=True, supports_streaming=True),
         EngineModeSpec(id="multilingual", name="Mock Multilingual", description="Cross-lingual multi-accent voice engine", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
         EngineModeSpec(id="emotion_v2", name="Mock Emotion & Style", description="Dynamic prosody & pitch control model", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
         EngineModeSpec(id="clone", name="Mock Voice Cloning", description="Simulated speaker cloning", supports_preset_voices=True, supports_cloning=True, supports_voice_saving=True, supports_streaming=True)

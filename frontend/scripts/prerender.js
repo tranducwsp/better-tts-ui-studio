@@ -11,7 +11,7 @@ const FALLBACK_MANIFEST = {
   supported_modes: [
     { id: "fast", name: "Mock Fast", description: "Instant mock audio generator", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
     { id: "express", name: "Mock Express", description: "Ultra-low latency streaming model", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
-    { id: "zero_shot_clone", name: "Mock Instant Zero-Shot Clone", description: "Instant voice cloning from uploaded reference audio without saving to library", supports_preset_voices: false, supports_cloning: true, supports_voice_saving: false, supports_streaming: true },
+    { id: "zero_shot_clone", name: "Mock Instant Zero-Shot Clone", description: "Instant voice cloning from uploaded reference audio with voice saving support", supports_preset_voices: true, supports_cloning: true, supports_voice_saving: true, supports_streaming: true },
     { id: "multilingual", name: "Mock Multilingual", description: "Cross-lingual multi-accent voice engine", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
     { id: "emotion_v2", name: "Mock Emotion & Style", description: "Dynamic prosody & pitch control model", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
     { id: "standard", name: "Mock Standard", description: "Fast mock audio generator", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
