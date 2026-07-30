@@ -46,7 +46,7 @@ services:
       - ENGINE_NAME=Mock Test AI Engine
       - ENGINE_PROVIDER=Universal AI Testbed
       - MOCK_DELAY_SEC=0.0
-      - UI_MODE=fast
+      - UI_MODE=beauty
     volumes:
       - ./core-tts-test:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
@@ -85,7 +85,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - VITE_UI_MODE=fast
+        - VITE_UI_MODE=beauty
     container_name: ai-studio-frontend
     ports:
       - "5173:5173"
