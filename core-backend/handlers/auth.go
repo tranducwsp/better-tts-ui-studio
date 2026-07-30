@@ -56,7 +56,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			req.Password = r.FormValue("password")
 			if req.Username == "" && req.Password == "" {
 				w.WriteHeader(http.StatusBadRequest)
-				_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Dữ liệu JSON không hợp lệ"})
+				_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Invalid JSON payload"})
 				return
 			}
 		}
@@ -67,44 +67,44 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	if req.Username == "" || req.Password == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Username và Password không được để trống"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Username and password are required"})
 		return
 	}
 
-	// 1. Kiểm tra tài khoản đã tồn tại chưa bằng sqlc
+	// 1. Check if user already exists via sqlc
 	_, err := db.Queries.GetUserByUsername(r.Context(), req.Username)
 	if err == nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Tên đăng nhập đã tồn tại"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Username already exists"})
 		return
 	}
 
-	// 2. Băm mật khẩu an toàn với Bcrypt
+	// 2. Hash password with Bcrypt
 	hashedPassword, err := security.HashPassword(req.Password)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi xử lý mật khẩu"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to hash password"})
 		return
 	}
 
-	// 3. Tạo record User trong PostgreSQL
+	// 3. Create User record in PostgreSQL
 	userID := uuid.NewString()
 	user, err := db.Queries.CreateUser(r.Context(), sqlc.CreateUserParams{
 		ID:           userID,
 		Username:     req.Username,
 		PasswordHash: hashedPassword,
 		Role:         "user",
-		IsApproved:   false, // Yêu cầu Admin phê duyệt thủ công
+		IsApproved:   false, // Requires admin approval
 	})
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi tạo tài khoản"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to create account"})
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "Đăng ký thành công. Vui lòng chờ Quản trị viên phê duyệt tài khoản.",
+		"message": "Registration successful. Please wait for Administrator approval.",
 		"user": UserResponse{
 			ID:         user.ID,
 			Username:   user.Username,
@@ -115,7 +115,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Login xử lý đăng nhập, xác thực mật khẩu, kiểm tra trạng thái duyệt và cấp phát JWT Token (kèm HttpOnly Cookie).
+// Login handles authentication, password verification, approval checks, and issues JWT tokens (with HttpOnly Cookies).
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -130,7 +130,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			req.Password = r.FormValue("password")
 			if req.Username == "" && req.Password == "" {
 				w.WriteHeader(http.StatusBadRequest)
-				_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Dữ liệu JSON không hợp lệ"})
+				_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Invalid JSON payload"})
 				return
 			}
 		}
@@ -139,37 +139,37 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	req.Username = strings.TrimSpace(req.Username)
 	req.Password = strings.TrimSpace(req.Password)
 
-	// 1. Kiểm tra sự tồn tại của User trong PostgreSQL
+	// 1. Check user existence in PostgreSQL
 	user, err := db.Queries.GetUserByUsername(r.Context(), req.Username)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Sai tên đăng nhập hoặc mật khẩu"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Invalid username or password"})
 		return
 	}
 
-	// 2. Kiểm tra mật khẩu băm Bcrypt
+	// 2. Verify password with Bcrypt
 	if !security.VerifyPassword(req.Password, user.PasswordHash) {
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Sai tên đăng nhập hoặc mật khẩu"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Invalid username or password"})
 		return
 	}
 
-	// 3. Kiểm tra trạng thái duyệt tài khoản của Admin
+	// 3. Check admin approval status
 	if !user.IsApproved {
 		w.WriteHeader(http.StatusForbidden)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Tài khoản của bạn chưa được Quản trị viên phê duyệt"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Your account is pending Administrator approval"})
 		return
 	}
 
-	// 4. Tạo mã JWT Access Token
+	// 4. Generate JWT Access Token
 	accessToken, err := security.CreateAccessToken(user.Username, user.Role, h.Config.SecretKey, h.Config.AccessTokenExpireMinutes)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi tạo Token xác thực"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to generate authentication token"})
 		return
 	}
 
-	// 5. Gửi Cookie bảo mật HttpOnly về cho Browser Client
+	// 5. Send secure HttpOnly cookie to browser client
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
 		Value:    "Bearer " + accessToken,
@@ -180,18 +180,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   h.Config.AccessTokenExpireMinutes * 60,
 	})
 
-	// Cập nhật trạng thái Online lên Redis
+	// Touch online status in Redis
 	state.TouchUserOnline(r.Context(), user.ID)
 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]interface{}{
 		"access_token": accessToken,
 		"token_type":   "bearer",
-		"message":      "Đăng nhập thành công",
+		"message":      "Login successful",
 		"role":         user.Role,
 	})
 }
 
-// Logout xử lý đăng xuất bằng cách xoá Cookie access_token trên trình duyệt.
+// Logout clears the access_token cookie in browser.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	http.SetCookie(w, &http.Cookie{
@@ -201,7 +201,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		MaxAge:   -1,
 	})
-	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã đăng xuất"})
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Logged out successfully"})
 }
 
 // Me trả về thông tin chi tiết của người dùng đang đăng nhập dựa trên JWT Token.

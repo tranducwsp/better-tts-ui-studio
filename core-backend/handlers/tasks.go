@@ -28,7 +28,7 @@ func (h *TasksHandler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
 	task, ok := state.GlobalTaskManager.Get(taskID)
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Không tìm thấy task"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Task not found"})
 		return
 	}
 
@@ -38,16 +38,16 @@ func (h *TasksHandler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CancelTask hủy một Task đang chạy hoặc đang chờ trong hàng đợi.
+// CancelTask cancels a running or pending task.
 func (h *TasksHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	taskID := chi.URLParam(r, "task_id")
 
 	state.GlobalTaskManager.Cancel(taskID)
-	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã yêu cầu hủy"})
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Cancellation requested"})
 }
 
-// GetTaskAudio lấy file dữ liệu âm thanh (WAV hoặc MP3) sau khi Task hoàn thành.
+// GetTaskAudio gets audio bytes (WAV or MP3) after task completes.
 func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "task_id")
 	format := strings.ToLower(r.URL.Query().Get("format"))
@@ -68,7 +68,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Fallback 1: Đọc file từ đĩa storage/temp/{taskID}.wav
+	// Fallback 1: Read file from disk storage/temp/{taskID}.wav
 	filePathWAV := filepath.Join("storage/temp", taskID+".wav")
 	if wavBytes, err := os.ReadFile(filePathWAV); err == nil && len(wavBytes) > 0 {
 		w.Header().Set("Content-Type", "audio/wav")
@@ -77,7 +77,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fallback 2: Đọc file từ đĩa storage/temp/{taskID}.mp3
+	// Fallback 2: Read file from disk storage/temp/{taskID}.mp3
 	filePathMP3 := filepath.Join("storage/temp", taskID+".mp3")
 	if mp3Bytes, err := os.ReadFile(filePathMP3); err == nil && len(mp3Bytes) > 0 {
 		w.Header().Set("Content-Type", "audio/mpeg")
@@ -88,7 +88,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusNotFound)
-	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Audio chưa sẵn sàng"})
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Audio is not ready"})
 }
 
 // StreamTaskProgress truyền dữ liệu tiến độ thời gian thực (Real-time SSE Stream) qua kết nối HTTP Persistent/Event-Stream.

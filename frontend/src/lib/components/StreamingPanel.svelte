@@ -25,7 +25,7 @@
   let chunks = $state<ChunkState[]>([]);
   let currentPlayIndex = $state<number>(-1);
   let totalRetries = $state<number>(0);
-  let statusBadge = $state<string>('Đang khởi chạy...');
+  let statusBadge = $state<string>('Initializing...');
   let isCompleted = $state(false);
   let isCancelled = $state(false);
   let currentJobId = $state<string>('');
@@ -117,7 +117,7 @@
 
       currentPlayIndex = -1;
       currentJobId = reloadedJob.job_id || 'job_' + Date.now();
-      statusBadge = 'Đã nạp từ Lịch sử';
+      statusBadge = 'Loaded from History';
       isCompleted = chunks.every((c) => c.status === 'ready');
       isCancelled = true; // Mark as paused by default when reloaded from history
 
@@ -170,7 +170,7 @@
       // Skip already ready chunks when reloaded
       if (item.status === 'ready') continue;
 
-      statusBadge = `Đang tạo Đoạn ${i + 1}/${chunks.length}...`;
+      statusBadge = `Generating Chunk ${i + 1}/${chunks.length}...`;
 
       let success = false;
       let lastError = null;
@@ -181,7 +181,7 @@
         if (attempt > 1) {
           totalRetries++;
           item.status = 'retrying';
-          statusBadge = `Đang thử lại Đoạn ${i + 1}/${chunks.length} (Lần ${attempt}/3)...`;
+          statusBadge = `Retrying Chunk ${i + 1}/${chunks.length} (Attempt ${attempt}/3)...`;
           await new Promise((r) => setTimeout(r, 2000));
         }
 
@@ -225,14 +225,14 @@
 
       if (!success) {
         item.status = 'error';
-        toast.show(`Đoạn ${i + 1} thất bại: ${lastError ? lastError.message : 'Lỗi không xác định'}`, 'error');
+        toast.show(`Chunk ${i + 1} failed: ${lastError ? lastError.message : 'Unknown error'}`, 'error');
       }
     }
 
     if (!isCancelled) {
       isCompleted = true;
-      statusBadge = 'Hoàn tất toàn bộ!';
-      toast.show('Tổng hợp toàn bộ các đoạn thành công!', 'success');
+      statusBadge = 'Completed!';
+      toast.show('All chunks synthesized successfully!', 'success');
     }
   }
 
@@ -266,26 +266,26 @@
 
   function handleCancel() {
     isCancelled = true;
-    statusBadge = 'Đã tạm dừng tiến trình';
-    toast.show('Đã tạm dừng tiến trình phát', 'info');
+    statusBadge = 'Stream paused';
+    toast.show('Playback stream paused', 'info');
   }
 
   function handleResume() {
     isCancelled = false;
-    statusBadge = 'Đang tiếp tục tạo...';
-    toast.show('Đang tiếp tục tổng hợp...', 'info');
+    statusBadge = 'Resuming generation...';
+    toast.show('Resuming synthesis...', 'info');
     generateChunksLoop();
   }
 
   function downloadCombinedAudio() {
-    toast.show('Đang gộp âm thanh toàn bộ các đoạn...', 'info');
+    toast.show('Combining all chunk audio files...', 'info');
     const validBlobs = chunks.filter((c) => c.blob).map((c) => c.blob as Blob);
     if (validBlobs.length === 0) return;
     const finalBlob = new Blob(validBlobs, { type: 'audio/wav' });
     const url = URL.createObjectURL(finalBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'vieneu_full_stream.wav';
+    a.download = 'voice_full_stream.wav';
     a.click();
   }
 </script>
@@ -293,7 +293,7 @@
 <div class="glass-panel" style="margin-top: 1.5rem; background: rgba(15, 23, 42, 0.85); border: 1px solid var(--primary); box-shadow: 0 10px 30px rgba(99, 102, 241, 0.2);">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
     <h3 style="color: var(--primary); font-size: 1.1rem; margin: 0; display: flex; align-items: center; gap: 8px;">
-      <i class="fa-solid fa-compact-disc fa-spin"></i> Tiến Trình Tạo & Phát Audio (Streaming)
+      <i class="fa-solid fa-compact-disc fa-spin"></i> Audio Generation & Streaming Progress
     </h3>
     <span style="font-size: 0.85rem; padding: 4px 12px; border-radius: 12px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 500;">
       {statusBadge}
@@ -302,11 +302,11 @@
 
   <!-- Row 1: Chunk selector buttons -->
   <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; display: flex; justify-content: space-between;">
-    <span><i class="fa-solid fa-list-ol"></i> Danh sách các đoạn (Lăn chuột ngang hoặc bấm để nhảy tới đoạn):</span>
+    <span><i class="fa-solid fa-list-ol"></i> Chunk list (Scroll horizontally or click to jump):</span>
     <div>
       {#if totalRetries > 0}
         <span style="color: #a855f7; font-weight: 600; margin-right: 10px;">
-          <i class="fa-solid fa-rotate-right"></i> {totalRetries} thử lại
+          <i class="fa-solid fa-rotate-right"></i> {totalRetries} retries
         </span>
       {/if}
       <span style="color: #f59e0b; font-weight: 600;">{readyCount} / {chunks.length}</span>
@@ -324,9 +324,9 @@
           color: {c.status === 'playing' || c.status === 'retrying' || c.status === 'error' ? '#ffffff' : (c.status === 'ready' ? '#1e293b' : '#94a3b8')};
           border-color: {c.status === 'playing' ? '#059669' : (c.status === 'ready' ? '#d97706' : (c.status === 'retrying' ? '#7e22ce' : (c.status === 'error' ? '#b91c1c' : 'rgba(255,255,255,0.1)')))};
         "
-        title="Bấm để nghe Đoạn {i + 1}"
+        title="Click to play Chunk {i + 1}"
       >
-        Đoạn {i + 1}: {c.text.substring(0, 20).replace(/\n/g, ' ')}...
+        Chunk {i + 1}: {c.text.substring(0, 20).replace(/\n/g, ' ')}...
       </button>
     {/each}
   </div>
@@ -334,9 +334,9 @@
   <!-- Row 2: Audio Player & Action Controls -->
   <div style="margin-top: 8px; background: rgba(0,0,0,0.3); padding: 14px; border-radius: 10px; text-align: center;">
     <p style="font-size: 0.9rem; color: #fff; margin-bottom: 8px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-      <i class="fa-solid fa-music" style="color: var(--primary);"></i> Đang chọn:
+      <i class="fa-solid fa-music" style="color: var(--primary);"></i> Currently playing:
       <span style="color: #94a3b8; font-style: italic;">
-        {currentChunk ? `Đoạn ${currentChunk.index + 1}: ${currentChunk.text.substring(0, 40)}...` : 'Chưa phát đoạn nào'}
+        {currentChunk ? `Chunk ${currentChunk.index + 1}: ${currentChunk.text.substring(0, 40)}...` : 'No chunk selected'}
       </span>
     </p>
 
@@ -350,25 +350,25 @@
     <div style="display: flex; gap: 12px; justify-content: center; align-items: center; margin-top: 10px; flex-wrap: wrap;">
       {#if !isCompleted && !isCancelled}
         <button onclick={handleCancel} class="btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; background: #ef4444; color: white; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-          <i class="fa-solid fa-pause"></i> Tạm dừng tạo
+          <i class="fa-solid fa-pause"></i> Pause Generation
         </button>
       {/if}
 
       {#if isCancelled && !isCompleted}
         <button onclick={handleResume} class="btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; background: #10b981; color: white; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-          <i class="fa-solid fa-play"></i> Tiếp tục tạo
+          <i class="fa-solid fa-play"></i> Resume Generation
         </button>
       {/if}
 
       {#if currentChunk && currentChunk.blobUrl}
-        <a href={currentChunk.blobUrl} download="doan_{currentChunk.index + 1}.wav" class="btn secondary-btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; background: #6366f1; color: white; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
-          <i class="fa-solid fa-download"></i> WAV (Đoạn {currentChunk.index + 1})
+        <a href={currentChunk.blobUrl} download="chunk_{currentChunk.index + 1}.wav" class="btn secondary-btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; background: #6366f1; color: white; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-download"></i> WAV (Chunk {currentChunk.index + 1})
         </a>
       {/if}
 
       {#if isCompleted}
         <button onclick={downloadCombinedAudio} class="btn secondary-btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; background: #10b981; color: white; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border: none;">
-          <i class="fa-solid fa-download"></i> Tải toàn bộ WAV
+          <i class="fa-solid fa-download"></i> Download Full WAV
         </button>
       {/if}
     </div>

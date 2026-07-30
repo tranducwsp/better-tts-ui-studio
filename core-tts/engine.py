@@ -42,20 +42,20 @@ def cleanup_tasks_db():
         tasks_db.pop(tid, None)
 
 DEFAULT_PRESET_VOICES = [
-    {"id": "Minh Đức", "name": "Minh Đức", "descriptions": ["Nam", "Miền Bắc", "Truyền cảm"]},
-    {"id": "Phạm Tuyên", "name": "Phạm Tuyên", "descriptions": ["Nam", "Miền Nam", "Báo chí"]},
-    {"id": "Thái Sơn", "name": "Thái Sơn", "descriptions": ["Nam", "Miền Trung", "Tự nhiên"]},
-    {"id": "Xuân Vĩnh", "name": "Xuân Vĩnh", "descriptions": ["Nam", "Miền Bắc", "Truyện đọc"]},
-    {"id": "Thanh Bình", "name": "Thanh Bình", "descriptions": ["Nam", "Miền Nam", "Trầm ấm"]},
-    {"id": "Trúc Ly", "name": "Trúc Ly", "descriptions": ["Nữ", "Miền Nam", "Tự nhiên"]},
-    {"id": "Ngọc Linh", "name": "Ngọc Linh", "descriptions": ["Nữ", "Miền Bắc", "Truyền cảm"]},
-    {"id": "Đoan Trang", "name": "Đoan Trang", "descriptions": ["Nữ", "Miền Bắc", "Trang trọng"]},
-    {"id": "Mai Anh", "name": "Mai Anh", "descriptions": ["Nữ", "Miền Nam", "Nhẹ nhàng"]},
-    {"id": "Thục Đoan", "name": "Thục Đoan", "descriptions": ["Nữ", "Miền Nam", "Ấm áp"]},
-    {"id": "Minh Triết", "name": "Minh Triết", "descriptions": ["Nam", "Miền Bắc", "Thuyết minh"]},
-    {"id": "Thùy Dung", "name": "Thùy Dung", "descriptions": ["Nữ", "Miền Trung", "Tự nhiên"]},
-    {"id": "Quang Sơn", "name": "Quang Sơn", "descriptions": ["Nam", "Miền Bắc", "Trầm ấm"]},
-    {"id": "Ngọc Trân", "name": "Ngọc Trân", "descriptions": ["Nữ", "Miền Nam", "Trong trẻo"]}
+    {"id": "Minh Đức", "name": "Minh Đức", "descriptions": ["Male", "Northern", "Expressive"]},
+    {"id": "Phạm Tuyên", "name": "Phạm Tuyên", "descriptions": ["Male", "Southern", "News"]},
+    {"id": "Thái Sơn", "name": "Thái Sơn", "descriptions": ["Male", "Central", "Natural"]},
+    {"id": "Xuân Vĩnh", "name": "Xuân Vĩnh", "descriptions": ["Male", "Northern", "Audiobook"]},
+    {"id": "Thanh Bình", "name": "Thanh Bình", "descriptions": ["Male", "Southern", "Warm / Deep"]},
+    {"id": "Trúc Ly", "name": "Trúc Ly", "descriptions": ["Female", "Southern", "Natural"]},
+    {"id": "Ngọc Linh", "name": "Ngọc Linh", "descriptions": ["Female", "Northern", "Expressive"]},
+    {"id": "Đoan Trang", "name": "Đoan Trang", "descriptions": ["Female", "Northern", "Formal"]},
+    {"id": "Mai Anh", "name": "Mai Anh", "descriptions": ["Female", "Southern", "Gentle"]},
+    {"id": "Thục Đoan", "name": "Thục Đoan", "descriptions": ["Female", "Southern", "Warm"]},
+    {"id": "Minh Triết", "name": "Minh Triết", "descriptions": ["Male", "Northern", "Narrative"]},
+    {"id": "Thùy Dung", "name": "Thùy Dung", "descriptions": ["Female", "Central", "Natural"]},
+    {"id": "Quang Sơn", "name": "Quang Sơn", "descriptions": ["Male", "Northern", "Warm / Deep"]},
+    {"id": "Ngọc Trân", "name": "Ngọc Trân", "descriptions": ["Female", "Southern", "Clear"]}
 ]
 
 def get_preset_voices():
@@ -63,12 +63,12 @@ def get_preset_voices():
     # 1. Fast Edge TTS voices
     for k, v in FAST_VOICES.items():
         if not any(x["id"] == v for x in voices):
-            gender = "Nữ" if "Nữ" in k else "Nam"
-            region = "Miền Nam" if "Hoài Mỹ" in k else "Miền Bắc"
+            gender = "Female" if "Nữ" in k or "Female" in k else "Male"
+            region = "Southern" if "Hoài Mỹ" in k else "Northern"
             voices.append({
                 "id": v,
                 "name": k,
-                "descriptions": [gender, region, "Tự nhiên"]
+                "descriptions": [gender, region, "Natural"]
             })
 
     # 2. Standard voices

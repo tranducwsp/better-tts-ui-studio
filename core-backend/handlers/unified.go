@@ -138,7 +138,7 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	var req UnifiedSynthesizeRequest
 	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Văn bản không hợp lệ"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Invalid text input"})
 		return
 	}
 

@@ -6,7 +6,7 @@ export async function fetchManifest(): Promise<UniversalManifest | null> {
     if (!res.ok) return null;
     return await res.json();
   } catch (err) {
-    console.error('Lỗi fetchManifest:', err);
+    console.error('fetchManifest error:', err);
     return null;
   }
 }
@@ -31,7 +31,7 @@ export async function loginUser(username: string, password: string): Promise<Use
 
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.detail || 'Đăng nhập thất bại');
+    throw new Error(data.detail || 'Login failed');
   }
   return data.user || data;
 }
@@ -46,7 +46,7 @@ export async function registerUser(username: string, password: string): Promise<
 
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.detail || 'Đăng ký thất bại');
+    throw new Error(data.detail || 'Registration failed');
   }
   return data.user || data;
 }
@@ -62,7 +62,7 @@ export async function logout(): Promise<void> {
 
 export async function fetchAdminUsers(): Promise<UserResponse[]> {
   const res = await fetch('/api/admin/users', { credentials: 'include' });
-  if (!res.ok) throw new Error('Không thể lấy danh sách người dùng');
+  if (!res.ok) throw new Error('Failed to fetch user list');
   return await res.json();
 }
 
@@ -71,7 +71,7 @@ export async function approveUser(userId: string): Promise<void> {
     method: 'POST',
     credentials: 'include',
   });
-  if (!res.ok) throw new Error('Không thể duyệt người dùng');
+  if (!res.ok) throw new Error('Failed to approve user');
 }
 
 export function parseVoiceItem(v: any): VoiceOption {
@@ -93,7 +93,7 @@ export function parseVoiceItem(v: any): VoiceOption {
 export async function fetchVoices(modelId: string = 'standard'): Promise<VoiceOption[]> {
   try {
     const res = await fetch(`/api/voices/${modelId}`, { credentials: 'include' });
-    if (!res.ok) throw new Error('Không thể tải giọng');
+    if (!res.ok) throw new Error('Failed to load voices');
     const data = await res.json();
     if (Array.isArray(data)) {
       return data.map(parseVoiceItem);
@@ -103,7 +103,7 @@ export async function fetchVoices(modelId: string = 'standard'): Promise<VoiceOp
     }
     return [];
   } catch (err) {
-    console.error('Lỗi fetchVoices:', err);
+    console.error('fetchVoices error:', err);
     return [];
   }
 }
@@ -127,7 +127,7 @@ export async function fetchPresets(modelId?: string): Promise<Preset[]> {
     }
     return data.presets || [];
   } catch (err) {
-    console.error('Lỗi fetchPresets:', err);
+    console.error('fetchPresets error:', err);
     return [];
   }
 }
@@ -137,7 +137,7 @@ export async function deleteCloneVoice(id: string): Promise<void> {
     method: 'DELETE',
     credentials: 'include',
   });
-  if (!res.ok) throw new Error('Không thể xóa giọng mẫu');
+  if (!res.ok) throw new Error('Failed to delete voice sample');
 }
 
 export async function extractTextFromFile(file: File): Promise<string> {
@@ -149,7 +149,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
     credentials: 'include',
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || 'Lỗi đọc file');
+  if (!res.ok) throw new Error(data.detail || 'Error reading file');
   return data.text || '';
 }
 
@@ -177,7 +177,7 @@ export async function synthesize(
     credentials: 'include',
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || 'Lỗi tổng hợp âm thanh');
+  if (!res.ok) throw new Error(data.detail || 'Audio synthesis failed');
   return data.task_id || data.id || '';
 }
 
@@ -214,7 +214,7 @@ export async function synthesizeClone(
   return synthesize(text, voice, speed, 'clone', jobId, chunkIndex, totalChunks);
 }
 
-export async function cloneVoice(file: File, name: string, gender = 'Nam', region = 'Miền Bắc', style = 'Truyền cảm', modelId = 'clone'): Promise<string> {
+export async function cloneVoice(file: File, name: string, gender = 'Male', region = 'Northern', style = 'Expressive', modelId = 'clone'): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('name', name);
@@ -228,7 +228,7 @@ export async function cloneVoice(file: File, name: string, gender = 'Nam', regio
     credentials: 'include',
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || 'Lỗi clone giọng');
+  if (!res.ok) throw new Error(data.detail || 'Voice cloning failed');
   return data.id || data.clone_id || '';
 }
 
@@ -242,7 +242,7 @@ export async function cloneVoiceTemp(file: File, modelId = 'clone'): Promise<str
     credentials: 'include',
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || 'Lỗi tải giọng tạm');
+  if (!res.ok) throw new Error(data.detail || 'Failed to upload temporary voice');
   return data.id || data.clone_id || '';
 }
 
@@ -264,7 +264,7 @@ export function subscribeTaskStream(
         eventSource.close();
         const audioRes = await fetch(`/api/tasks/${taskId}/audio?format=wav`, { credentials: 'include' });
         if (!audioRes.ok) {
-          onError('Không thể tải file audio .wav từ máy chủ');
+          onError('Failed to load audio file .wav from server');
           return;
         }
         const blob = await audioRes.blob();
@@ -272,19 +272,19 @@ export function subscribeTaskStream(
         onComplete(blob, mp3Url);
       } else if (data.status === 'error' || data.status === 'failed') {
         eventSource.close();
-        onError(data.error || 'Lỗi xử lý AI từ server');
+        onError(data.error || 'AI processing error from server');
       } else if (data.status === 'cancelled') {
         eventSource.close();
-        onError('Tác vụ đã bị hủy');
+        onError('Task was cancelled');
       }
     } catch (err: any) {
-      console.error('Lỗi parse SSE task stream:', err);
+      console.error('Error parsing SSE task stream:', err);
     }
   };
 
   eventSource.onerror = (err) => {
     eventSource.close();
-    onError('Lỗi kết nối luồng âm thanh Stream SSE từ máy chủ');
+    onError('Error connecting to Audio Stream SSE from server');
   };
 
   return () => {
@@ -294,6 +294,6 @@ export function subscribeTaskStream(
 
 export async function fetchHistory(): Promise<HistoryItem[]> {
   const res = await fetch('/api/history', { credentials: 'include' });
-  if (!res.ok) throw new Error('Không thể tải lịch sử');
+  if (!res.ok) throw new Error('Failed to fetch history');
   return await res.json();
 }

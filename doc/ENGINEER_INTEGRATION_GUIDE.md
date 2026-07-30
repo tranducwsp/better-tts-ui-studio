@@ -98,7 +98,7 @@ class UISchemaSpec(BaseModel):
         "standard": ModelOptionSpec(
             notice_banner=NoticeBannerSpec(
                 level="info",
-                message="Đang dùng mô hình Tiêu chuẩn với độ trung thực cao."
+                message="Using high-fidelity Standard Model."
             ),
             voice_type="select",
             speed_type="slider"
@@ -113,10 +113,10 @@ class UISchemaSpec(BaseModel):
 When users upload audio to create a cloned voice, the modal form can adapt to demand custom attributes required by your model (e.g., Accent, Age, Pitch tier, Style):
 
 ```python
-VoiceMetadataFieldSpec(key="name", label="Tên giọng", type="text", required=True),
-VoiceMetadataFieldSpec(key="gender", label="Giới tính", type="select", options=["Nam", "Nữ", "Khác"]),
-VoiceMetadataFieldSpec(key="accent", label="Giọng vùng miền", type="select", options=["Miền Bắc", "Miền Nam", "Miền Trung"]),
-VoiceMetadataFieldSpec(key="pitch_tier", label="Tông giọng", type="select", options=["Trầm", "Trung bình", "Cao"])
+VoiceMetadataFieldSpec(key="name", label="Voice Name", type="text", required=True),
+VoiceMetadataFieldSpec(key="gender", label="Gender", type="select", options=["Male", "Female", "Other"]),
+VoiceMetadataFieldSpec(key="accent", label="Accent / Region", type="select", options=["North American", "British", "Australian", "Other"]),
+VoiceMetadataFieldSpec(key="pitch_tier", label="Pitch Tier", type="select", options=["Low", "Medium", "High"])
 ```
 
 ---

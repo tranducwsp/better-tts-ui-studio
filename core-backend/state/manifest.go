@@ -49,15 +49,15 @@ func (s *EngineManifestState) ValidateRequest(text string, speed float64, mode s
 
 	runeCount := len([]rune(text))
 	if m.Constraints.MaxTextLength > 0 && runeCount > m.Constraints.MaxTextLength {
-		return fmt.Errorf("độ dài văn bản (%d ký tự) vượt quá giới hạn tối đa (%d ký tự)", runeCount, m.Constraints.MaxTextLength)
+		return fmt.Errorf("text length (%d characters) exceeds maximum limit (%d characters)", runeCount, m.Constraints.MaxTextLength)
 	}
 
 	if m.Constraints.SpeedRange.Min > 0 && speed < m.Constraints.SpeedRange.Min {
-		return fmt.Errorf("tốc độ %.2f nhỏ hơn giới hạn tối thiểu (%.2f)", speed, m.Constraints.SpeedRange.Min)
+		return fmt.Errorf("speed %.2f is below minimum limit (%.2f)", speed, m.Constraints.SpeedRange.Min)
 	}
 
 	if m.Constraints.SpeedRange.Max > 0 && speed > m.Constraints.SpeedRange.Max {
-		return fmt.Errorf("tốc độ %.2f vượt quá giới hạn tối đa (%.2f)", speed, m.Constraints.SpeedRange.Max)
+		return fmt.Errorf("speed %.2f exceeds maximum limit (%.2f)", speed, m.Constraints.SpeedRange.Max)
 	}
 
 	if mode != "" && len(m.SupportedModes) > 0 {
@@ -69,7 +69,7 @@ func (s *EngineManifestState) ValidateRequest(text string, speed float64, mode s
 			}
 		}
 		if !validMode {
-			return fmt.Errorf("chế độ engine '%s' không nằm trong danh sách hỗ trợ của AI Engine", mode)
+			return fmt.Errorf("engine mode '%s' is not supported by AI Engine", mode)
 		}
 	}
 

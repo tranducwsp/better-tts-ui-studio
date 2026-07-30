@@ -14,38 +14,46 @@
   // Svelte 5 states using runes
   let activeTab = $state<string>('fast');
   let mainText = $state(
-    'Xin chào! Chào mừng bạn đến với AI Voice Studio. Chúc bạn có những trải nghiệm thật thú vị!'
+    'Hello! Welcome to AI Voice Studio. Experience high-quality neural voice synthesis!'
   );
   let isReadOnly = $state(false);
   let reloadedJob = $state<any | null>(null);
   let voices = $state<VoiceOption[]>([]);
+  let { initialManifest = null } = $props<{ initialManifest?: UniversalManifest | null }>();
   let currentUser = $state<UserResponse | null>(null);
-  let manifest = $state<UniversalManifest | null>(null);
+  let manifest = $state<UniversalManifest | null>(initialManifest);
+
+  // Synchronize state from props during hydration
+  $effect(() => {
+    if (initialManifest && !manifest) {
+      manifest = initialManifest;
+    }
+  });
 
   // Dynamic tab ordering derived from manifest ui_schema
   let activeModes = $derived.by(() => {
     if (!manifest) {
       return [
-        { id: 'fast', name: 'Siêu Nhanh', icon: 'fa-bolt' },
-        { id: 'standard', name: 'TTS Cơ Bản', icon: 'fa-wave-square' },
-        { id: 'clone', name: 'Giọng Clone', icon: 'fa-users-viewfinder' }
+        { id: 'fast', name: 'Ultra Fast', icon: 'fa-bolt' },
+        { id: 'standard', name: 'Standard Neural', icon: 'fa-wave-square' },
+        { id: 'clone', name: 'Voice Clone', icon: 'fa-users-viewfinder' }
       ];
     }
     const sortOrder = manifest.ui_schema?.model_sort;
     const allModes = manifest.supported_modes || [];
+    const cleanName = (name: string) => name.replace(/\s+(Engine|Model)$/i, '');
     if (sortOrder && sortOrder.length > 0) {
       return sortOrder.map((id) => {
         const modeSpec = allModes.find((m) => m.id === id);
         return {
           id,
-          name: modeSpec ? modeSpec.name : id.toUpperCase(),
-          icon: id === 'fast' ? 'fa-bolt' : id === 'standard' ? 'fa-wave-square' : id === 'clone' ? 'fa-users-viewfinder' : 'fa-sliders'
+          name: modeSpec ? cleanName(modeSpec.name) : cleanName(id.toUpperCase())
         };
       });
     }
     return allModes.map((m) => ({
       ...m,
-      icon: m.id === 'fast' ? 'fa-bolt' : m.id === 'standard' ? 'fa-wave-square' : m.id === 'clone' ? 'fa-users-viewfinder' : 'fa-sliders'
+      name: cleanName(m.name)
     }));
   });
 
@@ -68,49 +76,26 @@
   let adminTargetUserId = $state<string | null>(null);
   let adminTargetUsername = $state<string | null>(null);
 
+  // Standardized Runtime Lifecycle: Only check session auth on mount
   onMount(() => {
-    // Check Auth status once on mount
     checkCurrentUser().then((user) => {
       currentUser = user;
-      if (user) {
-        loadData();
-      } else {
+      if (!user) {
         isAuthOpen = true;
       }
     });
   });
 
-  async function loadData() {
-    loadVoices();
-    try {
-      const m = await fetchManifest();
-      if (m) {
-        manifest = m;
-      }
-    } catch (e) {
-      console.error('Failed to load manifest', e);
-    }
-  }
-
-  function loadVoices() {
-    fetchVoices().then((v) => {
-      if (v && v.length > 0) {
-        voices = v;
-      }
-    });
-  }
-
   function handleAuthSuccess(user: UserResponse) {
     currentUser = user;
     isAuthOpen = false;
-    loadData();
   }
 
   async function handleLogout() {
     await logout();
     currentUser = null;
     isAuthOpen = true;
-    toast.show('Đã đăng xuất', 'info');
+    toast.show('Logged out successfully', 'info');
   }
 
   function selectTab(tab: 'fasttts' | 'standard' | 'clone') {
@@ -137,7 +122,7 @@
       activeTab = job.engine;
     }
     isHistoryOpen = false;
-    toast.show(`Đã nạp lại tác vụ ${job.job_id ? job.job_id.substring(0, 8) : ''}!`, 'success');
+    toast.show(`Reloaded task ${job.job_id ? job.job_id.substring(0, 8) : ''}!`, 'success');
   }
 </script>
 
@@ -163,32 +148,29 @@
 
     <!-- Main Tabs dynamically ordered by Manifest -->
     <div id="main-tabs-container" style="margin-bottom: 1.5rem; width: 100%;">
-      <div class="tabs" style="margin-bottom: 0; width: 100%; display: flex; gap: 10px;">
+      <div class="tabs">
         {#each activeModes as mode (mode.id)}
           <button
             class="tab-btn"
             class:active={activeTab === mode.id || (activeTab === 'fasttts' && mode.id === 'fast')}
             onclick={() => activeTab = mode.id}
-            style="flex: 1;"
           >
-            <i class="fa-solid {mode.icon}"></i> {mode.name}
+            {mode.name}
           </button>
         {/each}
       </div>
     </div>
 
     <!-- Universal Dynamic Audio Settings & Generation Panel -->
-    {#if manifest}
-      <div class="glass-panel" style="margin-bottom: 1.5rem;">
-        <GenericEnginePanel
-          text={mainText}
-          activeMode={currentModeSpec}
-          {manifest}
-          bind:voices={voices}
-          {reloadedJob}
-        />
-      </div>
-    {/if}
+    <div class="glass-panel" style="margin-bottom: 1.5rem; min-height: 360px;">
+      <GenericEnginePanel
+        text={mainText}
+        activeMode={currentModeSpec}
+        {manifest}
+        bind:voices={voices}
+        {reloadedJob}
+      />
+    </div>
   </main>
 
   <footer>

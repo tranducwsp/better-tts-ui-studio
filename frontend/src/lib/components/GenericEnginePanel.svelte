@@ -40,12 +40,21 @@
     return modeVoices;
   });
 
+  // Default derived constraints
+  let defaultSpeed = $derived(manifest?.constraints?.speed_range?.default ?? 1.0);
+  let defaultPitch = $derived(manifest?.constraints?.pitch_range?.default ?? 0.0);
+
   // States
   let selectedVoice = $state('');
-  let speed = $state(manifest?.constraints?.speed_range?.default || 1.0);
-  let pitch = $state(manifest?.constraints?.pitch_range?.default || 0.0);
+  let speed = $state(1.0);
+  let pitch = $state(0.0);
   let selectedEmotion = $state('');
   let referenceAudioPath = $state('');
+
+  $effect(() => {
+    speed = defaultSpeed;
+    pitch = defaultPitch;
+  });
   let isCloningTemp = $state(false);
   let isCreateModalOpen = $state(false);
 
@@ -57,10 +66,10 @@
   let mp3AudioUrl = $state<string | null>(null);
   let unsubscribeStream = $state<(() => void) | null>(null);
 
-  // Dynamically load mode-specific voices when activeMode changes
+  // Only fetch custom library voices if mode explicitly supports user voice saving and has no preset voices
   $effect(() => {
     const currentModeId = activeMode.id;
-    if (supportsPresetVoices || supportsVoiceSaving) {
+    if (supportsVoiceSaving && (!presetVoices || presetVoices.length === 0)) {
       fetchVoices(currentModeId).then((v) => {
         modeVoices = v || [];
         if (modeVoices.length > 0 && !selectedVoice) {
@@ -93,13 +102,13 @@
     if (!target.files?.length) return;
     const file = target.files[0];
     isCloningTemp = true;
-    toast.show('Đang xử lý file âm thanh mẫu...', 'info');
+    toast.show('Processing reference audio file...', 'info');
     try {
       const tempPath = await cloneVoiceTemp(file);
       referenceAudioPath = tempPath;
-      toast.show('Đã nạp file âm thanh mẫu thành công!', 'success');
+      toast.show('Reference audio file loaded successfully!', 'success');
     } catch (err: any) {
-      toast.show('Lỗi nạp file mẫu: ' + err.message, 'error');
+      toast.show('Error loading reference file: ' + err.message, 'error');
     } finally {
       isCloningTemp = false;
       target.value = '';
@@ -109,14 +118,14 @@
   function handleTrimmedAudio(blob: Blob) {
     const file = new File([blob], 'trimmed_reference.wav', { type: 'audio/wav' });
     isCloningTemp = true;
-    toast.show('Đang tải lên đoạn âm thanh đã cắt...', 'info');
+    toast.show('Uploading trimmed audio sample...', 'info');
     cloneVoiceTemp(file)
       .then((path) => {
         referenceAudioPath = path;
-        toast.show('Đã cập nhật file mẫu từ bộ cắt âm thanh!', 'success');
+        toast.show('Reference audio updated from trimmer!', 'success');
       })
       .catch((err) => {
-        toast.show('Lỗi tải file đã cắt: ' + err.message, 'error');
+        toast.show('Error uploading trimmed audio: ' + err.message, 'error');
       })
       .finally(() => {
         isCloningTemp = false;
@@ -125,12 +134,12 @@
 
   async function handleSynthesize() {
     if (!text.trim()) {
-      toast.show('Vui lòng nhập nội dung văn bản!', 'error');
+      toast.show('Please enter text content!', 'error');
       return;
     }
 
     if (supportsCloning && !referenceAudioPath && !selectedVoice) {
-      toast.show('Vui lòng tải lên file âm thanh mẫu hoặc chọn giọng clone!', 'error');
+      toast.show('Please upload a reference audio file or select a cloned voice!', 'error');
       return;
     }
 
@@ -151,23 +160,32 @@
           (prog) => {
             progress = prog;
           },
-          (doneWavUrl) => {
+          (doneWavBlob: any, mp3Url?: string) => {
             isLoading = false;
-            wavBlobUrl = doneWavUrl;
-            toast.show('Tổng hợp âm thanh hoàn tất!', 'success');
+            isStreaming = false;
+            if (doneWavBlob instanceof Blob) {
+              wavBlobUrl = URL.createObjectURL(doneWavBlob);
+            } else if (typeof doneWavBlob === 'string') {
+              wavBlobUrl = doneWavBlob;
+            }
+            if (mp3Url) {
+              mp3AudioUrl = mp3Url;
+            }
+            toast.show('Audio synthesis completed!', 'success');
           },
           (err) => {
             isLoading = false;
-            toast.show('Lỗi tiến trình: ' + err, 'error');
+            isStreaming = false;
+            toast.show('Process error: ' + err, 'error');
           }
         );
       } else {
-        toast.show('Yêu cầu đã gửi thành công!', 'success');
+        toast.show('Request submitted successfully!', 'success');
         isLoading = false;
       }
     } catch (err: any) {
       isLoading = false;
-      toast.show('Lỗi tổng hợp: ' + err.message, 'error');
+      toast.show('Synthesis error: ' + err.message, 'error');
     }
   }
 
@@ -177,16 +195,25 @@
       unsubscribeStream = null;
     }
     isLoading = false;
-    toast.show('Đã hủy tiến trình', 'info');
+    toast.show('Process cancelled', 'info');
   }
 </script>
 
 <div class="tab-content active" id="{activeMode.id}-tab">
   <!-- Dynamic Notice Banner from Manifest -->
   {#if modelOption?.notice_banner}
-    <div style="background: {modelOption.notice_banner.level === 'danger' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 193, 7, 0.12)'}; border: 1px solid {modelOption.notice_banner.level === 'danger' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 193, 7, 0.3)'}; border-radius: 8px; padding: 10px 14px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; color: {modelOption.notice_banner.level === 'danger' ? '#ef4444' : '#ffc107'}; font-size: 0.88em;">
-      <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.1em; flex-shrink: 0;"></i>
-      <span>{modelOption.notice_banner.message}</span>
+    {@const banner = modelOption.notice_banner}
+    {@const styleMap = {
+      info: { bg: 'rgba(59, 130, 246, 0.12)', border: 'rgba(59, 130, 246, 0.3)', color: '#60a5fa', icon: 'fa-circle-info' },
+      success: { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.3)', color: '#4ade80', icon: 'fa-circle-check' },
+      danger: { bg: 'rgba(239, 68, 68, 0.12)', border: 'rgba(239, 68, 68, 0.3)', color: '#f87171', icon: 'fa-circle-xmark' },
+      error: { bg: 'rgba(239, 68, 68, 0.12)', border: 'rgba(239, 68, 68, 0.3)', color: '#f87171', icon: 'fa-circle-xmark' },
+      warning: { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.3)', color: '#fbbf24', icon: 'fa-triangle-exclamation' }
+    }}
+    {@const currentStyle = styleMap[banner.level] || styleMap.warning}
+    <div style="background: {currentStyle.bg}; border: 1px solid {currentStyle.border}; border-radius: 8px; padding: 10px 14px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; color: {currentStyle.color}; font-size: 0.88em;">
+      <i class="fa-solid {currentStyle.icon}" style="font-size: 1.1em; flex-shrink: 0;"></i>
+      <span>{banner.message}</span>
     </div>
   {/if}
 
@@ -194,15 +221,15 @@
   {#if supportsPresetVoices && activeVoices.length > 0}
     <div class="form-group" style="margin-bottom: 1.2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <label for="generic-voice-select" style="margin-bottom: 0;">Giọng đọc</label>
+        <label for="generic-voice-select" style="margin-bottom: 0;">Voice Speaker</label>
         {#if supportsVoiceSaving}
           <button
             onclick={() => isCreateModalOpen = true}
             type="button"
             style="flex: 0 0 auto; padding: 6px 14px; border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; background: linear-gradient(135deg, #a855f7, #6366f1); color: white; border: none; cursor: pointer;"
-            title="Tạo giọng mới lưu vào thư viện"
+            title="Create and save new voice to library"
           >
-            <i class="fa-solid fa-plus"></i> <span>Lưu giọng mới</span>
+            <i class="fa-solid fa-plus"></i> <span>Save New Voice</span>
           </button>
         {/if}
       </div>
@@ -239,26 +266,30 @@
 
   <!-- Voice Cloning / Reference Audio Section -->
   {#if supportsCloning}
-    <div class="clone-setup" style="margin-top: 1.2rem; margin-bottom: 1.2rem;">
-      <label for="temp-voice-dropzone" style="font-weight: 600; color: #94a3b8; display: block; margin-bottom: 6px; font-size: 0.95rem;">
-        <i class="fa-solid fa-bolt" style="color: #fbbf24;"></i> Hoặc tải mẫu âm thanh dùng tạm 1 lần (.wav):
+    <div class="clone-setup" style="margin-bottom: 1.2rem;">
+      <label for="temp-voice-dropzone" style="font-weight: 600; color: #cbd5e1; display: block; margin-bottom: 6px; font-size: 0.95rem;">
+        Reference Audio (Sample voice clip for cloning):
       </label>
-
       <div
-        id="temp-voice-dropzone"
         role="button"
         tabindex="0"
-        class="upload-drop-zone"
+        class="dropzone-area"
         onclick={() => fileInput?.click()}
-        onkeydown={(e) => e.key === 'Enter' && fileInput?.click()}
+        onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && fileInput?.click()}
+        style="border: 2px dashed rgba(255,255,255,0.2); border-radius: 12px; padding: 20px; text-align: center; background: rgba(0,0,0,0.2); cursor: pointer; transition: all 0.2s;"
       >
-        <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.5rem; color: var(--primary); margin-bottom: 10px;"></i>
         {#if referenceAudioPath}
-          <p style="color: var(--success); font-weight: 600;"><i class="fa-solid fa-file-audio"></i> Đã kích hoạt file âm thanh mẫu</p>
+          <div style="color: var(--success); font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <i class="fa-solid fa-file-audio" style="font-size: 1.2rem;"></i> Reference audio file active
+          </div>
         {:else}
-          <p>Kéo thả file âm thanh .wav hoặc <span style="color: var(--primary);">chọn file</span></p>
+          <div style="color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-cloud-arrow-up" style="font-size: 1.8rem; color: var(--primary);"></i>
+            <span>Drag & drop audio file here or <strong style="color: var(--primary);">click to browse</strong></span>
+            <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: WAV (Max 10MB)</span>
+          </div>
         {/if}
-        <input type="file" bind:this={fileInput} onchange={handleFileUpload} accept=".wav,audio/wav" class="hidden" />
+        <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" bind:this={fileInput} onchange={handleFileUpload} accept=".wav,audio/wav" class="hidden" />
       </div>
 
       {#if referenceAudioPath}
@@ -270,16 +301,16 @@
   {/if}
 
   <!-- Speed Control Widget -->
-  {#if manifest.capabilities.supports_speed}
+  {#if manifest?.capabilities?.supports_speed ?? true}
     <div class="form-group">
-      <label for="generic-speed">Tốc độ: <span>{speed.toFixed(1)}x</span></label>
+      <label for="generic-speed">Speed: <span>{speed.toFixed(1)}x</span></label>
       {#if modelOption?.speed_type === 'number'}
         <input
           type="number"
           id="generic-speed"
-          min={manifest.constraints.speed_range?.min || 0.5}
-          max={manifest.constraints.speed_range?.max || 2.0}
-          step={manifest.constraints.speed_range?.step || 0.1}
+          min={manifest?.constraints?.speed_range?.min || 0.5}
+          max={manifest?.constraints?.speed_range?.max || 2.0}
+          step={manifest?.constraints?.speed_range?.step || 0.1}
           bind:value={speed}
           style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
         />
@@ -287,9 +318,9 @@
         <input
           type="range"
           id="generic-speed"
-          min={manifest.constraints.speed_range?.min || 0.5}
-          max={manifest.constraints.speed_range?.max || 2.0}
-          step={manifest.constraints.speed_range?.step || 0.1}
+          min={manifest?.constraints?.speed_range?.min || 0.5}
+          max={manifest?.constraints?.speed_range?.max || 2.0}
+          step={manifest?.constraints?.speed_range?.step || 0.1}
           bind:value={speed}
         />
       {/if}
@@ -297,30 +328,30 @@
   {/if}
 
   <!-- Pitch Control Widget (Dynamic) -->
-  {#if manifest.capabilities.supports_pitch}
+  {#if manifest?.capabilities?.supports_pitch}
     <div class="form-group">
-      <label for="generic-pitch">Cao độ (Pitch): <span>{pitch.toFixed(1)}</span></label>
+      <label for="generic-pitch">Pitch: <span>{pitch.toFixed(1)}</span></label>
       <input
         type="range"
         id="generic-pitch"
-        min={manifest.constraints.pitch_range?.min || -10}
-        max={manifest.constraints.pitch_range?.max || 10}
-        step={manifest.constraints.pitch_range?.step || 0.5}
+        min={manifest?.constraints?.pitch_range?.min || -10}
+        max={manifest?.constraints?.pitch_range?.max || 10}
+        step={manifest?.constraints?.pitch_range?.step || 0.5}
         bind:value={pitch}
       />
     </div>
   {/if}
 
   <!-- Emotion Control Widget (Dynamic) -->
-  {#if manifest.capabilities.supports_emotion && manifest.constraints.supported_emotions?.length > 0}
+  {#if manifest?.capabilities?.supports_emotion && (manifest?.constraints?.supported_emotions?.length || 0) > 0}
     <div class="form-group">
-      <label for="generic-emotion">Cảm xúc (Emotion)</label>
+      <label for="generic-emotion">Emotion</label>
       <select
         id="generic-emotion"
         bind:value={selectedEmotion}
         style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
       >
-        <option value="">Mặc định (Tự nhiên)</option>
+        <option value="">Default (Natural)</option>
         {#each manifest.constraints.supported_emotions as em}
           <option value={em}>{em}</option>
         {/each}
@@ -332,11 +363,11 @@
   <div class="action-buttons">
     {#if isLoading}
       <button onclick={handleCancel} class="btn secondary-btn" style="flex: 1; border-color: var(--danger); color: var(--danger);">
-        <i class="fa-solid fa-ban"></i> Hủy tiến trình
+        <i class="fa-solid fa-ban"></i> Cancel Process
       </button>
     {:else}
       <button onclick={handleSynthesize} class="btn primary-btn">
-        <i class="fa-solid fa-play"></i> Tổng hợp âm thanh
+        <i class="fa-solid fa-play"></i> Synthesize Audio
       </button>
     {/if}
   </div>
@@ -345,15 +376,34 @@
   {#if isLoading}
     <div class="loading-indicator">
       <div class="spinner"></div>
-      <p>Đang xử lý âm thanh AI ({progress}%)...</p>
+      <p>Processing AI Audio ({progress}%)...</p>
       <div class="progress-wrapper">
         <div class="progress-bar" style="width: {progress}%;"></div>
       </div>
     </div>
   {/if}
 
-  {#if isStreaming}
-    <StreamingPanel {wavBlobUrl} {mp3AudioUrl} />
+  <!-- Audio Result Player Card -->
+  {#if wavBlobUrl}
+    <div class="audio-result-card" style="margin-top: 1.5rem; padding: 1.25rem; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); border-radius: 14px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
+        <h4 style="margin: 0; display: flex; align-items: center; gap: 8px; color: var(--primary);">
+          <i class="fa-solid fa-circle-play"></i> Synthesized Audio Ready
+        </h4>
+        <span style="font-size: 0.82em; opacity: 0.7;">WAV 24kHz</span>
+      </div>
+      <audio controls autoplay src={wavBlobUrl} style="width: 100%; margin-bottom: 1rem; border-radius: 8px; outline: none;"></audio>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <a href={wavBlobUrl} download="synthesized_audio.wav" class="btn btn-primary" style="text-decoration: none; padding: 8px 16px; font-size: 0.9em; display: inline-flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-download"></i> Download WAV
+        </a>
+        {#if mp3AudioUrl}
+          <a href={mp3AudioUrl} download="synthesized_audio.mp3" class="btn btn-secondary" style="text-decoration: none; padding: 8px 16px; font-size: 0.9em; display: inline-flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-file-audio"></i> Download MP3
+          </a>
+        {/if}
+      </div>
+    </div>
   {/if}
 </div>
 

@@ -26,17 +26,17 @@ func NewUtilsHandler() *UtilsHandler {
 func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	err := r.ParseMultipartForm(32 << 20) // Đọc Form tối đa 32MB
+	err := r.ParseMultipartForm(32 << 20) // Read 32MB max
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to parse upload form"})
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Thiếu file tài liệu"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Document file is required"})
 		return
 	}
 	defer file.Close()
@@ -44,7 +44,7 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	content, err := io.ReadAll(file)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc nội dung file"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read file content"})
 		return
 	}
 
@@ -59,7 +59,7 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 		extractedText, err = extractPDFText(content)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file PDF: " + err.Error()})
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read PDF file: " + err.Error()})
 			return
 		}
 
@@ -67,7 +67,7 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 		extractedText, err = extractDOCXText(content)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file DOCX: " + err.Error()})
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read DOCX file: " + err.Error()})
 			return
 		}
 
@@ -75,14 +75,14 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 		extractedText, err = extractODTText(content)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file ODT: " + err.Error()})
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read ODT file: " + err.Error()})
 			return
 		}
 
 	default:
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
-			"detail": "Định dạng file không hỗ trợ. Chỉ hỗ trợ .txt, .pdf, .docx, .odt",
+			"detail": "Unsupported file format. Supported formats: .txt, .pdf, .docx, .odt",
 		})
 		return
 	}

@@ -58,7 +58,7 @@
 
       drawWaveform();
     } catch (err: any) {
-      toast.show('Lỗi đọc file âm thanh: ' + err.message, 'error');
+      toast.show('Error loading audio file: ' + err.message, 'error');
     }
   }
 
@@ -167,13 +167,13 @@
     const trimmedFile = new File([blob], newFileName, { type: 'audio/wav' });
     previewAudioUrl = URL.createObjectURL(blob);
     onTrimmed(blob, trimmedFile);
-    toast.show('Đã cắt xong đoạn 5s!', 'success');
+    toast.show('5s audio segment trimmed!', 'success');
   }
 </script>
 
 <div style="background: rgba(15, 23, 42, 0.4); padding: 1rem; border-radius: 12px; margin-top: 1rem; border: 1px dashed var(--primary);">
   <h4 style="margin-bottom: 0.5rem; color: #fff; font-size: 0.95rem;">
-    <i class="fa-solid fa-scissors" style="color: var(--primary);"></i> Chọn đoạn âm thanh 5s tốt nhất
+    <i class="fa-solid fa-scissors" style="color: var(--primary);"></i> Select optimal 5s audio segment
   </h4>
 
   <div style="margin-bottom: 0.5rem; position: relative;">
@@ -191,14 +191,14 @@
       style="width: 100%; height: 100px; background: #0f172a; border-radius: 8px; cursor: pointer; user-select: none; touch-action: none;"
     ></canvas>
     <p style="font-size: 0.8rem; color: #94a3b8; text-align: center; margin-top: 5px;">
-      Nhấp hoặc kéo chuột trên biểu đồ để chọn vùng 5 giây tốt nhất.
+      Click or drag on the waveform to select the best 5-second range.
     </p>
   </div>
 
   <div style="display: flex; justify-content: space-between; margin-bottom: 0.8rem; font-size: 0.85rem; color: var(--text-color);">
-    <div><span style="color: var(--primary);">Bắt đầu:</span> <strong>{trimStart.toFixed(1)}s</strong></div>
-    <div><span style="color: var(--primary);">Độ dài:</span> <strong>{(trimEnd - trimStart).toFixed(1)}s</strong></div>
-    <div><span style="color: var(--primary);">Kết thúc:</span> <strong>{trimEnd.toFixed(1)}s</strong></div>
+    <div><span style="color: var(--primary);">Start:</span> <strong>{trimStart.toFixed(1)}s</strong></div>
+    <div><span style="color: var(--primary);">Duration:</span> <strong>{(trimEnd - trimStart).toFixed(1)}s</strong></div>
+    <div><span style="color: var(--primary);">End:</span> <strong>{trimEnd.toFixed(1)}s</strong></div>
   </div>
 
   {#if previewAudioUrl}
@@ -209,7 +209,7 @@
 
   <div style="display: flex; gap: 10px;">
     <button onclick={handleTrimOnly} class="btn secondary-btn" type="button" style="font-size: 0.9rem; padding: 8px 14px;">
-      <i class="fa-solid fa-scissors"></i> Cắt & Nghe thử 5s
+      <i class="fa-solid fa-scissors"></i> Trim & Preview 5s
     </button>
   </div>
 </div>

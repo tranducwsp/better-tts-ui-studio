@@ -60,12 +60,14 @@ type NoticeBannerSpec struct {
 
 // InputPanelSpec cấu hình các tính năng cho khung nhập văn bản.
 type InputPanelSpec struct {
-	FileServe      bool             `json:"file_serve"`
-	Closeable      bool             `json:"closeable"`
-	FindMode       string           `json:"find_mode"` // "expert", "express"
-	ReplaceTool    bool             `json:"replace_tool"`
-	EnableChunkBox bool             `json:"enable_chunk_box"`
-	AutoFormat     []AutoFormatRule `json:"auto_format,omitempty"`
+	FileServe       bool             `json:"file_serve"`
+	Closeable       bool             `json:"closeable"`
+	FindMode        string           `json:"find_mode"` // "expert", "express"
+	ReplaceTool     bool             `json:"replace_tool"`
+	EnableChunkBox  bool             `json:"enable_chunk_box"`
+	MaxChunkSize    int              `json:"max_chunk_size,omitempty"`
+	ChunkDelimiters []string         `json:"chunk_delimiters,omitempty"`
+	AutoFormat      []AutoFormatRule `json:"auto_format,omitempty"`
 }
 
 // VoiceMetadataFieldSpec định nghĩa cấu hình một trường thông tin khi tạo giọng mẫu mới.

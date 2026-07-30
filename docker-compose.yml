@@ -31,24 +31,24 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # 1. AI Core Engine Microservice (Inference Engine)
+  # 1. AI Core Engine Microservice (Inference Engine / Mock Test)
   core-engine:
     build:
-      context: ./core-tts
+      context: ./core-tts-test
       dockerfile: Dockerfile
     container_name: ai-core-engine
     ports:
       - "8001:8001"
-      - "50051:50051"
     environment:
       - CORE_PORT=8001
       - CORE_HOST=0.0.0.0
-      - OMP_NUM_THREADS=2
-      - ENGINE_ID=core-engine-v1
-      - ENGINE_NAME=Universal Core AI Engine
-      - ENGINE_PROVIDER=Universal AI Platform
+      - ENGINE_ID=core-tts-test-v1
+      - ENGINE_NAME=Mock Test AI Engine
+      - ENGINE_PROVIDER=Universal AI Testbed
+      - MOCK_DELAY_SEC=0.0
+      - UI_MODE=fast
     volumes:
-      - ./core-tts:/app
+      - ./core-tts-test:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
     restart: unless-stopped
 
@@ -79,22 +79,20 @@ services:
     command: ./main
     restart: unless-stopped
 
-  # 3. Frontend Web Studio (Svelte Dev Server)
+  # 3. Frontend Web Studio (Static Nginx Production Build)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - VITE_UI_MODE=fast
     container_name: ai-studio-frontend
     ports:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:8000
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     depends_on:
       - core-backend
-    command: npm run dev -- --host 0.0.0.0
     restart: unless-stopped
 
 volumes:

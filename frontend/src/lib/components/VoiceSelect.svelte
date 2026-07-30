@@ -9,7 +9,7 @@
     onDelete?: (voice: VoiceOption) => void;
   }
 
-  let { voices = [], selectedVoiceId = $bindable(''), placeholder = 'Đang tải danh sách giọng...', onSelect, onDelete }: Props = $props();
+  let { voices = [], selectedVoiceId = $bindable(''), placeholder = 'Select a voice speaker...', onSelect, onDelete }: Props = $props();
 
   let isOpen = $state(false);
   let playingSampleUrl = $state<string | null>(null);

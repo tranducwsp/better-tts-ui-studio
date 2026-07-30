@@ -16,31 +16,31 @@
   <div id="header-actions" style="display: flex; justify-content: space-between; align-items: center; z-index: 9997;">
     {#if currentUser}
       <div style="display: flex; gap: 12px; align-items: center;">
-        <div class="user-badge" title="Tài khoản đang hoạt động">
+        <div class="user-badge" title="Active user account">
           <span class="status-dot"></span>
           <span class="user-name">{currentUser.username}</span>
         </div>
 
         <button onclick={onOpenHistory} class="header-btn">
-          <i class="fa-solid fa-clock-rotate-left"></i> Lịch sử
+          <i class="fa-solid fa-clock-rotate-left"></i> History
         </button>
       </div>
 
       <div style="display: flex; gap: 10px; align-items: center; margin-left: auto;">
         {#if currentUser.role === 'admin'}
           <button onclick={onOpenAdmin} class="header-btn danger-btn">
-            <i class="fa-solid fa-users-gear"></i> Quản trị
+            <i class="fa-solid fa-users-gear"></i> Admin Panel
           </button>
         {/if}
 
         <button onclick={onLogout} class="header-btn">
-          <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
+          <i class="fa-solid fa-right-from-bracket"></i> Logout
         </button>
       </div>
     {:else}
       <div style="margin-left: auto;">
         <button onclick={onOpenAuth} class="header-btn primary-btn" style="padding: 6px 16px;">
-          <i class="fa-solid fa-right-to-bracket"></i> Đăng nhập / Đăng ký
+          <i class="fa-solid fa-right-to-bracket"></i> Login / Register
         </button>
       </div>
     {/if}

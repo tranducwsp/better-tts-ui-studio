@@ -41,17 +41,17 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := r.ParseMultipartForm(32 << 20) // Đọc Form 32MB
+	err := r.ParseMultipartForm(32 << 20) // Read 32MB form
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to parse upload form"})
 		return
 	}
 
 	name := r.FormValue("name")
 	if name == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Thiếu tên giọng"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Voice name is required"})
 		return
 	}
 
@@ -67,7 +67,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Thiếu file âm thanh"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Audio file is required"})
 		return
 	}
 	defer file.Close()
@@ -75,11 +75,11 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read audio file"})
 		return
 	}
 
-	// 1. Lưu file mẫu vào thư mục lưu trữ người dùng phân tầng theo model_id
+	// 1. Save reference audio file under storage tier
 	userDir := filepath.Join("storage", modelID, user.ID, "voice")
 	_ = os.MkdirAll(userDir, 0755)
 
@@ -91,7 +91,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	filePath := filepath.Join(userDir, fmt.Sprintf("%s.%s", cloneID, ext))
 	_ = os.WriteFile(filePath, fileBytes, 0644)
 
-	// 2. Gửi file sang Core TTS Service (Python AI engine) để trích xuất Feature Embeddings
+	// 2. Send file to Core TTS Service to extract feature embeddings
 	res, err := h.TTSClient.CloneVoice(fileBytes, header.Filename, name)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -104,7 +104,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		coreCloneID = vID
 	}
 
-	// 3. Lưu thông tin giọng nhân bản vào PostgreSQL qua sqlc
+	// 3. Save voice record in PostgreSQL via sqlc
 	params := sqlc.CreateUserVoiceParams{
 		ID:       coreCloneID,
 		UserID:   user.ID,
@@ -125,13 +125,13 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	_, err = db.Queries.CreateUserVoice(r.Context(), params)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi lưu DB voice"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to save voice in database"})
 		return
 	}
 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"clone_id": coreCloneID,
-		"message":  "Clone giọng thành công!",
+		"message":  "Voice cloned successfully!",
 	})
 }
 

@@ -90,6 +90,8 @@ export interface InputPanelSpec {
   find_mode: 'express' | 'expert' | string;
   replace_tool: boolean;
   enable_chunk_box: boolean;
+  max_chunk_size?: number;
+  chunk_delimiters?: string[];
   auto_format?: AutoFormatRule[];
 }
 

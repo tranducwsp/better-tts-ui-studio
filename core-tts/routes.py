@@ -51,11 +51,11 @@ def health_check():
 async def synthesize(req: SynthesizeRequest, background_tasks: BackgroundTasks):
     """2.4 Core Synthesis API (Supports both synchronous binary WAV or Async Task ID)"""
     if not req.text.strip():
-        raise HTTPException(status_code=400, detail="Văn bản trống")
+        raise HTTPException(status_code=400, detail="Empty text input")
         
     cleanup_tasks_db()
     task_id = req.task_id if req.task_id else str(uuid.uuid4())
-    target_voice = req.voice_id or req.voice or "Minh Đức"
+    target_voice = req.voice_id or req.voice or "Voice A"
     
     # Rút gọn tên giọng nếu chứa dấu gạch ngang mô tả
     raw_voice = target_voice
@@ -126,7 +126,7 @@ async def synthesize(req: SynthesizeRequest, background_tasks: BackgroundTasks):
 def get_task_status(task_id: str):
     """2.5 Task Status API"""
     if task_id not in tasks_db:
-        raise HTTPException(status_code=404, detail="Không tìm thấy task")
+        raise HTTPException(status_code=404, detail="Task not found")
         
     t = tasks_db[task_id]
     return TaskStatusResponse(
@@ -141,7 +141,7 @@ def get_task_status(task_id: str):
 def get_task_audio(task_id: str, format: str = "wav"):
     """Get Audio Output Bytes by Task ID"""
     if task_id not in tasks_db or tasks_db[task_id]["status"] != "done":
-        raise HTTPException(status_code=404, detail="Audio chưa sẵn sàng")
+        raise HTTPException(status_code=404, detail="Audio is not ready")
         
     t = tasks_db[task_id]
     if format.lower() == "mp3" and t.get("audio_mp3"):
@@ -154,7 +154,7 @@ def cancel_task(task_id: str):
     if task_id in tasks_db:
         tasks_db[task_id]["cancel"] = True
         tasks_db[task_id]["status"] = "cancelled"
-    return {"message": "Đã yêu cầu hủy task", "task_id": task_id}
+    return {"message": "Cancellation requested", "task_id": task_id}
 
 @router.post("/voices/clone")
 async def clone_voice(file: UploadFile = File(...), name: str = Form(...)):

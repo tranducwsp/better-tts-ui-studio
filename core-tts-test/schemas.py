@@ -72,52 +72,89 @@ class NoticeBannerSpec(BaseModel):
 DEFAULT_AUTO_FORMAT_RULES = [
     AutoFormatRule(find=r"\r\n", replace="\n"),
     AutoFormatRule(find=r"\n{3,}", replace="\n\n"),
-    AutoFormatRule(find=r"\u00D0", replace="\u0110"),  # Ð -> Đ (Eth to Vietnamese Đ)
-    AutoFormatRule(find=r"([a-zA-ZÀ-ỹ])\-([a-zA-ZÀ-ỹ])", replace=r"\1 \2"), # Un-hyphenate words
-    AutoFormatRule(find=r"[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉]", replace=""), # Remove superscript/subscript footnote numbers
-    AutoFormatRule(find=r"[^a-zA-Z0-9 \n\t\r.,?!;:\-\"'()\[\]%/“”‘’À-ỹ]", replace="") # Clean non-Vietnamese strange characters
+    AutoFormatRule(find=r"\u00D0", replace="\u0110"),
+    AutoFormatRule(find=r"([a-zA-ZÀ-ỹ])\-([a-zA-ZÀ-ỹ])", replace=r"\1 \2"),
+    AutoFormatRule(find=r"[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉]", replace=""),
+    AutoFormatRule(find=r"[^a-zA-Z0-9 \n\t\r.,?!;:\-\"'()\[\]%/“”‘’À-ỹ]", replace="")
 ]
 
 class InputPanelSpec(BaseModel):
     file_serve: bool = True
     closeable: bool = False
-    find_mode: str = "expert" # "express" (tìm kiếm chuỗi đơn giản) | "expert" (cho phép bật/tắt công cụ Regex)
+    find_mode: str = "expert"
     replace_tool: bool = True
     enable_chunk_box: bool = True
+    max_chunk_size: int = 1000
+    chunk_delimiters: List[str] = Field(default_factory=lambda: [r"(?<=\.\s*\n)", r"(?<=[.!?]\s+)"])
     auto_format: List[AutoFormatRule] = Field(default_factory=lambda: DEFAULT_AUTO_FORMAT_RULES)
 
 class VoiceMetadataFieldSpec(BaseModel):
     key: str
     label: str
-    type: str = "text" # "text", "select"
+    type: str = "text"
     required: Optional[bool] = False
     placeholder: Optional[str] = None
     options: Optional[List[str]] = None
 
 class ModelOptionSpec(BaseModel):
     notice_banner: Optional[NoticeBannerSpec] = None
-    voice_type: Optional[str] = None # "select", "radio"
-    speed_type: Optional[str] = None # "slider", "number", "stepped"
+    voice_type: Optional[str] = None
+    speed_type: Optional[str] = None
     pitch_type: Optional[str] = None
     emotion_type: Optional[str] = None
     preset_voices: Optional[List[Dict[str, str]]] = None
     voice_metadata_schema: Optional[List[VoiceMetadataFieldSpec]] = None
 
 class UISchemaSpec(BaseModel):
+    ui_mode: str = Field(default_factory=lambda: os.getenv("UI_MODE", "beauty")) # "beauty" | "fast"
     input_panel: InputPanelSpec = Field(default_factory=InputPanelSpec)
-    model_sort: List[str] = Field(default_factory=lambda: ["fast", "standard", "clone"])
+    model_sort: List[str] = Field(default_factory=lambda: ["fast", "express", "zero_shot_clone", "multilingual", "emotion_v2", "standard", "clone"])
     option_panel: Dict[str, ModelOptionSpec] = Field(default_factory=lambda: {
         "fast": ModelOptionSpec(
             notice_banner=NoticeBannerSpec(
-                level="warning",
-                message="Note: This cloud voice model processes data externally. Avoid sending confidential information."
+                level="info",
+                message="⚡ Cloud Fast: Ultra-fast simulated TTS responses."
             ),
             voice_type="radio",
             speed_type="slider",
             preset_voices=[
-                {"id": "Voice A (Female)", "name": "Voice A (Female)", "gender": "female"},
-                {"id": "Voice B (Male)", "name": "Voice B (Male)", "gender": "male"}
+                {"id": "Mock Voice A (Female)", "name": "Mock Voice A (Female)", "gender": "female"},
+                {"id": "Mock Voice B (Male)", "name": "Mock Voice B (Male)", "gender": "male"}
             ]
+        ),
+        "express": ModelOptionSpec(
+            notice_banner=NoticeBannerSpec(
+                level="success",
+                message="✅ Express Real-Time: Low-latency streaming test engine ready."
+            ),
+            voice_type="select",
+            speed_type="slider"
+        ),
+        "zero_shot_clone": ModelOptionSpec(
+            notice_banner=NoticeBannerSpec(
+                level="info",
+                message="⚡ Instant Zero-Shot Clone: Supports temporary audio upload without saving voice profiles to account."
+            ),
+            voice_type="select",
+            speed_type="slider"
+        ),
+        "multilingual": ModelOptionSpec(
+            notice_banner=NoticeBannerSpec(
+                level="warning",
+                message="⚠️ Multilingual: Cross-lingual synthesis with regional accent selection."
+            ),
+            voice_type="select",
+            speed_type="slider"
+        ),
+        "emotion_v2": ModelOptionSpec(
+            notice_banner=NoticeBannerSpec(
+                level="danger",
+                message="🚨 Emotion & Style: Experimental model - dynamic pitch controls active."
+            ),
+            voice_type="select",
+            speed_type="slider",
+            pitch_type="slider",
+            emotion_type="select"
         ),
         "standard": ModelOptionSpec(
             voice_type="select",
@@ -127,7 +164,7 @@ class UISchemaSpec(BaseModel):
             voice_type="select",
             speed_type="slider",
             voice_metadata_schema=[
-                VoiceMetadataFieldSpec(key="name", label="Voice Name", type="text", required=True, placeholder="e.g. Male Narrator..."),
+                VoiceMetadataFieldSpec(key="name", label="Voice Name", type="text", required=True, placeholder="e.g. Test Voice..."),
                 VoiceMetadataFieldSpec(key="gender", label="Gender", type="select", options=["Male", "Female", "Other"]),
                 VoiceMetadataFieldSpec(key="region", label="Accent / Region", type="select", options=["North American", "British", "Australian", "Other"]),
                 VoiceMetadataFieldSpec(key="style", label="Style", type="select", options=["Expressive", "News / Broadcast", "Audiobook / Reading", "Dramatic", "Natural / Conversational", "Commercial", "Other"])
@@ -136,19 +173,22 @@ class UISchemaSpec(BaseModel):
     })
 
 class UniversalManifest(BaseModel):
-    engine_id: str = Field(default_factory=lambda: os.getenv("ENGINE_ID", "core-engine-v1"))
-    engine_name: str = Field(default_factory=lambda: os.getenv("ENGINE_NAME", "Universal Core AI Engine"))
-    version: str = Field(default_factory=lambda: os.getenv("ENGINE_VERSION", "1.0.0"))
-    provider: str = Field(default_factory=lambda: os.getenv("ENGINE_PROVIDER", "Universal AI Platform"))
+    engine_id: str = Field(default_factory=lambda: os.getenv("ENGINE_ID", "core-tts-test-v1"))
+    engine_name: str = Field(default_factory=lambda: os.getenv("ENGINE_NAME", "Mock Test AI Engine"))
+    version: str = Field(default_factory=lambda: os.getenv("ENGINE_VERSION", "1.0.0-mock"))
+    provider: str = Field(default_factory=lambda: os.getenv("ENGINE_PROVIDER", "Universal AI Testbed"))
     supported_modes: List[EngineModeSpec] = Field(default_factory=lambda: [
-        EngineModeSpec(id="standard", name="Standard Neural", description="High fidelity neural voice inference", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
-        EngineModeSpec(id="fast", name="Fast Streaming", description="Low latency streaming TTS", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
-        EngineModeSpec(id="clone", name="Voice Cloning", description="Reference audio speaker cloning", supports_preset_voices=True, supports_cloning=True, supports_voice_saving=True, supports_streaming=True)
+        EngineModeSpec(id="standard", name="Mock Standard", description="Fast mock audio generator", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
+        EngineModeSpec(id="fast", name="Mock Fast", description="Instant mock audio generator", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
+        EngineModeSpec(id="express", name="Mock Express", description="Ultra-low latency streaming model", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
+        EngineModeSpec(id="zero_shot_clone", name="Mock Instant Zero-Shot Clone", description="Instant voice cloning from uploaded reference audio without saving to library", supports_preset_voices=False, supports_cloning=True, supports_voice_saving=False, supports_streaming=True),
+        EngineModeSpec(id="multilingual", name="Mock Multilingual", description="Cross-lingual multi-accent voice engine", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
+        EngineModeSpec(id="emotion_v2", name="Mock Emotion & Style", description="Dynamic prosody & pitch control model", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
+        EngineModeSpec(id="clone", name="Mock Voice Cloning", description="Simulated speaker cloning", supports_preset_voices=True, supports_cloning=True, supports_voice_saving=True, supports_streaming=True)
     ])
     capabilities: EngineCapabilities = Field(default_factory=EngineCapabilities)
     constraints: EngineConstraints = Field(default_factory=EngineConstraints)
     audio_spec: AudioSpec = Field(default_factory=AudioSpec)
     ui_schema: Optional[UISchemaSpec] = Field(default_factory=UISchemaSpec)
 
-# Legacy compatibility alias
 CoreInfoResponse = UniversalManifest

@@ -28,13 +28,13 @@
       let data: HistoryItem[] = [];
       if (targetUserId) {
         const res = await fetch(`/api/admin/users/${targetUserId}/history`, { credentials: 'include' });
-        if (!res.ok) throw new Error('Không thể tải lịch sử người dùng');
+        if (!res.ok) throw new Error('Failed to load user history');
         data = await res.json();
       } else {
         data = await fetchHistory();
       }
 
-      // Lọc bỏ các bản ghi trùng lặp nội dung & thời gian do vòng lặp cũ ghi rác vào DB
+      // Filter out duplicate entries
       const unique: HistoryItem[] = [];
       const seen = new Set<string>();
 
@@ -47,7 +47,7 @@
       }
       history = unique;
     } catch (e: any) {
-      toast.show('Lỗi tải lịch sử: ' + e.message, 'error');
+      toast.show('Failed to load history: ' + e.message, 'error');
       history = [];
     } finally {
       isLoading = false;
@@ -57,11 +57,11 @@
   async function reloadJob(jobId: string) {
     try {
       const res = await fetch(`/api/history/${jobId}`, { credentials: 'include' });
-      if (!res.ok) throw new Error('Không thể nạp lại tác vụ');
+      if (!res.ok) throw new Error('Failed to reload task');
       const job = await res.json();
       onReloadJob(job);
     } catch (err: any) {
-      toast.show('Lỗi nạp lại tác vụ: ' + err.message, 'error');
+      toast.show('Failed to reload task: ' + err.message, 'error');
     }
   }
 </script>
@@ -72,30 +72,30 @@
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--glass-border); padding-bottom: 15px;">
         <h2 style="color: var(--primary); display: flex; align-items: center; gap: 10px; font-size: 1.3rem;">
           <i class="fa-solid fa-clock-rotate-left"></i>
-          {targetUsername ? `Lịch sử hoạt động của: ${targetUsername}` : 'Lịch sử tổng hợp âm thanh'}
+          {targetUsername ? `Activity History of: ${targetUsername}` : 'Synthesis History'}
         </h2>
-        <button onclick={onClose} aria-label="Đóng lịch sử" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">
+        <button onclick={onClose} aria-label="Close history modal" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
 
       {#if isLoading}
-        <p style="text-align: center; color: var(--text-muted); padding: 40px 0;">Đang tải lịch sử...</p>
+        <p style="text-align: center; color: var(--text-muted); padding: 40px 0;">Loading history...</p>
       {:else if history.length === 0}
         <div style="text-align: center; padding: 40px 20px; color: #94a3b8;">
           <i class="fa-solid fa-box-open" style="font-size: 3rem; margin-bottom: 15px; opacity: 0.5;"></i>
-          <p>Chưa có dữ liệu lịch sử nào.</p>
+          <p>No history records found.</p>
         </div>
       {:else}
         <table class="glass-table" style="font-size: 0.85rem; width: 100%;">
           <thead>
             <tr>
-              <th style="padding: 10px; min-width: 100px;">Thời gian</th>
+              <th style="padding: 10px; min-width: 100px;">Time</th>
               <th style="padding: 10px; min-width: 130px;">Engine</th>
-              <th style="padding: 10px; min-width: 130px;">Giọng đọc</th>
-              <th style="padding: 10px; width: 35%;">Nội dung</th>
-              <th style="padding: 10px; min-width: 80px;">Tiến trình</th>
-              <th style="padding: 10px; min-width: 100px; text-align: center;">Hành động</th>
+              <th style="padding: 10px; min-width: 130px;">Voice</th>
+              <th style="padding: 10px; width: 35%;">Content</th>
+              <th style="padding: 10px; min-width: 80px;">Progress</th>
+              <th style="padding: 10px; min-width: 100px; text-align: center;">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -132,9 +132,9 @@
                     onclick={() => reloadJob(item.job_id)}
                     class="action-btn reload"
                     style="padding: 6px 12px; font-size: 0.8rem; background: rgba(99,102,241,0.2); border: 1px solid var(--primary); color: white; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-weight: 500;"
-                    title="Nạp lại tác vụ này vào bảng điều khiển"
+                    title="Reload this task into input panel"
                   >
-                    <i class="fa-solid fa-rotate-right"></i> Nạp lại
+                    <i class="fa-solid fa-rotate-right"></i> Reload
                   </button>
                 </td>
               </tr>

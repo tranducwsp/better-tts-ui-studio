@@ -108,9 +108,9 @@ Every Core TTS Microservice MUST implement the following RESTful endpoints:
         "voice_type": "select",
         "speed_type": "slider",
         "voice_metadata_schema": [
-          { "key": "name", "label": "Tên giọng mẫu", "type": "text", "required": true },
-          { "key": "gender", "label": "Giới tính", "type": "select", "options": ["Nam", "Nữ", "Khác"] },
-          { "key": "region", "label": "Vùng miền", "type": "select", "options": ["Miền Bắc", "Miền Nam", "Miền Trung", "Khác"] }
+          { "key": "name", "label": "Voice Name", "type": "text", "required": true },
+          { "key": "gender", "label": "Gender", "type": "select", "options": ["Male", "Female", "Other"] },
+          { "key": "region", "label": "Region", "type": "select", "options": ["Northern", "Southern", "Central", "Other"] }
         ]
       }
     }
@@ -128,12 +128,12 @@ Every Core TTS Microservice MUST implement the following RESTful endpoints:
 ```json
 [
   {
-    "id": "minh_duc",
-    "name": "Minh Đức",
+    "id": "james_doc",
+    "name": "James Narrator",
     "gender": "male",
-    "region": "North",
+    "region": "North America",
     "style": "News",
-    "language": "vi-VN"
+    "language": "en-US"
   }
 ]
 ```
@@ -164,8 +164,8 @@ Every Core TTS Microservice MUST implement the following RESTful endpoints:
 #### Request Payload (`application/json`):
 ```json
 {
-  "text": "Xin chào bạn, đây là đoạn văn bản cần đọc.",
-  "voice_id": "minh_duc",
+  "text": "Hello world, this is the text segment to synthesize.",
+  "voice_id": "james_doc",
   "speed": 1.0,
   "pitch": 0.0,
   "output_format": "wav",

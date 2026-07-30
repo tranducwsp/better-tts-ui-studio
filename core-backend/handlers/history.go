@@ -60,7 +60,7 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 	jobs, err := db.Queries.ListTTSJobsByUserID(r.Context(), userID)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Database error"})
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 			if firstChunk != nil {
 				shortText = firstChunk.Text
 			} else {
-				shortText = "Chưa có nội dung"
+				shortText = "No content"
 			}
 		}
 
@@ -108,18 +108,18 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 			actualTotal = len(uniqueIndexes)
 		}
 
-		timeAgo := "Vừa xong"
+		timeAgo := "Just now"
 		if job.CreatedAt.Valid {
 			diff := now.Sub(job.CreatedAt.Time)
 			if diff.Hours() >= 24 {
 				days := int(diff.Hours() / 24)
-				timeAgo = fmt.Sprintf("%d ngày trước", days)
+				timeAgo = fmt.Sprintf("%d days ago", days)
 			} else if diff.Hours() >= 1 {
 				hours := int(diff.Hours())
-				timeAgo = fmt.Sprintf("%d giờ trước", hours)
+				timeAgo = fmt.Sprintf("%d hours ago", hours)
 			} else if diff.Minutes() >= 1 {
 				mins := int(diff.Minutes())
-				timeAgo = fmt.Sprintf("%d phút trước", mins)
+				timeAgo = fmt.Sprintf("%d mins ago", mins)
 			}
 		}
 
@@ -271,7 +271,7 @@ func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 	var req JobInitRequest
 	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil || req.JobID == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Dữ liệu không hợp lệ"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Invalid payload"})
 		return
 	}
 
