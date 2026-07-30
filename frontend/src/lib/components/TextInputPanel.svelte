@@ -369,48 +369,83 @@
 
         <!-- Search and Replace Tools -->
         {#if inputPanelSpec === null || inputPanelSpec.replace_tool}
-          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; background: rgba(0,0,0,0.2); padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-            <!-- Row 1: Search -->
-            <div style="display: flex; gap: 10px; align-items: center;">
+          <div class="search-replace-container">
+            <div class="search-replace-inputs">
+              <!-- Row 1: Search -->
+              <div class="search-input-group">
+                {#if inputPanelSpec === null || inputPanelSpec.find_mode === 'expert'}
+                  <button
+                    onmousedown={(e) => e.preventDefault()}
+                    onclick={toggleRegexMode}
+                    class="regex-toggle-btn desktop-only-btn"
+                    style="color: {isRegexMode ? 'var(--primary)' : 'var(--text-muted)'};"
+                  >
+                    <i class="fa-solid {isRegexMode ? 'fa-code' : 'fa-font'}"></i> {isRegexMode ? 'Regex' : 'Basic'}
+                  </button>
+                {/if}
+                <input
+                  type="text"
+                  bind:value={findQuery}
+                  placeholder={isRegexMode ? 'Regex pattern (e.g. \\[\\d+\\])' : 'Find text...'}
+                  class="search-input"
+                />
+                <button
+                  onmousedown={(e) => e.preventDefault()}
+                  onclick={handleCustomSearch}
+                  class="search-btn desktop-only-btn"
+                >
+                  <i class="fa-solid fa-magnifying-glass"></i> Find
+                </button>
+              </div>
+
+              <!-- Row 2: Replace -->
+              <div class="replace-input-group" style="margin-top: 8px;">
+                <div class="replace-arrow-icon"><i class="fa-solid fa-arrow-down"></i></div>
+                <input
+                  type="text"
+                  bind:value={replaceQuery}
+                  readonly={isReadOnly}
+                  placeholder={isReadOnly ? 'Locked in history view' : 'Replace with (Leave blank to remove)'}
+                  class="replace-input"
+                  style="opacity: {isReadOnly ? 0.7 : 1}; cursor: {isReadOnly ? 'not-allowed' : 'text'};"
+                />
+                <button
+                  onmousedown={(e) => e.preventDefault()}
+                  onclick={handleCustomReplace}
+                  disabled={isReadOnly}
+                  class="replace-btn desktop-only-btn"
+                  style="opacity: {isReadOnly ? 0.5 : 1}; cursor: {isReadOnly ? 'not-allowed' : 'pointer'};"
+                >
+                  <i class="fa-solid fa-check"></i> Replace
+                </button>
+              </div>
+            </div>
+
+            <!-- Mobile Action Buttons Row (3 buttons in 1 row under inputs) -->
+            <div class="mobile-search-actions-row">
               {#if inputPanelSpec === null || inputPanelSpec.find_mode === 'expert'}
                 <button
                   onmousedown={(e) => e.preventDefault()}
                   onclick={toggleRegexMode}
-                  style="background: rgba(255,255,255,0.1); color: {isRegexMode ? 'var(--primary)' : 'var(--text-muted)'}; border: none; padding: 6px 10px; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 0.8em; min-width: 85px;"
+                  class="regex-toggle-btn"
+                  style="color: {isRegexMode ? 'var(--primary)' : 'var(--text-muted)'};"
                 >
                   <i class="fa-solid {isRegexMode ? 'fa-code' : 'fa-font'}"></i> {isRegexMode ? 'Regex' : 'Basic'}
                 </button>
               {/if}
-              <input
-                type="text"
-                bind:value={findQuery}
-                placeholder={isRegexMode ? 'Regex pattern (e.g. \\[\\d+\\])' : 'Find text...'}
-                style="flex: 1; padding: 6px 10px; font-size: 0.9em; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;"
-              />
               <button
                 onmousedown={(e) => e.preventDefault()}
                 onclick={handleCustomSearch}
-                style="background: rgba(255, 255, 255, 0.2); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.3); padding: 6px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; font-size: 0.9em; white-space: nowrap;"
+                class="search-btn"
               >
                 <i class="fa-solid fa-magnifying-glass"></i> Find
               </button>
-            </div>
-
-            <!-- Row 2: Replace -->
-            <div style="display: flex; gap: 10px; align-items: center;">
-              <div style="min-width: 85px; text-align: center; color: var(--text-muted);"><i class="fa-solid fa-arrow-down"></i></div>
-              <input
-                type="text"
-                bind:value={replaceQuery}
-                readonly={isReadOnly}
-                placeholder={isReadOnly ? 'Locked in history view' : 'Replace with (Leave blank to remove)'}
-                style="flex: 1; padding: 6px 10px; font-size: 0.9em; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; opacity: {isReadOnly ? 0.7 : 1}; cursor: {isReadOnly ? 'not-allowed' : 'text'};"
-              />
               <button
                 onmousedown={(e) => e.preventDefault()}
                 onclick={handleCustomReplace}
                 disabled={isReadOnly}
-                style="background: #4f46e5; color: #ffffff; border: 1px solid #6366f1; padding: 6px 12px; border-radius: 6px; font-weight: 600; cursor: {isReadOnly ? 'not-allowed' : 'pointer'}; opacity: {isReadOnly ? 0.5 : 1}; font-size: 0.9em; min-width: 88px;"
+                class="replace-btn"
+                style="opacity: {isReadOnly ? 0.5 : 1}; cursor: {isReadOnly ? 'not-allowed' : 'pointer'};"
               >
                 <i class="fa-solid fa-check"></i> Replace
               </button>
