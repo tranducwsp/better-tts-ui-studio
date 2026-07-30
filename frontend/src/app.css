@@ -218,27 +218,15 @@ header p {
 
 /* Tabs */
 .tabs {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
     gap: 0.75rem;
     margin-bottom: 1.5rem;
     width: 100%;
 }
 
-@media (max-width: 768px) {
-    .tabs {
-        grid-template-columns: repeat(2, 1fr);
-    }
-}
-
-@media (max-width: 480px) {
-    .tabs {
-        grid-template-columns: 1fr;
-    }
-}
-
 .tab-btn {
-    width: 100%;
+    flex: 1;
+    min-width: 120px;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid var(--glass-border);
     padding: 0.85rem 1rem;
@@ -423,11 +411,22 @@ input[type=range]::-webkit-slider-runnable-track {
     background: #1e293b;
     border: 1px solid var(--primary);
     border-radius: 12px;
-    z-index: 100;
-    max-height: 250px;
+    z-index: 99999;
+    max-height: 280px;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     display: none;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+.select-chevron-icon .css-arrow-down {
+    display: none;
+}
+
+body[data-mode="fast"] .select-chevron-icon .css-arrow-down {
+    display: inline-block !important;
+    font-size: 0.75rem;
+    color: var(--text-muted);
 }
 
 .custom-select-wrapper.open .custom-options {
@@ -1050,7 +1049,7 @@ footer {
     .tabs {
         display: flex;
         overflow-x: auto;
-        white-space: nowrap;
+        gap: 0.5rem;
         padding-bottom: 6px;
         scroll-snap-type: x mandatory;
         -webkit-overflow-scrolling: touch;
@@ -1062,9 +1061,10 @@ footer {
     }
 
     .tab-btn {
-        flex: 0 0 auto;
+        flex: 1 0 auto;
+        min-width: 110px;
         scroll-snap-align: start;
-        padding: 8px 14px;
+        padding: 8px 12px;
         font-size: 0.85rem;
     }
 

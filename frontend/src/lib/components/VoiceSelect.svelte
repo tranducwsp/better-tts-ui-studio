@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { VoiceOption } from '../types';
 
+  import { onMount } from 'svelte';
+
   interface Props {
     voices: VoiceOption[];
     selectedVoiceId: string;
@@ -14,8 +16,19 @@
   let isOpen = $state(false);
   let playingSampleUrl = $state<string | null>(null);
   let audioElement: HTMLAudioElement;
+  let containerRef: HTMLDivElement;
 
   let currentVoice = $derived(voices.find((v) => v.id === selectedVoiceId));
+
+  onMount(() => {
+    function handleOutsideClick(e: MouseEvent) {
+      if (isOpen && containerRef && !containerRef.contains(e.target as Node)) {
+        isOpen = false;
+      }
+    }
+    window.addEventListener('click', handleOutsideClick);
+    return () => window.removeEventListener('click', handleOutsideClick);
+  });
 
   function handleSelect(v: VoiceOption | null) {
     if (v) {
@@ -54,14 +67,14 @@
 
 <audio bind:this={audioElement} onended={() => playingSampleUrl = null} class="hidden"></audio>
 
-<div class="custom-select-wrapper" class:open={isOpen}>
-  <div class="custom-select-trigger" onclick={() => isOpen = !isOpen} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && (isOpen = !isOpen)}>
-    <div class="selected-voice-info" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+<div class="custom-select-wrapper" class:open={isOpen} bind:this={containerRef}>
+  <div class="custom-select-trigger" onclick={(e) => { e.stopPropagation(); isOpen = !isOpen; }} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && (isOpen = !isOpen)}>
+    <div class="selected-voice-info" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
       {#if currentVoice}
         <strong style="font-weight: 600; color: white; font-size: 0.95rem;">{currentVoice.name}</strong>
         {#if currentVoice.descriptions && currentVoice.descriptions.length > 0}
-          <div class="voice-badges" style="display: inline-flex; gap: 5px; align-items: center; margin-top: 0;">
-            {#each currentVoice.descriptions.slice(0, 5) as desc, idx}
+          <div class="voice-badges" style="display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+            {#each currentVoice.descriptions.slice(0, 3) as desc, idx}
               <span class="badge {BADGE_COLORS[idx % BADGE_COLORS.length]}">{desc}</span>
             {/each}
           </div>
@@ -70,7 +83,10 @@
         <span style="color: var(--text-muted); font-size: 0.95rem;">{placeholder}</span>
       {/if}
     </div>
-    <i class="fa-solid fa-chevron-down"></i>
+    <div class="select-chevron-icon" style="flex-shrink: 0; margin-left: 8px; font-size: 0.85rem; color: var(--text-muted);">
+      <i class="fa-solid fa-chevron-down"></i>
+      <span class="css-arrow-down">▼</span>
+    </div>
   </div>
 
   {#if isOpen}
