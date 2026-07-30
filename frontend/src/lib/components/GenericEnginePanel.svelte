@@ -218,7 +218,7 @@
   {/if}
 
   <!-- Preset Voice Selection Widget -->
-  {#if supportsPresetVoices && activeVoices.length > 0}
+  {#if supportsPresetVoices || supportsVoiceSaving}
     <div class="form-group" style="margin-bottom: 1.2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
         <label for="generic-voice-select" style="margin-bottom: 0;">Voice Speaker</label>
@@ -226,7 +226,7 @@
           <button
             onclick={() => isCreateModalOpen = true}
             type="button"
-            style="flex: 0 0 auto; padding: 6px 14px; border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; background: linear-gradient(135deg, #a855f7, #6366f1); color: white; border: none; cursor: pointer;"
+            style="flex: 0 0 auto; padding: 6px 14px; border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; background: linear-gradient(135deg, #a855f7, #6366f1); color: white; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(168,85,247,0.3);"
             title="Create and save new voice to library"
           >
             <i class="fa-solid fa-plus"></i> <span>Save New Voice</span>
@@ -234,7 +234,20 @@
         {/if}
       </div>
 
-      {#if modelOption?.voice_type === 'radio'}
+      {#if activeVoices.length === 0}
+        <div style="padding: 12px 16px; background: rgba(255,255,255,0.04); border: 1px dashed rgba(255,255,255,0.15); border-radius: 10px; color: var(--text-muted); font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <span>No voice profiles saved yet.</span>
+          {#if supportsVoiceSaving}
+            <button
+              onclick={() => isCreateModalOpen = true}
+              type="button"
+              style="background: none; border: none; color: var(--primary); font-weight: 600; cursor: pointer; text-decoration: underline; font-size: 0.9rem;"
+            >
+              + Create your first voice
+            </button>
+          {/if}
+        </div>
+      {:else if modelOption?.voice_type === 'radio'}
         <div style="display: flex; gap: 15px; margin-top: 8px; flex-wrap: wrap;">
           {#each activeVoices as v (v.id)}
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; background: {selectedVoice === v.id || selectedVoice === v.name ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)'}; padding: 10px 18px; border-radius: 8px; border: 1px solid {selectedVoice === v.id || selectedVoice === v.name ? 'var(--primary)' : 'rgba(255,255,255,0.15)'}; font-weight: 500; transition: all 0.2s;">
