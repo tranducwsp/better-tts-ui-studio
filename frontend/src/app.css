@@ -1025,24 +1025,37 @@ footer {
     }
 
     #header-actions {
-        flex-direction: column;
-        align-items: stretch !important;
-        gap: 10px;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        gap: 8px;
+        padding-bottom: 4px;
+        scrollbar-width: none;
+    }
+
+    #header-actions::-webkit-scrollbar {
+        display: none;
     }
 
     #header-actions > div {
-        width: 100%;
-        justify-content: space-between;
+        width: auto !important;
+        flex-shrink: 0;
+        gap: 6px !important;
     }
 
     .user-badge {
-        padding: 4px 10px;
-        font-size: 0.8rem;
+        padding: 4px 8px;
+        font-size: 0.78rem;
+        flex-shrink: 0;
     }
 
     .header-btn {
-        padding: 6px 12px;
-        font-size: 0.82rem;
+        padding: 5px 10px;
+        font-size: 0.78rem;
+        flex-shrink: 0;
+        white-space: nowrap;
     }
 
     /* Tabs Horizontal Touch Scroll */
