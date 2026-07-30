@@ -84,6 +84,8 @@ class InputPanelSpec(BaseModel):
     find_mode: str = "expert" # "express" (tìm kiếm chuỗi đơn giản) | "expert" (cho phép bật/tắt công cụ Regex)
     replace_tool: bool = True
     enable_chunk_box: bool = True
+    max_chunk_size: Optional[int] = 1000
+    chunk_delimiters: Optional[List[str]] = Field(default_factory=lambda: [r"(?<=\.\s*\n)", r"(?<=[.!?]\s+)"])
     auto_format: List[AutoFormatRule] = Field(default_factory=lambda: DEFAULT_AUTO_FORMAT_RULES)
 
 class VoiceMetadataFieldSpec(BaseModel):
@@ -104,6 +106,7 @@ class ModelOptionSpec(BaseModel):
     voice_metadata_schema: Optional[List[VoiceMetadataFieldSpec]] = None
 
 class UISchemaSpec(BaseModel):
+    ui_mode: str = Field(default_factory=lambda: os.getenv("UI_MODE", "beauty")) # "beauty" | "fast"
     input_panel: InputPanelSpec = Field(default_factory=InputPanelSpec)
     model_sort: List[str] = Field(default_factory=lambda: ["fast", "standard", "clone"])
     option_panel: Dict[str, ModelOptionSpec] = Field(default_factory=lambda: {

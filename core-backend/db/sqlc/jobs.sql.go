@@ -7,6 +7,8 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createTTSJob = `-- name: CreateTTSJob :one
@@ -154,6 +156,69 @@ func (q *Queries) ListTTSJobsByUserID(ctx context.Context, userID string) ([]Tts
 			&i.TotalChunks,
 			&i.Text,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserHistorySummaries = `-- name: ListUserHistorySummaries :many
+SELECT 
+    j.id AS job_id,
+    j.engine,
+    j.voice,
+    j.speed,
+    j.total_chunks,
+    j.text AS job_text,
+    j.created_at,
+    COALESCE(COUNT(DISTINCT CASE WHEN c.status = 'done' THEN c.chunk_index END), 0)::int AS done_chunks,
+    COALESCE(COUNT(DISTINCT c.chunk_index), 0)::int AS actual_chunks_count,
+    COALESCE(MIN(c.text), '')::text AS first_chunk_text
+FROM tts_jobs j
+LEFT JOIN tts_chunks c ON j.id = c.job_id
+WHERE j.user_id = $1
+GROUP BY j.id
+ORDER BY j.created_at DESC
+`
+
+type ListUserHistorySummariesRow struct {
+	JobID             string             `json:"job_id"`
+	Engine            string             `json:"engine"`
+	Voice             string             `json:"voice"`
+	Speed             float64            `json:"speed"`
+	TotalChunks       int32              `json:"total_chunks"`
+	JobText           string             `json:"job_text"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	DoneChunks        int32              `json:"done_chunks"`
+	ActualChunksCount int32              `json:"actual_chunks_count"`
+	FirstChunkText    string             `json:"first_chunk_text"`
+}
+
+func (q *Queries) ListUserHistorySummaries(ctx context.Context, userID string) ([]ListUserHistorySummariesRow, error) {
+	rows, err := q.db.Query(ctx, listUserHistorySummaries, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserHistorySummariesRow{}
+	for rows.Next() {
+		var i ListUserHistorySummariesRow
+		if err := rows.Scan(
+			&i.JobID,
+			&i.Engine,
+			&i.Voice,
+			&i.Speed,
+			&i.TotalChunks,
+			&i.JobText,
+			&i.CreatedAt,
+			&i.DoneChunks,
+			&i.ActualChunksCount,
+			&i.FirstChunkText,
 		); err != nil {
 			return nil, err
 		}

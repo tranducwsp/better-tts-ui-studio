@@ -47,5 +47,6 @@ type UserVoice struct {
 	Region    pgtype.Text        `json:"region"`
 	Style     pgtype.Text        `json:"style"`
 	FilePath  string             `json:"file_path"`
+	Metadata  []byte             `json:"metadata"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }

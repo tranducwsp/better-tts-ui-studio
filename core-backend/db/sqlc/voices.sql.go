@@ -14,7 +14,7 @@ import (
 const createUserVoice = `-- name: CreateUserVoice :one
 INSERT INTO user_voices (id, user_id, model_id, name, gender, region, style, file_path)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, user_id, model_id, name, gender, region, style, file_path, created_at
+RETURNING id, user_id, model_id, name, gender, region, style, file_path, metadata, created_at
 `
 
 type CreateUserVoiceParams struct {
@@ -49,6 +49,7 @@ func (q *Queries) CreateUserVoice(ctx context.Context, arg CreateUserVoiceParams
 		&i.Region,
 		&i.Style,
 		&i.FilePath,
+		&i.Metadata,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -70,7 +71,7 @@ func (q *Queries) DeleteUserVoice(ctx context.Context, arg DeleteUserVoiceParams
 }
 
 const getUserVoiceByID = `-- name: GetUserVoiceByID :one
-SELECT id, user_id, model_id, name, gender, region, style, file_path, created_at FROM user_voices
+SELECT id, user_id, model_id, name, gender, region, style, file_path, metadata, created_at FROM user_voices
 WHERE id = $1 AND user_id = $2 LIMIT 1
 `
 
@@ -91,13 +92,14 @@ func (q *Queries) GetUserVoiceByID(ctx context.Context, arg GetUserVoiceByIDPara
 		&i.Region,
 		&i.Style,
 		&i.FilePath,
+		&i.Metadata,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listUserVoices = `-- name: ListUserVoices :many
-SELECT id, user_id, model_id, name, gender, region, style, file_path, created_at FROM user_voices
+SELECT id, user_id, model_id, name, gender, region, style, file_path, metadata, created_at FROM user_voices
 WHERE user_id = $1
 ORDER BY created_at DESC
 `
@@ -120,6 +122,7 @@ func (q *Queries) ListUserVoices(ctx context.Context, userID string) ([]UserVoic
 			&i.Region,
 			&i.Style,
 			&i.FilePath,
+			&i.Metadata,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -133,7 +136,7 @@ func (q *Queries) ListUserVoices(ctx context.Context, userID string) ([]UserVoic
 }
 
 const listUserVoicesByModel = `-- name: ListUserVoicesByModel :many
-SELECT id, user_id, model_id, name, gender, region, style, file_path, created_at FROM user_voices
+SELECT id, user_id, model_id, name, gender, region, style, file_path, metadata, created_at FROM user_voices
 WHERE user_id = $1 AND model_id = $2
 ORDER BY created_at DESC
 `
@@ -161,6 +164,7 @@ func (q *Queries) ListUserVoicesByModel(ctx context.Context, arg ListUserVoicesB
 			&i.Region,
 			&i.Style,
 			&i.FilePath,
+			&i.Metadata,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

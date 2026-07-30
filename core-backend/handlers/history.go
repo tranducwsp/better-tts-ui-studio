@@ -57,60 +57,39 @@ func (h *HistoryHandler) GetUserHistoryAdmin(w http.ResponseWriter, r *http.Requ
 
 // getHistoryForUser hàm nội bộ tổng hợp dữ liệu lịch sử các Job và tiến độ hoàn thành các Chunk của User.
 func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Request, userID string) {
-	jobs, err := db.Queries.ListTTSJobsByUserID(r.Context(), userID)
+	summaries, err := db.Queries.ListUserHistorySummaries(r.Context(), userID)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Database error"})
 		return
 	}
 
-	result := make([]JobSummaryResponse, 0, len(jobs))
+	result := make([]JobSummaryResponse, 0, len(summaries))
 	now := time.Now()
 
-	for _, job := range jobs {
-		chunks, _ := db.Queries.ListTTSChunksByJobID(r.Context(), job.ID)
-		shortText := job.Text
+	for _, s := range summaries {
+		shortText := s.JobText
+		if shortText == "" {
+			shortText = s.FirstChunkText
+		}
 		if shortText != "" {
 			runes := []rune(shortText)
 			if len(runes) > 50 {
 				shortText = string(runes[:50]) + "..."
 			}
 		} else {
-			var firstChunk *sqlc.TtsChunk
-			for i := range chunks {
-				if chunks[i].ChunkIndex == 0 {
-					firstChunk = &chunks[i]
-					break
-				}
-			}
-			if firstChunk == nil && len(chunks) > 0 {
-				firstChunk = &chunks[0]
-			}
-			if firstChunk != nil {
-				shortText = firstChunk.Text
-			} else {
-				shortText = "No content"
-			}
+			shortText = "No content"
 		}
 
-		uniqueIndexes := make(map[int32]bool)
-		doneIndexes := make(map[int32]bool)
-		for _, c := range chunks {
-			uniqueIndexes[c.ChunkIndex] = true
-			if c.Status == "done" {
-				doneIndexes[c.ChunkIndex] = true
-			}
-		}
-
-		doneChunks := len(doneIndexes)
-		actualTotal := int(job.TotalChunks)
-		if len(uniqueIndexes) > actualTotal {
-			actualTotal = len(uniqueIndexes)
+		doneChunks := int(s.DoneChunks)
+		actualTotal := int(s.TotalChunks)
+		if int(s.ActualChunksCount) > actualTotal {
+			actualTotal = int(s.ActualChunksCount)
 		}
 
 		timeAgo := "Just now"
-		if job.CreatedAt.Valid {
-			diff := now.Sub(job.CreatedAt.Time)
+		if s.CreatedAt.Valid {
+			diff := now.Sub(s.CreatedAt.Time)
 			if diff.Hours() >= 24 {
 				days := int(diff.Hours() / 24)
 				timeAgo = fmt.Sprintf("%d days ago", days)
@@ -124,14 +103,14 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 		}
 
 		result = append(result, JobSummaryResponse{
-			JobID:      job.ID,
-			Engine:     job.Engine,
-			Voice:      job.Voice,
-			Speed:      job.Speed,
+			JobID:      s.JobID,
+			Engine:     s.Engine,
+			Voice:      s.Voice,
+			Speed:      s.Speed,
 			Text:       shortText,
 			TimeAgo:    timeAgo,
 			Progress:   fmt.Sprintf("%d/%d", doneChunks, actualTotal),
-			IsComplete: doneChunks == actualTotal,
+			IsComplete: doneChunks == actualTotal && actualTotal > 0,
 		})
 	}
 

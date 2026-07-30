@@ -93,6 +93,7 @@ type ModelOptionSpec struct {
 
 // UISchemaSpec chứa toàn bộ cấu hình bố trí giao diện động do Core Engine quy định.
 type UISchemaSpec struct {
+	UIMode      string                     `json:"ui_mode,omitempty"` // "beauty", "fast"
 	InputPanel  InputPanelSpec             `json:"input_panel"`
 	ModelSort   []string                   `json:"model_sort,omitempty"`
 	OptionPanel map[string]ModelOptionSpec `json:"option_panel,omitempty"`

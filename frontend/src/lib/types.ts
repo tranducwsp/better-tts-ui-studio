@@ -115,6 +115,7 @@ export interface ModelOptionSpec {
 }
 
 export interface UISchemaSpec {
+  ui_mode?: 'beauty' | 'fast' | string;
   input_panel: InputPanelSpec;
   model_sort?: string[];
   option_panel?: Record<string, ModelOptionSpec>;

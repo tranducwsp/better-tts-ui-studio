@@ -19,3 +19,22 @@ ORDER BY created_at DESC;
 -- name: ListAllTTSJobs :many
 SELECT * FROM tts_jobs
 ORDER BY created_at DESC;
+
+-- name: ListUserHistorySummaries :many
+SELECT 
+    j.id AS job_id,
+    j.engine,
+    j.voice,
+    j.speed,
+    j.total_chunks,
+    j.text AS job_text,
+    j.created_at,
+    COALESCE(COUNT(DISTINCT CASE WHEN c.status = 'done' THEN c.chunk_index END), 0)::int AS done_chunks,
+    COALESCE(COUNT(DISTINCT c.chunk_index), 0)::int AS actual_chunks_count,
+    COALESCE(MIN(c.text), '')::text AS first_chunk_text
+FROM tts_jobs j
+LEFT JOIN tts_chunks c ON j.id = c.job_id
+WHERE j.user_id = $1
+GROUP BY j.id
+ORDER BY j.created_at DESC;
+
