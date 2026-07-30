@@ -65,6 +65,7 @@ def root():
     }
 
 @app.get("/info", response_model=UniversalManifest, tags=["Manifest"])
+@app.get("/manifest", response_model=UniversalManifest, tags=["Manifest"])
 def get_info():
     """Returns dynamic Universal Manifest spec."""
     return UniversalManifest()
