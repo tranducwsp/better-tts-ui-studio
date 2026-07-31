@@ -23,8 +23,9 @@
     isLoading = true;
     try {
       users = await fetchAdminUsers();
-    } catch (err: any) {
-      toast.show('Failed to load user list: ' + err.message, 'error');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.show('Failed to load user list: ' + errMsg, 'error');
     } finally {
       isLoading = false;
     }
@@ -35,8 +36,9 @@
       await approveUser(userId);
       toast.show('User approved successfully!', 'success');
       loadUsers();
-    } catch (err: any) {
-      toast.show('Approval error: ' + err.message, 'error');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.show('Approval error: ' + errMsg, 'error');
     }
   }
 </script>

@@ -89,8 +89,9 @@
         runAutoFormat(false);
         toast.show('Document loaded successfully!', 'success');
       }
-    } catch (err: any) {
-      toast.show('Error reading file: ' + err.message, 'error');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.show('Error reading file: ' + errMsg, 'error');
     }
     target.value = ''; // Reset input
   }
@@ -162,9 +163,9 @@
     div.style.borderBottomWidth = computedStyle.borderBottomWidth;
     div.style.borderLeftWidth = computedStyle.borderLeftWidth;
 
-    stylesToCopy.forEach((prop) => {
-      div.style[prop as any] = computedStyle[prop as any];
-    });
+      stylesToCopy.forEach((prop) => {
+        (div.style as unknown as Record<string, string>)[prop] = (computedStyle as unknown as Record<string, string>)[prop];
+      });
 
     div.textContent = textBefore;
     const span = document.createElement('span');

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { VoiceOption, UniversalManifest, EngineModeSpec, Preset } from '../types';
+  import type { VoiceOption, UniversalManifest, EngineModeSpec, Preset, JobDetailResponse } from '../types';
   import VoiceSelect from './VoiceSelect.svelte';
   import StreamingPanel from './StreamingPanel.svelte';
   import WaveformTrimmer from './WaveformTrimmer.svelte';
@@ -12,7 +12,7 @@
     activeMode: EngineModeSpec;
     manifest: UniversalManifest | null;
     voices?: VoiceOption[];
-    reloadedJob?: any | null;
+    reloadedJob?: JobDetailResponse | null;
   }
 
   let { text, activeMode, manifest, voices = $bindable([]), reloadedJob = null }: Props = $props();
@@ -89,7 +89,7 @@
           const userVoices: VoiceOption[] = userPresets.map((p) => ({
             id: p.id,
             name: p.name,
-            descriptions: (p as any).descriptions || [p.gender, p.region, p.style].filter((d): d is string => typeof d === 'string' && d.trim() !== '')
+            descriptions: [p.gender, p.region, p.style].filter((d): d is string => typeof d === 'string' && d.trim() !== '')
           }));
           combined = [...userVoices, ...combined];
         }
@@ -148,8 +148,9 @@
       const tempPath = await cloneVoiceTemp(file);
       referenceAudioPath = tempPath;
       toast.show('Reference audio file loaded successfully!', 'success');
-    } catch (err: any) {
-      toast.show('Error loading reference file: ' + err.message, 'error');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.show('Error loading reference file: ' + errMsg, 'error');
     } finally {
       isCloningTemp = false;
       target.value = '';
@@ -210,7 +211,7 @@
           (prog) => {
             progress = prog;
           },
-          (doneWavBlob: any, mp3Url?: string) => {
+          (doneWavBlob: Blob | string, mp3Url?: string) => {
             isLoading = false;
             isStreaming = false;
             if (doneWavBlob instanceof Blob) {
@@ -233,9 +234,10 @@
         toast.show('Request submitted successfully!', 'success');
         isLoading = false;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       isLoading = false;
-      toast.show('Synthesis error: ' + err.message, 'error');
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.show('Synthesis error: ' + errMsg, 'error');
     }
   }
 
@@ -260,7 +262,7 @@
       error: { bg: 'rgba(239, 68, 68, 0.12)', border: 'rgba(239, 68, 68, 0.3)', color: '#f87171', icon: 'fa-circle-xmark' },
       warning: { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.3)', color: '#fbbf24', icon: 'fa-triangle-exclamation' }
     }}
-    {@const currentStyle = (styleMap as Record<string, any>)[banner.level] || styleMap.warning}
+    {@const currentStyle = styleMap[banner.level as keyof typeof styleMap] || styleMap.warning}
     <div style="background: {currentStyle.bg}; border: 1px solid {currentStyle.border}; border-radius: 8px; padding: 10px 14px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; color: {currentStyle.color}; font-size: 0.88em;">
       <i class="fa-solid {currentStyle.icon}" style="font-size: 1.1em; flex-shrink: 0;"></i>
       <span>{banner.message}</span>
@@ -308,9 +310,9 @@
                 bind:group={selectedVoice}
                 style="accent-color: var(--primary); transform: scale(1.2);"
               />
-              {#if (v as any).gender === 'female'}
+              {#if (v as Record<string, unknown>).gender === 'female'}
                 <i class="fa-solid fa-venus" style="color: #ff75a0;"></i>
-              {:else if (v as any).gender === 'male'}
+              {:else if (v as Record<string, unknown>).gender === 'male'}
                 <i class="fa-solid fa-mars" style="color: #4da6ff;"></i>
               {/if}
               <span>{v.name}</span>

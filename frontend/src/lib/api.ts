@@ -1,5 +1,5 @@
-import type { UserResponse, VoiceOption, Preset, HistoryItem, UniversalManifest } from './types';
-export type { UserResponse };
+import type { UserResponse, VoiceOption, Preset, HistoryItem, UniversalManifest, JobDetailResponse, ChunkItemResponse } from './types';
+export type { UserResponse, VoiceOption, Preset, HistoryItem, UniversalManifest, JobDetailResponse, ChunkItemResponse };
 
 export async function fetchManifest(): Promise<UniversalManifest | null> {
   try {
@@ -75,19 +75,28 @@ export async function approveUser(userId: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to approve user');
 }
 
-export function parseVoiceItem(v: any): VoiceOption {
+export function parseVoiceItem(v: Record<string, unknown> | string): VoiceOption {
   let descriptions: string[] = [];
-  if (Array.isArray(v.descriptions)) {
-    descriptions = v.descriptions.filter((d: any) => typeof d === 'string' && d.trim() !== '');
-  } else if (Array.isArray(v)) {
-    descriptions = [v[0], v[1]].filter(Boolean);
+  if (typeof v === 'object' && v !== null) {
+    if (Array.isArray(v.descriptions)) {
+      descriptions = v.descriptions.filter((d: unknown): d is string => typeof d === 'string' && d.trim() !== '');
+    }
+    const idStr = String(v.id || v.voice_id || v.name || '');
+    const nameStr = String(v.name || v.id || '');
+    const sampleUrl = typeof v.sampleUrl === 'string' ? v.sampleUrl : undefined;
+    return {
+      id: idStr,
+      name: nameStr,
+      descriptions,
+      sampleUrl
+    };
   }
 
+  const str = String(v);
   return {
-    id: v.id || v.voice_id || v.name || v,
-    name: v.name || v.id || v,
-    descriptions,
-    sampleUrl: v.sampleUrl || (Array.isArray(v) && v[2] ? v[2] : undefined),
+    id: str,
+    name: str,
+    descriptions: []
   };
 }
 
@@ -116,14 +125,15 @@ export async function fetchPresets(modelId?: string): Promise<Preset[]> {
     if (!res.ok) return [];
     const data = await res.json();
     if (Array.isArray(data)) {
-      return data.map((v: any) => ({
-        id: v.id || v.name || v,
-        name: v.name || v,
-        speaker: v.name || v,
+      return data.map((v: Record<string, unknown>) => ({
+        id: String(v.id || v.name || ''),
+        name: String(v.name || ''),
+        speaker: String(v.name || ''),
         speed: 1.0,
-        gender: v.gender,
-        region: v.region,
-        style: v.style
+        gender: typeof v.gender === 'string' ? v.gender : undefined,
+        region: typeof v.region === 'string' ? v.region : undefined,
+        style: typeof v.style === 'string' ? v.style : undefined,
+        created_at: typeof v.created_at === 'string' ? v.created_at : undefined
       }));
     }
     return data.presets || [];
@@ -278,7 +288,7 @@ export function subscribeTaskStream(
         eventSource.close();
         onError('Task was cancelled');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error parsing SSE task stream:', err);
     }
   };

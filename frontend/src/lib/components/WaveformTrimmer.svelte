@@ -31,7 +31,8 @@
   async function loadAudioFile(f: File) {
     try {
       const arrayBuffer = await f.arrayBuffer();
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const audioCtx = new AudioCtx();
       audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
       duration = audioBuffer.duration;
       trimStart = 0;
@@ -57,8 +58,9 @@
       }
 
       drawWaveform();
-    } catch (err: any) {
-      toast.show('Error loading audio file: ' + err.message, 'error');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.show('Error loading audio file: ' + errMsg, 'error');
     }
   }
 

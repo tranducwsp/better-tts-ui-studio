@@ -3,6 +3,7 @@ export interface VoiceOption {
   name: string;
   descriptions?: string[];
   sampleUrl?: string;
+  createdAt?: string;
 }
 
 export interface Preset {
@@ -13,6 +14,7 @@ export interface Preset {
   gender?: string;
   region?: string;
   style?: string;
+  created_at?: string;
 }
 
 export interface HistoryItem {
@@ -26,11 +28,30 @@ export interface HistoryItem {
   is_complete: boolean;
 }
 
+export interface ChunkItemResponse {
+  task_id: string;
+  chunk_index: number;
+  audio_path?: string | null;
+  status: string;
+  text: string;
+}
+
+export interface JobDetailResponse {
+  job_id: string;
+  engine: string;
+  voice: string;
+  speed: number;
+  total_chunks: number;
+  text: string;
+  chunks: ChunkItemResponse[];
+}
+
 export interface UserResponse {
   id: string;
   username: string;
   role: string;
   is_approved: boolean;
+  is_online?: boolean;
 }
 
 export interface EngineModeSpec {
@@ -138,3 +159,4 @@ export interface ToastMessage {
   type: 'info' | 'success' | 'warning' | 'error';
   message: string;
 }
+

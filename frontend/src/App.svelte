@@ -9,7 +9,7 @@
   import Toast from './lib/components/Toast.svelte';
   import { fetchVoices, fetchManifest, checkCurrentUser, logout, type UserResponse } from './lib/api';
   import { toast } from './lib/toast.svelte';
-  import type { VoiceOption, UniversalManifest } from './lib/types';
+  import type { VoiceOption, UniversalManifest, JobDetailResponse } from './lib/types';
 
   // Svelte 5 states using runes
   let activeTab = $state<string>('fast');
@@ -17,7 +17,7 @@
     'Hello! Welcome to AI Voice Studio. Experience high-quality neural voice synthesis!'
   );
   let isReadOnly = $state(false);
-  let reloadedJob = $state<any | null>(null);
+  let reloadedJob = $state<JobDetailResponse | null>(null);
   let voices = $state<VoiceOption[]>([]);
   let { initialManifest = null } = $props<{ initialManifest?: UniversalManifest | null }>();
   let currentUser = $state<UserResponse | null>(null);
@@ -114,7 +114,7 @@
     isHistoryOpen = true;
   }
 
-  function handleReloadJob(job: any) {
+  function handleReloadJob(job: JobDetailResponse) {
     mainText = job.text;
     isReadOnly = true;
     reloadedJob = job;

@@ -73,8 +73,9 @@
       toast.show('New voice saved successfully!', 'success');
       onSaved(voiceId, nameVal);
       onClose();
-    } catch (err: any) {
-      toast.show('Error saving voice sample: ' + err.message, 'error');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.show('Error saving voice sample: ' + errMsg, 'error');
     } finally {
       isSaving = false;
     }

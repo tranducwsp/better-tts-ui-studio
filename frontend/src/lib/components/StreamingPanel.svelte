@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { synthesize, subscribeTaskStream } from '../api';
   import { toast } from '../toast.svelte';
+  import type { JobDetailResponse, ChunkItemResponse } from '../types';
 
   export interface ChunkState {
     index: number;
@@ -16,7 +17,7 @@
     engine: string;
     voice: string;
     speed: number;
-    reloadedJob?: any | null;
+    reloadedJob?: JobDetailResponse | null;
     onClose?: () => void;
   }
 
@@ -95,8 +96,8 @@
 
     if (reloadedJob && reloadedJob.chunks && reloadedJob.chunks.length > 0) {
       // Restore chunks strictly from reloaded history job
-      const dbChunksMap: Record<number, any> = {};
-      reloadedJob.chunks.forEach((c: any) => {
+      const dbChunksMap: Record<number, ChunkItemResponse> = {};
+      reloadedJob.chunks.forEach((c) => {
         dbChunksMap[c.chunk_index] = c;
       });
 
@@ -106,8 +107,8 @@
         if (c) {
           if (c.audio_path) {
             url = c.audio_path.startsWith('/') ? c.audio_path : `/${c.audio_path}`;
-          } else if (c.task_id || c.id) {
-            url = `/api/tasks/${c.task_id || c.id}/audio?format=wav`;
+          } else if (c.task_id) {
+            url = `/api/tasks/${c.task_id}/audio?format=wav`;
           }
         }
 
@@ -214,8 +215,8 @@
             playChunk(0);
           }
           break;
-        } catch (err: any) {
-          lastError = err;
+        } catch (err: unknown) {
+          lastError = err as Error;
         }
       }
 

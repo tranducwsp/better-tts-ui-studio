@@ -1,12 +1,12 @@
 <script lang="ts">
   import { fetchHistory } from '../api';
   import { toast } from '../toast.svelte';
-  import type { HistoryItem } from '../types';
+  import type { HistoryItem, JobDetailResponse } from '../types';
 
   interface Props {
     isOpen: boolean;
     onClose: () => void;
-    onReloadJob: (job: any) => void;
+    onReloadJob: (job: JobDetailResponse) => void;
     targetUserId?: string | null;
     targetUsername?: string | null;
   }
@@ -46,8 +46,9 @@
         }
       }
       history = unique;
-    } catch (e: any) {
-      toast.show('Failed to load history: ' + e.message, 'error');
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      toast.show('Failed to load history: ' + errMsg, 'error');
       history = [];
     } finally {
       isLoading = false;
@@ -60,8 +61,9 @@
       if (!res.ok) throw new Error('Failed to reload task');
       const job = await res.json();
       onReloadJob(job);
-    } catch (err: any) {
-      toast.show('Failed to reload task: ' + err.message, 'error');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.show('Failed to reload task: ' + errMsg, 'error');
     }
   }
 </script>

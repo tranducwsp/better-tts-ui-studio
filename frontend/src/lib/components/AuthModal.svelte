@@ -33,8 +33,9 @@
         toast.show('Registration successful! Please wait for Admin approval.', 'success');
         mode = 'login';
       }
-    } catch (err: any) {
-      toast.show(err.message || 'Operation failed', 'error');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.show(errMsg || 'Operation failed', 'error');
     } finally {
       isLoading = false;
     }
