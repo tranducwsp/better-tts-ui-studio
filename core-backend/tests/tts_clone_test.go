@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -71,16 +70,4 @@ func TestTTSClone_DeleteUserVoice_Unauthenticated(t *testing.T) {
 	}
 }
 
-func TestTTSClone_Synthesize_Unauthenticated(t *testing.T) {
-	ttsClient := client.NewCoreTTSClient("http://localhost:8001", 5)
-	h := handlers.NewTTSCloneHandler(ttsClient)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/clone/synthesize", bytes.NewReader([]byte(`{"text":"Hello"}`)))
-	rec := httptest.NewRecorder()
-
-	h.Synthesize(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("Expected status 401 for unauthenticated clone Synthesize, got %d", rec.Code)
-	}
-}

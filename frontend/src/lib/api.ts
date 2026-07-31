@@ -192,38 +192,7 @@ export async function synthesize(
   return data.task_id || data.id || '';
 }
 
-export async function synthesizeStandard(
-  text: string,
-  voice: string,
-  speed: number,
-  jobId?: string,
-  chunkIndex: number = 0,
-  totalChunks: number = 1
-): Promise<string> {
-  return synthesize(text, voice, speed, 'standard', jobId, chunkIndex, totalChunks);
-}
 
-export async function synthesizeFast(
-  text: string,
-  voice: string,
-  speed: number,
-  jobId?: string,
-  chunkIndex: number = 0,
-  totalChunks: number = 1
-): Promise<string> {
-  return synthesize(text, voice, speed, 'fast', jobId, chunkIndex, totalChunks);
-}
-
-export async function synthesizeClone(
-  text: string,
-  voice: string,
-  speed: number,
-  jobId?: string,
-  chunkIndex: number = 0,
-  totalChunks: number = 1
-): Promise<string> {
-  return synthesize(text, voice, speed, 'clone', jobId, chunkIndex, totalChunks);
-}
 
 export async function cloneVoice(file: File, name: string, gender = 'Male', region = 'Northern', style = 'Expressive', modelId = 'clone'): Promise<string> {
   const formData = new FormData();

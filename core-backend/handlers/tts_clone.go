@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 	"core-backend/db"
 	"core-backend/db/sqlc"
 	"core-backend/middleware"
-	"core-backend/state"
 
 	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
@@ -286,98 +284,4 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã xóa giọng"})
 }
 
-// CloneSynthesizeRequest cấu trúc yêu cầu tổng hợp tiếng nói từ giọng nhân bản.
-type CloneSynthesizeRequest struct {
-	Text        string  `json:"text"`
-	CloneID     *string `json:"clone_id"`
-	Voice       *string `json:"voice"`
-	Speed       float64 `json:"speed"`
-	JobID       *string `json:"job_id"`
-	ChunkIndex  *int    `json:"chunk_index"`
-	TotalChunks *int    `json:"total_chunks"`
-	TaskID      *string `json:"task_id"`
-}
 
-// Synthesize thực hiện tổng hợp tiếng nói bất đồng bộ (Asynchronous Background Task) dựa trên giọng nhân bản.
-func (h *TTSCloneHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	user, ok := middleware.GetCurrentUser(r)
-	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
-		return
-	}
-
-	var req CloneSynthesizeRequest
-	if err := sonic.ConfigDefault.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Văn bản trống"})
-		return
-	}
-
-	targetCloneID := ""
-	if req.CloneID != nil && *req.CloneID != "" {
-		targetCloneID = *req.CloneID
-	} else if req.Voice != nil && *req.Voice != "" {
-		targetCloneID = *req.Voice
-	}
-
-	if targetCloneID == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Cần truyền clone_id hoặc voice"})
-		return
-	}
-
-	if req.Speed <= 0 {
-		req.Speed = 1.0
-	}
-
-	taskID := uuid.NewString()
-	if req.TaskID != nil && *req.TaskID != "" {
-		taskID = *req.TaskID
-	}
-
-	taskItem := state.GlobalTaskManager.GetOrCreate(taskID)
-
-	if req.JobID != nil && *req.JobID != "" && req.ChunkIndex != nil && req.TotalChunks != nil {
-		_ = db.RegisterJobAndChunk(context.Background(), user.ID, *req.JobID, "clone", targetCloneID, req.Speed, *req.TotalChunks, taskID, *req.ChunkIndex, req.Text)
-	}
-
-	// Gọi goroutine xử lý bất đồng bộ kết nối AI Engine
-	go func() {
-		bgCtx := context.Background()
-		audioBytes, err := h.TTSClient.Synthesize(req.Text, targetCloneID, req.Speed, "clone")
-		if err != nil {
-			taskItem.Notify(state.TaskUpdate{
-				Status:   "error",
-				Progress: taskItem.Progress,
-				Error:    err.Error(),
-			})
-			if req.JobID != nil && *req.JobID != "" {
-				errMsg := err.Error()
-				_ = db.UpdateChunkStatus(bgCtx, taskID, "error", nil, &errMsg)
-			}
-			return
-		}
-
-		taskItem.AudioWAV = audioBytes
-		taskItem.AudioMP3 = audioBytes
-
-		_ = os.MkdirAll("storage/temp", 0755)
-		filePath := filepath.Join("storage/temp", fmt.Sprintf("%s.wav", taskID))
-		_ = os.WriteFile(filePath, audioBytes, 0644)
-
-		if req.JobID != nil && *req.JobID != "" {
-			_ = db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil)
-		}
-
-		taskItem.Notify(state.TaskUpdate{
-			Status:   "done",
-			Progress: 100,
-		})
-	}()
-
-	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
-		"task_id": taskID,
-	})
-}
