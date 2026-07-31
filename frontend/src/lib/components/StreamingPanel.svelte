@@ -13,7 +13,7 @@
 
   interface Props {
     text: string;
-    engine: 'standard' | 'fasttts' | 'clone';
+    engine: string;
     voice: string;
     speed: number;
     reloadedJob?: any | null;
@@ -52,7 +52,12 @@
 
   function splitTextIntoChunks(rawText: string, minSize = 1000, maxSize = 2000): string[] {
     if (!rawText || rawText.length <= minSize) return [rawText];
-    const paragraphs = rawText.split(/(?<=\.\s*\n)/);
+    let paragraphs: string[];
+    try {
+      paragraphs = rawText.split(/\n\n|\.\s*\n/);
+    } catch {
+      paragraphs = rawText.split('\n');
+    }
     const result: string[] = [];
     let current = '';
 

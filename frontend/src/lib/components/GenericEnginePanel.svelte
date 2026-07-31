@@ -161,6 +161,8 @@
       });
   }
 
+  let isStreamingPanelOpen = $state(false);
+
   async function handleSynthesize() {
     if (!text.trim()) {
       toast.show('Please enter text content!', 'error');
@@ -169,6 +171,13 @@
 
     if (supportsCloning && !referenceAudioPath && !selectedVoice) {
       toast.show('Please upload a reference audio file or select a cloned voice!', 'error');
+      return;
+    }
+
+    const maxLimit = manifest?.constraints?.max_text_length || 3000;
+    if (text.length > maxLimit) {
+      isStreamingPanelOpen = true;
+      toast.show(`Text length (${text.length} chars) exceeds single request limit (${maxLimit} chars). Automatically processing via Chunk Streaming!`, 'info');
       return;
     }
 
@@ -448,6 +457,17 @@
     </div>
   {/if}
 </div>
+
+{#if isStreamingPanelOpen}
+  <StreamingPanel
+    {text}
+    engine={activeMode.id}
+    voice={referenceAudioPath || selectedVoice}
+    {speed}
+    {reloadedJob}
+    onClose={() => isStreamingPanelOpen = false}
+  />
+{/if}
 
 <!-- Modal Tạo Giọng Clone Mới -->
 {#if isCreateModalOpen}
