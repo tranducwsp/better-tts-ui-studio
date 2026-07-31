@@ -23,10 +23,13 @@
   let currentUser = $state<UserResponse | null>(null);
   let manifest = $state<UniversalManifest | null>(initialManifest);
 
-  // Synchronize state from props during hydration
+  // Synchronize state from props during hydration & set default activeTab
   $effect(() => {
     if (initialManifest && !manifest) {
       manifest = initialManifest;
+    }
+    if (activeModes.length > 0 && !activeModes.some((m) => m.id === activeTab)) {
+      activeTab = activeModes[0].id;
     }
   });
 
@@ -95,7 +98,7 @@
     toast.show('Logged out successfully', 'info');
   }
 
-  function selectTab(tab: 'fasttts' | 'standard' | 'clone') {
+  function selectTab(tab: string) {
     activeTab = tab;
   }
 
@@ -115,7 +118,7 @@
     mainText = job.text;
     isReadOnly = true;
     reloadedJob = job;
-    if (job.engine === 'standard' || job.engine === 'fasttts' || job.engine === 'clone') {
+    if (job.engine) {
       activeTab = job.engine;
     }
     isHistoryOpen = false;
@@ -149,7 +152,7 @@
         {#each activeModes as mode (mode.id)}
           <button
             class="tab-btn"
-            class:active={activeTab === mode.id || (activeTab === 'fasttts' && mode.id === 'fast')}
+            class:active={activeTab === mode.id}
             onclick={() => activeTab = mode.id}
           >
             {mode.name}

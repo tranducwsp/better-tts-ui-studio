@@ -104,19 +104,9 @@
               <tr>
                 <td style="color: #a5b4fc; font-size: 0.8rem; font-weight: 500;">{item.time_ago}</td>
                 <td style="min-width: 130px;">
-                  {#if item.engine === 'standard'}
-                    <span class="badge" style="background: rgba(59,130,246,0.2); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">
-                      <i class="fa-solid fa-wave-square"></i> Standard
-                    </span>
-                  {:else if item.engine === 'fasttts'}
-                    <span class="badge" style="background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.3); padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">
-                      <i class="fa-solid fa-bolt"></i> FastTTS
-                    </span>
-                  {:else}
-                    <span class="badge" style="background: rgba(236,72,153,0.2); color: #f472b6; border: 1px solid rgba(236,72,153,0.3); padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;">
-                      <i class="fa-solid fa-users-viewfinder"></i> Clone
-                    </span>
-                  {/if}
+                  <span class="badge" style="background: rgba(99,102,241,0.2); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.3); padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px; text-transform: capitalize;">
+                    <i class="fa-solid fa-microchip"></i> {item.engine}
+                  </span>
                 </td>
                 <td>
                   <span style="font-weight: 600; color: #e2e8f0;">{item.voice}</span>

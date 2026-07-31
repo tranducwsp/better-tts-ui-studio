@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { synthesize, synthesizeStandard, synthesizeFast, synthesizeClone, subscribeTaskStream } from '../api';
+  import { synthesize, subscribeTaskStream } from '../api';
   import { toast } from '../toast.svelte';
 
   export interface ChunkState {
