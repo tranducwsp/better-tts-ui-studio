@@ -31,10 +31,10 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # 1. AI Core Engine Microservice (Inference Engine / Mock Test)
+  # 1. AI Core Engine Microservice (Real AI Core TTS)
   core-engine:
     build:
-      context: ./core-tts-test
+      context: ./core-tts
       dockerfile: Dockerfile
     container_name: ai-core-engine
     ports:
@@ -42,13 +42,8 @@ services:
     environment:
       - CORE_PORT=8001
       - CORE_HOST=0.0.0.0
-      - ENGINE_ID=core-tts-test-v1
-      - ENGINE_NAME=Mock Test AI Engine
-      - ENGINE_PROVIDER=Universal AI Testbed
-      - MOCK_DELAY_SEC=0.0
-      - UI_MODE=beauty
     volumes:
-      - ./core-tts-test:/app
+      - ./core-tts:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
     restart: unless-stopped
 
