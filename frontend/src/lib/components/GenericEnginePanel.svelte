@@ -66,6 +66,7 @@
 
   // Load engine voices & user custom saved clone voices from DB
   async function loadVoicesForMode(modeId: string) {
+    modeVoices = [];
     try {
       let combined: VoiceOption[] = [];
       const currentOption = manifest?.ui_schema?.option_panel?.[modeId] || null;
