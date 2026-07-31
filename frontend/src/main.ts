@@ -8,12 +8,15 @@ declare global {
   }
 }
 
-const target = document.getElementById('app')!
-const initialManifest = window.__SSG_MANIFEST__ || null
+window.addEventListener('error', (e) => {
+  console.error('[Global App Error]:', e.error || e.message);
+});
 
-// Standardized Single-Path Hydration Contract
-const app = target.children.length > 0
-  ? hydrate(App, { target, props: { initialManifest } })
-  : mount(App, { target, props: { initialManifest } })
+const target = document.getElementById('app')!
+const initialManifest = (window as any).__SSG_MANIFEST__ || null
+
+// Clear pre-rendered HTML shell and cleanly mount Svelte 5 app to guarantee 100% event listeners
+target.innerHTML = ''
+const app = mount(App, { target, props: { initialManifest } })
 
 export default app

@@ -1,17 +1,17 @@
 <script lang="ts">
-  import type { VoiceOption, UniversalManifest, EngineModeSpec } from '../types';
+  import type { VoiceOption, UniversalManifest, EngineModeSpec, Preset } from '../types';
   import VoiceSelect from './VoiceSelect.svelte';
   import StreamingPanel from './StreamingPanel.svelte';
   import WaveformTrimmer from './WaveformTrimmer.svelte';
   import CreateVoiceModal from './CreateVoiceModal.svelte';
-  import { synthesize, subscribeTaskStream, fetchVoices, cloneVoiceTemp } from '../api';
+  import { synthesize, subscribeTaskStream, fetchVoices, fetchPresets, cloneVoiceTemp } from '../api';
   import { toast } from '../toast.svelte';
 
   interface Props {
     text: string;
     activeMode: EngineModeSpec;
-    manifest: UniversalManifest;
-    voices: VoiceOption[];
+    manifest: UniversalManifest | null;
+    voices?: VoiceOption[];
     reloadedJob?: any | null;
   }
 
@@ -51,12 +51,10 @@
   let selectedEmotion = $state('');
   let referenceAudioPath = $state('');
 
-  $effect(() => {
-    speed = defaultSpeed;
-    pitch = defaultPitch;
-  });
   let isCloningTemp = $state(false);
   let isCreateModalOpen = $state(false);
+  let fileInput = $state<HTMLInputElement | null>(null);
+  let selectedFile = $state<File | null>(null);
 
   // Streaming / Loading States
   let isLoading = $state(false);
@@ -66,23 +64,54 @@
   let mp3AudioUrl = $state<string | null>(null);
   let unsubscribeStream = $state<(() => void) | null>(null);
 
-  // Only fetch custom library voices if mode explicitly supports user voice saving and has no preset voices
-  $effect(() => {
-    const currentModeId = activeMode.id;
-    if (supportsVoiceSaving && (!presetVoices || presetVoices.length === 0)) {
-      fetchVoices(currentModeId).then((v) => {
-        modeVoices = v || [];
-        if (modeVoices.length > 0 && !selectedVoice) {
-          selectedVoice = modeVoices[0].id || modeVoices[0].name;
-        }
-      });
-    }
-  });
+  // Load engine voices & user custom saved clone voices from DB
+  async function loadVoicesForMode(modeId: string) {
+    try {
+      let combined: VoiceOption[] = [];
+      const currentOption = manifest?.ui_schema?.option_panel?.[modeId] || null;
 
-  // Set default voice when activeVoices list changes
+      // 1. Static preset voices from manifest schema if defined
+      if (currentOption?.preset_voices && currentOption.preset_voices.length > 0) {
+        combined = [...currentOption.preset_voices];
+      } else {
+        // 2. Fetch engine preset voices from /api/voices/{modeId}
+        const engineVoices = await fetchVoices(modeId);
+        if (engineVoices && engineVoices.length > 0) {
+          combined = [...engineVoices];
+        }
+      }
+
+      // 3. Fetch custom saved voices if mode supports voice saving
+      if (activeMode?.supports_voice_saving) {
+        const userPresets = await fetchPresets(modeId);
+        if (userPresets && userPresets.length > 0) {
+          const userVoices: VoiceOption[] = userPresets.map((p) => ({
+            id: p.id,
+            name: p.name,
+            descriptions: (p as any).descriptions || [p.gender, p.region, p.style].filter((d): d is string => typeof d === 'string' && d.trim() !== '')
+          }));
+          combined = [...userVoices, ...combined];
+        }
+      }
+
+      modeVoices = combined;
+      if (combined.length > 0 && (!selectedVoice || !combined.some(v => (v.id || v.name) === selectedVoice))) {
+        selectedVoice = combined[0].id || combined[0].name;
+      }
+    } catch (err) {
+      console.error('Error loading voices for mode:', err);
+    }
+  }
+
+  let lastModeId = $state('');
+
   $effect(() => {
-    if (activeVoices && activeVoices.length > 0 && (!selectedVoice || !activeVoices.some(v => (v.id || v.name) === selectedVoice))) {
-      selectedVoice = activeVoices[0].id || activeVoices[0].name;
+    if (activeMode && activeMode.id && activeMode.id !== lastModeId) {
+      lastModeId = activeMode.id;
+      speed = manifest?.constraints?.speed_range?.default ?? 1.0;
+      pitch = manifest?.constraints?.pitch_range?.default ?? 0.0;
+      selectedVoice = '';
+      loadVoicesForMode(activeMode.id);
     }
   });
 
@@ -210,7 +239,7 @@
       error: { bg: 'rgba(239, 68, 68, 0.12)', border: 'rgba(239, 68, 68, 0.3)', color: '#f87171', icon: 'fa-circle-xmark' },
       warning: { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.3)', color: '#fbbf24', icon: 'fa-triangle-exclamation' }
     }}
-    {@const currentStyle = styleMap[banner.level] || styleMap.warning}
+    {@const currentStyle = (styleMap as Record<string, any>)[banner.level] || styleMap.warning}
     <div style="background: {currentStyle.bg}; border: 1px solid {currentStyle.border}; border-radius: 8px; padding: 10px 14px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; color: {currentStyle.color}; font-size: 0.88em;">
       <i class="fa-solid {currentStyle.icon}" style="font-size: 1.1em; flex-shrink: 0;"></i>
       <span>{banner.message}</span>
@@ -258,9 +287,9 @@
                 bind:group={selectedVoice}
                 style="accent-color: var(--primary); transform: scale(1.2);"
               />
-              {#if v.gender === 'female'}
+              {#if (v as any).gender === 'female'}
                 <i class="fa-solid fa-venus" style="color: #ff75a0;"></i>
-              {:else if v.gender === 'male'}
+              {:else if (v as any).gender === 'male'}
                 <i class="fa-solid fa-mars" style="color: #4da6ff;"></i>
               {/if}
               <span>{v.name}</span>
@@ -305,9 +334,9 @@
         <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" bind:this={fileInput} onchange={handleFileUpload} accept=".wav,audio/wav" class="hidden" />
       </div>
 
-      {#if referenceAudioPath}
+      {#if selectedFile}
         <div style="margin-top: 10px;">
-          <WaveformTrimmer audioUrl={referenceAudioPath} onTrimComplete={handleTrimmedAudio} />
+          <WaveformTrimmer file={selectedFile} onTrimmed={handleTrimmedAudio} />
         </div>
       {/if}
     </div>

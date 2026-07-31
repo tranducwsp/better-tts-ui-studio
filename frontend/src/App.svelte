@@ -80,9 +80,6 @@
   onMount(() => {
     checkCurrentUser().then((user) => {
       currentUser = user;
-      if (!user) {
-        isAuthOpen = true;
-      }
     });
   });
 
@@ -178,7 +175,7 @@
   </footer>
 </div>
 
-<AuthModal isOpen={isAuthOpen} onSuccess={handleAuthSuccess} />
+<AuthModal isOpen={isAuthOpen} onClose={() => isAuthOpen = false} onSuccess={handleAuthSuccess} />
 <HistoryModal
   isOpen={isHistoryOpen}
   onClose={() => isHistoryOpen = false}

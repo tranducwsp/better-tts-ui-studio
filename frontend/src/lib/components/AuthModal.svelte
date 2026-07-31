@@ -4,10 +4,11 @@
 
   interface Props {
     isOpen: boolean;
+    onClose?: () => void;
     onSuccess: (user: UserResponse) => void;
   }
 
-  let { isOpen, onSuccess }: Props = $props();
+  let { isOpen, onClose, onSuccess }: Props = $props();
 
   let mode = $state<'login' | 'register'>('login');
   let username = $state('');
@@ -42,7 +43,17 @@
 
 {#if isOpen}
   <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(12px); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;">
-    <div class="glass-panel modal-animate" style="width: 100%; max-width: 420px; padding: 2rem; border-radius: 20px;">
+    <div class="glass-panel modal-animate" style="width: 100%; max-width: 420px; padding: 2rem; border-radius: 20px; position: relative;">
+      {#if onClose}
+        <button
+          type="button"
+          onclick={onClose}
+          aria-label="Close modal"
+          style="position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.1); border: none; color: #94a3b8; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;"
+        >
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      {/if}
       <div style="text-align: center; margin-bottom: 1.5rem;">
         <i class="fa-solid fa-user-lock" style="font-size: 2.5rem; color: var(--primary); margin-bottom: 10px;"></i>
         <h2 style="font-size: 1.5rem; font-weight: 700; color: white;">

@@ -29,9 +29,9 @@
 
     let paragraphRegex: RegExp;
     try {
-      paragraphRegex = new RegExp(chunkDelimiters[0] || '(?<=\\.\\s*\\n)');
+      paragraphRegex = new RegExp(chunkDelimiters[0] || '\\n\\n');
     } catch {
-      paragraphRegex = /(?<=\.\s*\n)/;
+      paragraphRegex = /\n\n/;
     }
 
     const paragraphs = text.split(paragraphRegex);
@@ -300,7 +300,7 @@
 
     let regexStr = startStr.split('').map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*');
     let match = fullText.match(new RegExp(regexStr));
-    return match ? match.index : -1;
+    return match && match.index !== undefined ? match.index : -1;
   }
 
   function handleChunkClick(chunk: string, index: number) {

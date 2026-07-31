@@ -17,6 +17,7 @@ type Config struct {
 	AccessTokenExpireMinutes int
 	CoreTTSURL               string
 	CoreTTSGrpcURL           string
+	FEBuilderURL             string
 	DefaultAdminUsername     string
 	DefaultAdminPassword     string
 	DefaultUserUsername      string
@@ -51,6 +52,7 @@ func LoadConfig() *Config {
 	secretKey := getEnv("SECRET_KEY", "default_secret_key_change_me")
 	coreTTSURL := getEnv("CORE_ENGINE_URL", getEnv("CORE_TTS_URL", "http://localhost:8001"))
 	coreTTSGrpcURL := getEnv("CORE_ENGINE_GRPC_URL", getEnv("CORE_TTS_GRPC_URL", "localhost:50051"))
+	feBuilderURL := getEnv("FE_BUILDER_URL", "http://frontend-builder:3001")
 
 	redisURL := getEnv("REDIS_URL", "localhost:6379")
 	redisPassword := getEnv("REDIS_PASSWORD", "")
@@ -84,6 +86,7 @@ func LoadConfig() *Config {
 		AccessTokenExpireMinutes:  expireMin,
 		CoreTTSURL:                coreTTSURL,
 		CoreTTSGrpcURL:            coreTTSGrpcURL,
+		FEBuilderURL:              feBuilderURL,
 		DefaultAdminUsername:      getEnv("DEFAULT_ADMIN_USERNAME", "amora"),
 		DefaultAdminPassword:      getEnv("DEFAULT_ADMIN_PASSWORD", "tranduc.tts"),
 		DefaultUserUsername:       getEnv("DEFAULT_USER_USERNAME", "thanhhai"),

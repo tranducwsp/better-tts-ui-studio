@@ -62,6 +62,7 @@ services:
       - REDIS_URL=redis:6379
       - CORE_ENGINE_URL=http://core-engine:8001
       - CORE_ENGINE_GRPC_URL=core-engine:50051
+      - FE_BUILDER_URL=http://frontend-builder:3001
     volumes:
       - ./core-backend/storage:/app/storage
     depends_on:
@@ -74,7 +75,29 @@ services:
     command: ./main
     restart: unless-stopped
 
-  # 3. Frontend Web Studio (Static Nginx Production Build)
+  # 3. Frontend Worker Builder (Node.js Sidecar for On-Demand Static HTML Re-prerendering)
+  frontend-builder:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.builder
+      args:
+        - VITE_UI_MODE=beauty
+    container_name: ai-studio-frontend-builder
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - VITE_BACKEND_URL=http://core-backend:8000
+      - VITE_UI_MODE=beauty
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - ./frontend/dist:/app/dist
+    depends_on:
+      - core-backend
+    restart: unless-stopped
+
+  # 4. Frontend Web Studio (High-performance Nginx serving from shared frontend_dist volume)
   frontend:
     build:
       context: ./frontend
@@ -86,9 +109,13 @@ services:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html
     depends_on:
       - core-backend
+      - frontend-builder
     restart: unless-stopped
 
 volumes:
   postgres_data:
+  frontend_dist:

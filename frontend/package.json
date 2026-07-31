@@ -7,6 +7,7 @@
     "prebuild": "mkdir -p public/fontawesome public/fonts && cp -r node_modules/@fortawesome/fontawesome-free/css node_modules/@fortawesome/fontawesome-free/webfonts public/fontawesome/ && cp -r node_modules/@fontsource/inter/files public/fonts/",
     "dev": "vite",
     "build": "npm run prebuild && vite build && node scripts/prerender.js",
+    "builder": "node scripts/builder_server.js",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
   },

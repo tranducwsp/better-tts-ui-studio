@@ -1,4 +1,5 @@
 import type { UserResponse, VoiceOption, Preset, HistoryItem, UniversalManifest } from './types';
+export type { UserResponse };
 
 export async function fetchManifest(): Promise<UniversalManifest | null> {
   try {

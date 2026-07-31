@@ -132,3 +132,9 @@ export interface UniversalManifest {
   audio_spec: AudioSpec;
   ui_schema?: UISchemaSpec;
 }
+
+export interface ToastMessage {
+  id: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+}
