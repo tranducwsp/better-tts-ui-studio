@@ -321,13 +321,10 @@
       <label for="temp-voice-dropzone" style="font-weight: 600; color: #cbd5e1; display: block; margin-bottom: 6px; font-size: 0.95rem;">
         Reference Audio (Sample voice clip for cloning):
       </label>
-      <div
-        role="button"
-        tabindex="0"
+      <label
+        for="temp-voice-dropzone"
         class="dropzone-area"
-        onclick={() => fileInput?.click()}
-        onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && fileInput?.click()}
-        style="border: 2px dashed rgba(255,255,255,0.2); border-radius: 12px; padding: 20px; text-align: center; background: rgba(0,0,0,0.2); cursor: pointer; transition: all 0.2s;"
+        style="border: 2px dashed rgba(255,255,255,0.2); border-radius: 12px; padding: 20px; text-align: center; background: rgba(0,0,0,0.2); cursor: pointer; transition: all 0.2s; display: block;"
       >
         {#if referenceAudioPath}
           <div style="color: var(--success); font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 8px;">
@@ -340,8 +337,8 @@
             <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: WAV (Max 10MB)</span>
           </div>
         {/if}
-        <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" bind:this={fileInput} onchange={handleFileUpload} accept=".wav,audio/wav" class="hidden" />
-      </div>
+        <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" bind:this={fileInput} onchange={handleFileUpload} accept=".wav,audio/wav" style="display: none;" />
+      </label>
 
       {#if selectedFile}
         <div style="margin-top: 10px;">

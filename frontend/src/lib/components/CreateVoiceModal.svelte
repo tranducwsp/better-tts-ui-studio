@@ -94,15 +94,16 @@
       </div>
 
       <!-- Upload area -->
-      <button type="button" class="upload-drop-zone" onclick={() => fileInput?.click()} style="width: 100%; margin-bottom: 1rem; background: none; border: 2px dashed rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center; cursor: pointer;">
+      <label for="create-voice-file-input" class="upload-drop-zone" style="display: block; width: 100%; margin-bottom: 1rem; background: none; border: 2px dashed rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center; cursor: pointer;">
         <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.5rem; color: var(--primary); margin-bottom: 10px; display: block;"></i>
         {#if selectedFile}
           <p style="color: var(--success); font-weight: 600; margin: 0;">{selectedFile.name}</p>
         {:else}
-          <p style="margin: 0; color: #94a3b8;">Drag and drop .wav audio file or <span style="color: var(--primary);">browse file</span></p>
+          <p style="color: #cbd5e1; margin: 0;">Drag & drop audio file here or <strong style="color: var(--primary);">click to browse</strong></p>
+          <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: WAV (Max 10MB)</span>
         {/if}
-        <input type="file" bind:this={fileInput} onchange={handleFileSelect} accept=".wav,audio/wav" class="hidden" />
-      </button>
+        <input id="create-voice-file-input" type="file" bind:this={fileInput} onchange={handleFileSelect} accept=".wav,audio/wav" style="display: none;" />
+      </label>
 
       <!-- Trimmer if file loaded -->
       {#if selectedFile}
