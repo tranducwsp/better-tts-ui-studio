@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { synthesizeStandard, synthesizeFast, synthesizeClone, subscribeTaskStream } from '../api';
+  import { synthesize, synthesizeStandard, synthesizeFast, synthesizeClone, subscribeTaskStream } from '../api';
   import { toast } from '../toast.svelte';
 
   export interface ChunkState {
@@ -191,14 +191,7 @@
         }
 
         try {
-          let taskId = '';
-          if (engine === 'standard') {
-            taskId = await synthesizeStandard(item.text, voice, speed, currentJobId, i, chunks.length);
-          } else if (engine === 'fasttts') {
-            taskId = await synthesizeFast(item.text, voice, speed, currentJobId, i, chunks.length);
-          } else {
-            taskId = await synthesizeClone(item.text, voice, speed, currentJobId, i, chunks.length);
-          }
+          const taskId = await synthesize(item.text, voice, speed, engine, currentJobId, i, chunks.length);
 
           const blob = await new Promise<Blob>((resolve, reject) => {
             subscribeTaskStream(
@@ -230,7 +223,13 @@
 
       if (!success) {
         item.status = 'error';
-        toast.show(`Chunk ${i + 1} failed: ${lastError ? lastError.message : 'Unknown error'}`, 'error');
+        const errMsg = lastError ? (lastError.message || String(lastError)) : 'Unknown error';
+        if (errMsg.includes('Not authenticated') || errMsg.includes('401')) {
+          toast.show('Please log in to start AI voice synthesis!', 'error');
+          break;
+        } else {
+          toast.show(`Chunk ${i + 1} failed: ${errMsg}`, 'error');
+        }
       }
     }
 
