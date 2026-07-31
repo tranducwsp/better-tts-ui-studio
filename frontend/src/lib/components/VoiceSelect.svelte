@@ -90,7 +90,7 @@
   </div>
 
   {#if isOpen}
-    <div class="custom-options">
+    <div class="custom-options" style="display: block; opacity: 1; visibility: visible;">
       {#if placeholder}
         <div
           class="custom-option"
