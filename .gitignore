@@ -36,8 +36,10 @@ pretrained-models/
 *.db
 *.sqlite
 *.sqlite3
-tts_database.db
-storage/
+/storage/
+/core-backend/storage/audio/
+/core-backend/storage/temp/
+/core-backend/storage/voice/
 
 # Backup & Temporary files
 *.orig
