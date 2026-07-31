@@ -94,9 +94,20 @@
         }
       }
 
-      modeVoices = combined;
-      if (combined.length > 0 && (!selectedVoice || !combined.some(v => (v.id || v.name) === selectedVoice))) {
-        selectedVoice = combined[0].id || combined[0].name;
+      // Deduplicate voices by id/name
+      const uniqueVoices: VoiceOption[] = [];
+      const seenKeys = new Set<string>();
+      for (const v of combined) {
+        const key = v.id || v.name;
+        if (key && !seenKeys.has(key)) {
+          seenKeys.add(key);
+          uniqueVoices.push(v);
+        }
+      }
+
+      modeVoices = uniqueVoices;
+      if (uniqueVoices.length > 0 && (!selectedVoice || !uniqueVoices.some(v => (v.id || v.name) === selectedVoice))) {
+        selectedVoice = uniqueVoices[0].id || uniqueVoices[0].name;
       }
     } catch (err) {
       console.error('Error loading voices for mode:', err);

@@ -106,7 +106,7 @@
         </div>
       {/if}
 
-      {#each voices as v (v.id)}
+      {#each voices as v, idx (v.id ? `${v.id}_${idx}` : `${v.name}_${idx}`)}
         <div
           class="custom-option"
           class:selected={v.id === selectedVoiceId}
