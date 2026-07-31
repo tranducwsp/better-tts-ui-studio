@@ -62,21 +62,7 @@ async def synthesize(req: SynthesizeRequest, background_tasks: BackgroundTasks):
     if " — " in target_voice:
         target_voice = target_voice.split(" — ")[0].strip()
 
-    is_fast_voice = (
-        raw_voice in FAST_VOICES or
-        target_voice in FAST_VOICES or
-        "Neural" in target_voice or
-        "Hoài Mỹ" in target_voice or
-        "Nam Minh" in target_voice or
-        "nam_minh" in target_voice.lower() or
-        "hoai_my" in target_voice.lower()
-    )
-    if is_fast_voice:
-        engine_type = "fast"
-    elif req.engine:
-        engine_type = req.engine
-    else:
-        engine_type = "standard"
+    engine_type = req.engine if req.engine else "standard"
 
     tasks_db[task_id] = {
         "progress": 0,

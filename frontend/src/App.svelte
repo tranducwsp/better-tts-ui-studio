@@ -35,13 +35,7 @@
 
   // Dynamic tab ordering derived from manifest ui_schema
   let activeModes = $derived.by(() => {
-    if (!manifest) {
-      return [
-        { id: 'fast', name: 'Ultra Fast', icon: 'fa-bolt' },
-        { id: 'standard', name: 'Standard Neural', icon: 'fa-wave-square' },
-        { id: 'clone', name: 'Voice Clone', icon: 'fa-users-viewfinder' }
-      ];
-    }
+    if (!manifest) return [];
     const sortOrder = manifest.ui_schema?.model_sort;
     const allModes = manifest.supported_modes || [];
     const cleanName = (name: string) => name.replace(/\s+(Engine|Model)$/i, '');
@@ -79,11 +73,16 @@
   let adminTargetUserId = $state<string | null>(null);
   let adminTargetUsername = $state<string | null>(null);
 
-  // Standardized Runtime Lifecycle: Only check session auth on mount
+  // Standardized Runtime Lifecycle: Check auth & fetch manifest if not pre-rendered
   onMount(() => {
     checkCurrentUser().then((user) => {
       currentUser = user;
     });
+    if (!manifest) {
+      fetchManifest().then((m) => {
+        if (m) manifest = m;
+      });
+    }
   });
 
   function handleAuthSuccess(user: UserResponse) {

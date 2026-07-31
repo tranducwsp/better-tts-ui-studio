@@ -68,8 +68,19 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 
 	unifiedList := []UnifiedVoiceResponse{}
 
-	// 1. Lấy danh sách giọng Preset từ AI Engine ngoại trừ khi chỉ lấy giọng clone
-	if modelID == "" || modelID == "all" || modelID != "clone" {
+	// 1. Lấy danh sách giọng Preset từ AI Engine nếu Mode hỗ trợ
+	m := state.GlobalManifestState.Get()
+	supportsPreset := true
+	if m != nil && modelID != "" && modelID != "all" {
+		for _, mode := range m.SupportedModes {
+			if strings.EqualFold(mode.ID, modelID) {
+				supportsPreset = mode.SupportsPresetVoices
+				break
+			}
+		}
+	}
+
+	if supportsPreset {
 		presetVoices, err := h.TTSClient.GetVoices()
 		if err == nil {
 			for _, v := range presetVoices {
@@ -153,7 +164,12 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	if urlModelID != "" {
 		req.Engine = urlModelID
 	} else if req.Engine == "" {
-		req.Engine = "standard"
+		m := state.GlobalManifestState.Get()
+		if m != nil && len(m.SupportedModes) > 0 {
+			req.Engine = m.SupportedModes[0].ID
+		} else {
+			req.Engine = "standard"
+		}
 	}
 
 	// 1. Universal Validation Gate: Kiểm tra xem Request có tuân thủ Manifest của Engine không
