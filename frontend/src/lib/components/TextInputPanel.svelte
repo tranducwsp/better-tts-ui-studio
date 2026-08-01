@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { InputPanelSpec, UniversalManifest } from '../types';
-  import { resolveChunkSize } from '../textLimits';
+  import { resolveChunkSize, splitIntoChunks } from '../textLimits';
   import { extractTextFromFile } from '../api';
   import { toast } from '../toast.svelte';
 
@@ -21,60 +21,10 @@
   let lastSearchIndex = $state(0);
   let textareaElement = $state<HTMLTextAreaElement | undefined>();
 
-  // Shared resolver: the preview must match what StreamingPanel actually sends.
+  // Shared resolver + shared splitter: this preview must be the exact division that
+  // StreamingPanel transmits, so both call the same function.
   let maxChunkSize = $derived(resolveChunkSize(manifest));
-  let chunkDelimiters = $derived(inputPanelSpec?.chunk_delimiters || ['(?<=\\.\\s*\\n)', '[^.!?]+[.!?]+']);
-
-  // Svelte 5 derived state for text chunks (Supports custom regex delimiters from manifest)
-  let chunks = $derived.by(() => {
-    const limit = maxChunkSize;
-    if (!text || text.length <= limit) return text ? [text] : [];
-
-    let paragraphRegex: RegExp;
-    try {
-      paragraphRegex = new RegExp(chunkDelimiters[0] || '\\n\\n');
-    } catch {
-      paragraphRegex = /\n\n/;
-    }
-
-    const paragraphs = text.split(paragraphRegex);
-    const result: string[] = [];
-    let currentChunk = '';
-
-    for (const p of paragraphs) {
-      const cleanP = p.trim();
-      if (!cleanP) continue;
-
-      if (cleanP.length > limit * 2) {
-        let sentenceRegex: RegExp;
-        try {
-          sentenceRegex = new RegExp(chunkDelimiters[1] || '[^.!?]+[.!?]+', 'g');
-        } catch {
-          sentenceRegex = /[^.!?]+[.!?]+/g;
-        }
-        const sentences = cleanP.match(sentenceRegex) || [cleanP];
-        for (const s of sentences) {
-          const cleanS = s.trim();
-          if (!cleanS) continue;
-          if (currentChunk.length + cleanS.length + 1 <= limit) {
-            currentChunk += (currentChunk ? ' ' : '') + cleanS;
-          } else {
-            if (currentChunk) result.push(currentChunk);
-            currentChunk = cleanS;
-          }
-        }
-      } else {
-        if (currentChunk.length + cleanP.length + 1 <= limit) {
-          currentChunk += (currentChunk ? '\n' : '') + cleanP;
-        } else {
-          if (currentChunk) result.push(currentChunk);
-          currentChunk = cleanP;
-        }
-      }
-    }
-    if (currentChunk) result.push(currentChunk);
-    return result.length ? result : [text];
-  });
+  let chunks = $derived(splitIntoChunks(text, manifest));
 
   let fileInput = $state<HTMLInputElement | undefined>();
 

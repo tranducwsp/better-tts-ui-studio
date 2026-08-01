@@ -67,23 +67,49 @@ that choice. Add one to the synthesize payload first if this should be selectabl
 
 ---
 
-## Text length: single source of truth
+## Text length and chunking: single source of truth
 
-Chunk sizing used to be decided in three places with three different fallbacks, which let
-the chunk preview disagree with the chunks actually sent. All of it now resolves through
-`frontend/src/lib/textLimits.ts`:
+Chunk sizing used to be decided in three places with three different fallbacks, and the
+splitting *algorithm* lived in two places with different regexes — so the preview under
+the textarea could show a different division than the one actually transmitted.
 
-| Concern | Resolver | Source |
+All of it now resolves through `frontend/src/lib/textLimits.ts`:
+
+| Concern | Function | Source |
 |---|---|---|
 | Per-request ceiling | `resolveMaxTextLength()` | `constraints.max_text_length` |
 | Chunk size | `resolveChunkSize()` | `input_panel.max_chunk_size`, **clamped** to the ceiling |
 | Streaming threshold | `resolveStreamingThreshold()` | `constraints.max_text_length` |
+| **How text is cut** | `splitIntoChunks()` | `input_panel.chunk_delimiters` |
 
-The clamp matters: an engine declaring `max_chunk_size: 9999` alongside
+`TextInputPanel` (the preview box) and `StreamingPanel` (what is sent) both call
+`splitIntoChunks(text, manifest)`, so they cannot disagree — it is the same call.
+
+Two bugs this fixed, both confirmed by measurement:
+
+- The engine declares `chunk_delimiters` as zero-width lookbehinds, e.g.
+  `(?<=[.!?]\s+)`. The preview fed the second one to `.match()`, which returns an array of
+  empty strings for a zero-width pattern; every one was then skipped by the `if (!clean)
+  continue` guard. Any paragraph longer than `limit * 2` therefore fell through
+  unsplit — the preview claimed "1 chunk" for text that was 4209 characters against a
+  300-character limit.
+- `StreamingPanel` ignored `chunk_delimiters` entirely and hardcoded
+  `[^.!?]+[.!?]+` with `.match()`. Because `.match()` discards whatever fails to match, a
+  trailing sentence without terminating punctuation was dropped: 22 characters lost from a
+  3152-character input.
+
+`splitIntoChunks` uses `split()` for both tiers, which is the shape lookbehind delimiters
+are written for, and hard-splits any fragment still over the limit. Verified across 35
+combinations of manifest shape and text shape: preview is byte-identical to what is sent,
+no characters are lost, and no chunk exceeds the ceiling — including when the engine
+declares a syntactically invalid delimiter, when `max_chunk_size` exceeds
+`max_text_length`, and when no manifest has loaded.
+
+The clamp matters independently: an engine declaring `max_chunk_size: 9999` alongside
 `max_text_length: 500` still gets 500-char chunks, because anything larger is rejected by
 the backend's own manifest validation.
 
 Fallback is 3000 and applies only when no manifest has loaded.
 
-When adding a new text-length decision, call a resolver — do not read the manifest
-directly, or the three numbers will drift apart again.
+When adding a new text-length or chunking decision, call into `textLimits.ts` — do not
+read the manifest directly, or these will drift apart again.

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { synthesize, subscribeTaskStream } from '../api';
-  import { resolveChunkSize } from '../textLimits';
+  import { splitIntoChunks } from '../textLimits';
   import { toast } from '../toast.svelte';
   import type { JobDetailResponse, ChunkItemResponse, UniversalManifest } from '../types';
 
@@ -27,9 +27,6 @@
 
   let { text, engine, voice, speed, pitch, emotion, manifest = null, reloadedJob = null, onClose }: Props = $props();
 
-  // Shared resolver so the chunk preview, the chunks actually sent, and the streaming
-  // threshold can never disagree. Clamped to the engine's per-request ceiling.
-  let chunkLimit = $derived(resolveChunkSize(manifest));
 
   let chunks = $state<ChunkState[]>([]);
   let currentPlayIndex = $state<number>(-1);
@@ -59,61 +56,8 @@
     }
   });
 
-  function splitTextIntoChunks(rawText: string, minSize = 1000, maxSize = 2000): string[] {
-    if (!rawText || rawText.length <= minSize) return [rawText];
-    let paragraphs: string[];
-    try {
-      paragraphs = rawText.split(/\n\n|\.\s*\n/);
-    } catch {
-      paragraphs = rawText.split('\n');
-    }
-    const result: string[] = [];
-    let current = '';
-
-    for (const p of paragraphs) {
-      const cleanP = p.trim();
-      if (!cleanP) continue;
-
-      if (cleanP.length > maxSize) {
-        const sentences = cleanP.match(/[^.!?]+[.!?]+/g) || [cleanP];
-        for (const s of sentences) {
-          const cleanS = s.trim();
-          if (!cleanS) continue;
-          if (current.length + cleanS.length + 1 <= minSize) {
-            current += (current ? ' ' : '') + cleanS;
-          } else {
-            if (current) result.push(current);
-            current = cleanS;
-          }
-        }
-      } else {
-        if (current.length + cleanP.length + 1 <= minSize) {
-          current += (current ? '\n' : '') + cleanP;
-        } else {
-          if (current) result.push(current);
-          current = cleanP;
-        }
-      }
-    }
-    if (current) result.push(current);
-
-    // Safety net: a single sentence with no delimiter can still exceed the engine's
-    // per-request limit, which the backend would reject. Hard-split anything oversized.
-    const bounded: string[] = [];
-    for (const c of result) {
-      if (c.length <= minSize) {
-        bounded.push(c);
-        continue;
-      }
-      for (let i = 0; i < c.length; i += minSize) {
-        bounded.push(c.slice(i, i + minSize));
-      }
-    }
-    return bounded;
-  }
-
   async function startStreamingJob() {
-    const chunkTexts = splitTextIntoChunks(text, chunkLimit, chunkLimit * 2);
+    const chunkTexts = splitIntoChunks(text, manifest);
 
     if (reloadedJob && reloadedJob.chunks && reloadedJob.chunks.length > 0) {
       // Restore chunks strictly from reloaded history job
