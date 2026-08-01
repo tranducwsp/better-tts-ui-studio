@@ -164,15 +164,22 @@ export async function extractTextFromFile(file: File): Promise<string> {
   return data.text || '';
 }
 
+export interface SynthesizeOptions {
+  jobId?: string;
+  chunkIndex?: number;
+  totalChunks?: number;
+  pitch?: number;
+  emotion?: string;
+}
+
 export async function synthesize(
   text: string,
   voice: string,
   speed: number,
   engine: string = 'standard',
-  jobId?: string,
-  chunkIndex: number = 0,
-  totalChunks: number = 1
+  options: SynthesizeOptions = {}
 ): Promise<string> {
+  const { jobId, chunkIndex = 0, totalChunks = 1, pitch, emotion } = options;
   const res = await fetch(`/api/synthesize/${engine}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -184,6 +191,9 @@ export async function synthesize(
       job_id: jobId,
       chunk_index: chunkIndex,
       total_chunks: totalChunks,
+      // Only sent when the manifest declares the engine supports them
+      ...(pitch !== undefined ? { pitch } : {}),
+      ...(emotion ? { emotion } : {}),
     }),
     credentials: 'include',
   });

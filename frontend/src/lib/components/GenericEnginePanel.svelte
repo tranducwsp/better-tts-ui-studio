@@ -5,17 +5,17 @@
   import WaveformTrimmer from './WaveformTrimmer.svelte';
   import CreateVoiceModal from './CreateVoiceModal.svelte';
   import { synthesize, subscribeTaskStream, fetchVoices, fetchPresets, cloneVoiceTemp } from '../api';
+  import { resolveStreamingThreshold } from '../textLimits';
   import { toast } from '../toast.svelte';
 
   interface Props {
     text: string;
     activeMode: EngineModeSpec;
     manifest: UniversalManifest | null;
-    voices?: VoiceOption[];
     reloadedJob?: JobDetailResponse | null;
   }
 
-  let { text, activeMode, manifest, voices = $bindable([]), reloadedJob = null }: Props = $props();
+  let { text, activeMode, manifest, reloadedJob = null }: Props = $props();
 
   // Mode option spec derived from manifest ui_schema
   let modelOption = $derived(manifest?.ui_schema?.option_panel?.[activeMode.id] || null);
@@ -30,6 +30,47 @@
     activeMode?.supports_streaming ?? manifest?.capabilities?.supports_streaming ?? true
   );
 
+  // Pitch / emotion gating. The manifest describes these on two levels: a global
+  // capability flag, and an optional per-mode `pitch_type`/`emotion_type` widget spec.
+  // If ANY mode opts in via option_panel, treat the spec as authoritative and only show
+  // the control on modes that declare it. Engines that ship no per-mode spec at all keep
+  // the plain global behaviour.
+  function modeGate(key: 'pitch_type' | 'emotion_type', enabled: boolean): boolean {
+    if (!enabled) return false;
+    const panels = manifest?.ui_schema?.option_panel;
+    if (!panels) return true;
+    const anyModeDeclares = Object.values(panels).some((p) => p?.[key]);
+    if (!anyModeDeclares) return true;
+    return Boolean(panels[activeMode.id]?.[key]);
+  }
+
+  let supportsPitch = $derived(modeGate('pitch_type', manifest?.capabilities?.supports_pitch ?? false));
+  let supportsEmotion = $derived(
+    modeGate('emotion_type', manifest?.capabilities?.supports_emotion ?? false) &&
+      (manifest?.constraints?.supported_emotions?.length || 0) > 0
+  );
+
+  let availableEmotions = $derived(manifest?.constraints?.supported_emotions ?? []);
+
+  // Output format label, described by the engine rather than assumed.
+  let audioSpecLabel = $derived.by(() => {
+    const spec = manifest?.audio_spec;
+    const fmt = (spec?.default_format ?? 'wav').toUpperCase();
+    const rate = spec?.default_sample_rate;
+    return rate ? `${fmt} ${(rate / 1000).toFixed(rate % 1000 === 0 ? 0 : 1)}kHz` : fmt;
+  });
+
+  // Reference-audio upload filter, also engine-described.
+  let acceptedUploadFormats = $derived.by(() => {
+    const formats = manifest?.audio_spec?.supported_formats;
+    if (!formats || formats.length === 0) return '.wav,audio/wav';
+    return formats.map((f) => `.${f}`).join(',');
+  });
+
+  let supportedFormatsLabel = $derived(
+    (manifest?.audio_spec?.supported_formats ?? ['wav']).map((f) => f.toUpperCase()).join(', ')
+  );
+
   let modeVoices = $state<VoiceOption[]>([]);
 
   // Active voice list: use modelOption.preset_voices if specified by manifest, else modeVoices
@@ -40,9 +81,6 @@
     return modeVoices;
   });
 
-  // Default derived constraints
-  let defaultSpeed = $derived(manifest?.constraints?.speed_range?.default ?? 1.0);
-  let defaultPitch = $derived(manifest?.constraints?.pitch_range?.default ?? 0.0);
 
   // States
   let selectedVoice = $state('');
@@ -53,12 +91,11 @@
 
   let isCloningTemp = $state(false);
   let isCreateModalOpen = $state(false);
-  let fileInput = $state<HTMLInputElement | null>(null);
   let selectedFile = $state<File | null>(null);
 
   // Streaming / Loading States
+  let isStreamingPanelOpen = $state(false);
   let isLoading = $state(false);
-  let isStreaming = $state(false);
   let progress = $state(0);
   let wavBlobUrl = $state<string | null>(null);
   let mp3AudioUrl = $state<string | null>(null);
@@ -115,13 +152,18 @@
     }
   }
 
-  let lastModeId = $state('');
+  // Plain (non-reactive) guard: this is written by the effect that reads it, so it must
+  // not be $state or the effect would depend on its own write.
+  let lastModeId = '';
 
   $effect(() => {
     if (activeMode && activeMode.id && activeMode.id !== lastModeId) {
       lastModeId = activeMode.id;
       speed = manifest?.constraints?.speed_range?.default ?? 1.0;
       pitch = manifest?.constraints?.pitch_range?.default ?? 0.0;
+      // Emotion vocabularies are per-engine; a value carried over from another mode
+      // may not exist in this one, so always reset it.
+      selectedEmotion = '';
       selectedVoice = '';
       loadVoicesForMode(activeMode.id);
     }
@@ -132,8 +174,12 @@
     if (reloadedJob && reloadedJob.engine === activeMode.id) {
       if (reloadedJob.voice) selectedVoice = reloadedJob.voice;
       if (reloadedJob.speed) speed = reloadedJob.speed;
+      // Absent means the engine had no such control for that job; keep the mode default.
+      // Compared against undefined so a stored pitch of 0 still restores.
+      if (reloadedJob.pitch !== undefined) pitch = reloadedJob.pitch;
+      if (reloadedJob.emotion) selectedEmotion = reloadedJob.emotion;
       if (reloadedJob.chunks && reloadedJob.chunks.length > 0) {
-        isStreaming = true;
+        isStreamingPanelOpen = true;
       }
     }
   });
@@ -142,6 +188,7 @@
     const target = e.target as HTMLInputElement;
     if (!target.files?.length) return;
     const file = target.files[0];
+    selectedFile = file;
     isCloningTemp = true;
     toast.show('Processing reference audio file...', 'info');
     try {
@@ -174,7 +221,6 @@
       });
   }
 
-  let isStreamingPanelOpen = $state(false);
 
   async function handleSynthesize() {
     if (!text.trim()) {
@@ -187,7 +233,7 @@
       return;
     }
 
-    const maxLimit = manifest?.constraints?.max_text_length || 3000;
+    const maxLimit = resolveStreamingThreshold(manifest);
     if (text.length > maxLimit) {
       isStreamingPanelOpen = true;
       toast.show(`Text length (${text.length} chars) exceeds single request limit (${maxLimit} chars). Automatically processing via Chunk Streaming!`, 'info');
@@ -195,17 +241,18 @@
     }
 
     isLoading = true;
-    isStreaming = false;
     progress = 0;
     wavBlobUrl = null;
     mp3AudioUrl = null;
 
     try {
       const voiceParam = referenceAudioPath || selectedVoice;
-      const taskId = await synthesize(text, voiceParam, speed, activeMode.id);
+      const taskId = await synthesize(text, voiceParam, speed, activeMode.id, {
+        pitch: supportsPitch ? pitch : undefined,
+        emotion: supportsEmotion ? selectedEmotion : undefined,
+      });
 
       if (supportsStreaming) {
-        isStreaming = true;
         unsubscribeStream = subscribeTaskStream(
           taskId,
           (prog) => {
@@ -213,7 +260,6 @@
           },
           (doneWavBlob: Blob | string, mp3Url?: string) => {
             isLoading = false;
-            isStreaming = false;
             if (doneWavBlob instanceof Blob) {
               wavBlobUrl = URL.createObjectURL(doneWavBlob);
             } else if (typeof doneWavBlob === 'string') {
@@ -226,7 +272,6 @@
           },
           (err) => {
             isLoading = false;
-            isStreaming = false;
             toast.show('Process error: ' + err, 'error');
           }
         );
@@ -348,10 +393,10 @@
           <div style="color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 6px;">
             <i class="fa-solid fa-cloud-arrow-up" style="font-size: 1.8rem; color: var(--primary);"></i>
             <span>Drag & drop audio file here or <strong style="color: var(--primary);">click to browse</strong></span>
-            <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: WAV (Max 10MB)</span>
+            <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: {supportedFormatsLabel}</span>
           </div>
         {/if}
-        <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" bind:this={fileInput} onchange={handleFileUpload} accept=".wav,audio/wav" style="display: none;" />
+        <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" onchange={handleFileUpload} accept={acceptedUploadFormats} style="display: none;" />
       </label>
 
       {#if selectedFile}
@@ -390,34 +435,57 @@
   {/if}
 
   <!-- Pitch Control Widget (Dynamic) -->
-  {#if manifest?.capabilities?.supports_pitch}
+  {#if supportsPitch}
     <div class="form-group">
       <label for="generic-pitch">Pitch: <span>{pitch.toFixed(1)}</span></label>
-      <input
-        type="range"
-        id="generic-pitch"
-        min={manifest?.constraints?.pitch_range?.min || -10}
-        max={manifest?.constraints?.pitch_range?.max || 10}
-        step={manifest?.constraints?.pitch_range?.step || 0.5}
-        bind:value={pitch}
-      />
+      {#if modelOption?.pitch_type === 'number'}
+        <input
+          type="number"
+          id="generic-pitch"
+          min={manifest?.constraints?.pitch_range?.min ?? -10}
+          max={manifest?.constraints?.pitch_range?.max ?? 10}
+          step={manifest?.constraints?.pitch_range?.step ?? 0.5}
+          bind:value={pitch}
+          style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
+        />
+      {:else}
+        <input
+          type="range"
+          id="generic-pitch"
+          min={manifest?.constraints?.pitch_range?.min ?? -10}
+          max={manifest?.constraints?.pitch_range?.max ?? 10}
+          step={manifest?.constraints?.pitch_range?.step ?? 0.5}
+          bind:value={pitch}
+        />
+      {/if}
     </div>
   {/if}
 
   <!-- Emotion Control Widget (Dynamic) -->
-  {#if manifest?.capabilities?.supports_emotion && (manifest?.constraints?.supported_emotions?.length || 0) > 0}
+  {#if supportsEmotion}
     <div class="form-group">
       <label for="generic-emotion">Emotion</label>
-      <select
-        id="generic-emotion"
-        bind:value={selectedEmotion}
-        style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
-      >
-        <option value="">Default (Natural)</option>
-        {#each manifest.constraints.supported_emotions as em}
-          <option value={em}>{em}</option>
-        {/each}
-      </select>
+      {#if modelOption?.emotion_type === 'radio'}
+        <div style="display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap;">
+          {#each availableEmotions as em (em)}
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; background: {selectedEmotion === em ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)'}; padding: 8px 14px; border-radius: 8px; border: 1px solid {selectedEmotion === em ? 'var(--primary)' : 'rgba(255,255,255,0.15)'}; font-weight: 500;">
+              <input type="radio" name="generic-emotion-radio" value={em} bind:group={selectedEmotion} style="accent-color: var(--primary);" />
+              <span>{em}</span>
+            </label>
+          {/each}
+        </div>
+      {:else}
+        <select
+          id="generic-emotion"
+          bind:value={selectedEmotion}
+          style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
+        >
+          <option value="">Default (Natural)</option>
+          {#each availableEmotions as em (em)}
+            <option value={em}>{em}</option>
+          {/each}
+        </select>
+      {/if}
     </div>
   {/if}
 
@@ -452,7 +520,7 @@
         <h4 style="margin: 0; display: flex; align-items: center; gap: 8px; color: var(--primary);">
           <i class="fa-solid fa-circle-play"></i> Synthesized Audio Ready
         </h4>
-        <span style="font-size: 0.82em; opacity: 0.7;">WAV 24kHz</span>
+        <span style="font-size: 0.82em; opacity: 0.7;">{audioSpecLabel}</span>
       </div>
       <audio controls autoplay src={wavBlobUrl} style="width: 100%; margin-bottom: 1rem; border-radius: 8px; outline: none;"></audio>
       <div style="display: flex; gap: 10px; flex-wrap: wrap;">
@@ -475,6 +543,9 @@
     engine={activeMode.id}
     voice={referenceAudioPath || selectedVoice}
     {speed}
+    pitch={supportsPitch ? pitch : undefined}
+    emotion={supportsEmotion ? selectedEmotion : undefined}
+    {manifest}
     {reloadedJob}
     onClose={() => isStreamingPanelOpen = false}
   />

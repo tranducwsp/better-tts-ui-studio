@@ -41,6 +41,9 @@ export interface JobDetailResponse {
   engine: string;
   voice: string;
   speed: number;
+  // Omitted by the API when the engine had no pitch/emotion control for that job.
+  pitch?: number;
+  emotion?: string;
   total_chunks: number;
   text: string;
   chunks: ChunkItemResponse[];

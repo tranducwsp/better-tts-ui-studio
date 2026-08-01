@@ -7,9 +7,15 @@
   import AuthModal from './lib/components/AuthModal.svelte';
   import AdminModal from './lib/components/AdminModal.svelte';
   import Toast from './lib/components/Toast.svelte';
-  import { fetchVoices, fetchManifest, checkCurrentUser, logout, type UserResponse } from './lib/api';
+  import { fetchManifest, checkCurrentUser, logout, type UserResponse } from './lib/api';
   import { toast } from './lib/toast.svelte';
-  import type { VoiceOption, UniversalManifest, JobDetailResponse } from './lib/types';
+  import type { UniversalManifest, JobDetailResponse } from './lib/types';
+
+  interface Props {
+    initialManifest?: UniversalManifest | null;
+  }
+
+  let { initialManifest = null }: Props = $props();
 
   // Svelte 5 states using runes
   let activeTab = $state<string>('fast');
@@ -18,16 +24,15 @@
   );
   let isReadOnly = $state(false);
   let reloadedJob = $state<JobDetailResponse | null>(null);
-  let voices = $state<VoiceOption[]>([]);
-  let { initialManifest = null } = $props<{ initialManifest?: UniversalManifest | null }>();
   let currentUser = $state<UserResponse | null>(null);
-  let manifest = $state<UniversalManifest | null>(initialManifest);
 
-  // Synchronize state from props during hydration & set default activeTab
+  // Manifest fetched at runtime. Falls back to the SSG-injected prop until it resolves,
+  // so the prerendered markup and the first hydrated render agree.
+  let fetchedManifest = $state<UniversalManifest | null>(null);
+  let manifest = $derived(fetchedManifest ?? initialManifest);
+
+  // Keep the active tab valid whenever the manifest's mode list changes.
   $effect(() => {
-    if (initialManifest && !manifest) {
-      manifest = initialManifest;
-    }
     if (activeModes.length > 0 && !activeModes.some((m) => m.id === activeTab)) {
       activeTab = activeModes[0].id;
     }
@@ -73,14 +78,14 @@
   let adminTargetUserId = $state<string | null>(null);
   let adminTargetUsername = $state<string | null>(null);
 
-  // Standardized Runtime Lifecycle: Check auth & fetch manifest if not pre-rendered
+  // Standardized Runtime Lifecycle: Check auth & refresh manifest if not pre-rendered
   onMount(() => {
     checkCurrentUser().then((user) => {
       currentUser = user;
     });
-    if (!manifest) {
+    if (!initialManifest) {
       fetchManifest().then((m) => {
-        if (m) manifest = m;
+        if (m) fetchedManifest = m;
       });
     }
   });
@@ -143,7 +148,7 @@
 
   <main>
     <!-- Text Content Input Panel -->
-    <TextInputPanel bind:text={mainText} bind:isReadOnly={isReadOnly} inputPanelSpec={manifest?.ui_schema?.input_panel || null} />
+    <TextInputPanel bind:text={mainText} bind:isReadOnly={isReadOnly} inputPanelSpec={manifest?.ui_schema?.input_panel || null} {manifest} />
 
     <!-- Main Tabs dynamically ordered by Manifest -->
     <div id="main-tabs-container" style="margin-bottom: 1.5rem; width: 100%;">
@@ -166,7 +171,6 @@
         text={mainText}
         activeMode={currentModeSpec}
         {manifest}
-        bind:voices={voices}
         {reloadedJob}
       />
     </div>

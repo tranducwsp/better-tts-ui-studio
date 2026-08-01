@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { synthesize, subscribeTaskStream } from '../api';
+  import { resolveChunkSize } from '../textLimits';
   import { toast } from '../toast.svelte';
-  import type { JobDetailResponse, ChunkItemResponse } from '../types';
+  import type { JobDetailResponse, ChunkItemResponse, UniversalManifest } from '../types';
 
   export interface ChunkState {
     index: number;
@@ -17,11 +18,18 @@
     engine: string;
     voice: string;
     speed: number;
+    pitch?: number;
+    emotion?: string;
+    manifest?: UniversalManifest | null;
     reloadedJob?: JobDetailResponse | null;
     onClose?: () => void;
   }
 
-  let { text, engine, voice, speed, reloadedJob = null, onClose }: Props = $props();
+  let { text, engine, voice, speed, pitch, emotion, manifest = null, reloadedJob = null, onClose }: Props = $props();
+
+  // Shared resolver so the chunk preview, the chunks actually sent, and the streaming
+  // threshold can never disagree. Clamped to the engine's per-request ceiling.
+  let chunkLimit = $derived(resolveChunkSize(manifest));
 
   let chunks = $state<ChunkState[]>([]);
   let currentPlayIndex = $state<number>(-1);
@@ -88,11 +96,24 @@
       }
     }
     if (current) result.push(current);
-    return result;
+
+    // Safety net: a single sentence with no delimiter can still exceed the engine's
+    // per-request limit, which the backend would reject. Hard-split anything oversized.
+    const bounded: string[] = [];
+    for (const c of result) {
+      if (c.length <= minSize) {
+        bounded.push(c);
+        continue;
+      }
+      for (let i = 0; i < c.length; i += minSize) {
+        bounded.push(c.slice(i, i + minSize));
+      }
+    }
+    return bounded;
   }
 
   async function startStreamingJob() {
-    const chunkTexts = splitTextIntoChunks(text, 1000, 2000);
+    const chunkTexts = splitTextIntoChunks(text, chunkLimit, chunkLimit * 2);
 
     if (reloadedJob && reloadedJob.chunks && reloadedJob.chunks.length > 0) {
       // Restore chunks strictly from reloaded history job
@@ -158,6 +179,8 @@
           engine: engine,
           voice: voice,
           speed: speed,
+          pitch: pitch ?? null,
+          emotion: emotion || null,
           total_chunks: chunks.length,
           text: text,
         }),
@@ -192,7 +215,13 @@
         }
 
         try {
-          const taskId = await synthesize(item.text, voice, speed, engine, currentJobId, i, chunks.length);
+          const taskId = await synthesize(item.text, voice, speed, engine, {
+            jobId: currentJobId,
+            chunkIndex: i,
+            totalChunks: chunks.length,
+            pitch,
+            emotion,
+          });
 
           const blob = await new Promise<Blob>((resolve, reject) => {
             subscribeTaskStream(
