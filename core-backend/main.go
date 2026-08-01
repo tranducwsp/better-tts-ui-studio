@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"core-backend/db"
 	"core-backend/router"
 	"core-backend/state"
+	"core-backend/storage"
 )
 
 func main() {
@@ -24,6 +26,14 @@ func main() {
 	if err := os.MkdirAll(cfg.StorageDir, 0755); err != nil {
 		log.Fatalf("Failed to create storage directory '%s': %v", cfg.StorageDir, err)
 	}
+
+	// Xoá định kỳ các tập tin âm thanh tạm. Mỗi lần tổng hợp ghi một tập tin vào
+	// storage/temp và trước đây không có gì dọn chúng, nên đĩa chỉ có thể phình lên.
+	storage.StartTempSweeper(
+		filepath.Join(cfg.StorageDir, "temp"),
+		time.Duration(cfg.TempRetentionHours)*time.Hour,
+		storage.DefaultSweepInterval,
+	)
 
 	// Initialize Database with Connection Pool settings
 	db.InitDB(cfg)

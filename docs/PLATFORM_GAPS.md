@@ -67,6 +67,37 @@ that choice. Add one to the synthesize payload first if this should be selectabl
 
 ---
 
+## Resolved: shared secret default and unbounded temp storage
+
+Two things that made the stack unsafe to expose, both fixed.
+
+**`SECRET_KEY` had a hardcoded default.** `config.go` fell back to
+`"default_secret_key_change_me"`, and that key signs JWT session tokens. Anyone who read the
+repository could forge a valid admin token without a password or database access. The
+seed-account passwords were literals in the same file.
+
+There is no default now. An unset `SECRET_KEY` generates a random one and logs a warning
+explaining the consequences — sessions do not survive a restart and multiple replicas cannot
+share them — so the insecure path is loud rather than silent. Seed accounts default to empty,
+and `seedDefaultAccounts` already skipped entries missing a username or password, so an
+unconfigured deployment simply creates no accounts and the first user registers through the UI.
+
+`.env.example` now lists every variable, with the required ones called out.
+
+**Nothing deleted generated audio.** Every synthesis wrote a file to `storage/temp` and no
+code removed any of them; the directory had reached 67 files when this was found. In
+production that grows until the disk fills.
+
+`storage.StartTempSweeper` runs hourly and on startup, removing files older than
+`TEMP_AUDIO_RETENTION_HOURS` (default 24). The startup pass matters because a process killed
+mid-run leaves behind files nothing else would ever claim. It only walks one level deep and
+skips directories, so saved voices elsewhere in `storage/` are never touched — that
+constraint is covered by a test, along with the boundary at the retention cutoff and a
+missing directory being a no-op rather than an error.
+
+Confirmed on the running deployment: the startup sweep removed 44 files and freed 9.3 MB,
+leaving the 23 files newer than the retention window in place.
+
 ## Resolved: the manifest has exactly one definition
 
 `core-tts/schemas.py` is the only place the manifest is *declared*. Everything downstream

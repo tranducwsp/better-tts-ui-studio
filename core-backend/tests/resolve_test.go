@@ -22,12 +22,15 @@ func TestResolveCapabilities(t *testing.T) {
 		},
 	}
 
-	cases := []struct{ mode string; pitch, emotion, streaming bool }{
-		{"fast", false, false, true},         // kế thừa hết
-		{"emotion_v2", true, true, true},     // mode ghi đè true
-		{"locked", false, false, false},      // mode ghi đè false dù engine nói true
-		{"unknown", false, false, true},      // mode lạ -> engine-wide
-		{"", false, false, true},             // rỗng -> engine-wide
+	cases := []struct {
+		mode                      string
+		pitch, emotion, streaming bool
+	}{
+		{"fast", false, false, true},     // kế thừa hết
+		{"emotion_v2", true, true, true}, // mode ghi đè true
+		{"locked", false, false, false},  // mode ghi đè false dù engine nói true
+		{"unknown", false, false, true},  // mode lạ -> engine-wide
+		{"", false, false, true},         // rỗng -> engine-wide
 	}
 	for _, c := range cases {
 		got := m.ResolveCapabilities(c.mode)

@@ -101,7 +101,7 @@ type InputPanelSpec struct {
 type VoiceMetadataFieldSpec struct {
 	Key         string   `json:"key"`
 	Label       string   `json:"label"`
-	Type        string   `json:"type"`                  // "text", "select"
+	Type        string   `json:"type"` // "text", "select"
 	Required    bool     `json:"required,omitempty"`
 	Placeholder string   `json:"placeholder,omitempty"`
 	Options     []string `json:"options,omitempty"`
@@ -139,7 +139,7 @@ type UISchemaSpec struct {
 
 // UniversalManifest là bản thiết kế tiêu chuẩn đầy đủ đại diện cho bất kỳ AI Engine nào.
 type UniversalManifest struct {
-	EngineID       string             `json:"engine_id"` 
+	EngineID       string             `json:"engine_id"`
 	EngineName     string             `json:"engine_name"`
 	Version        string             `json:"version"`
 	Provider       string             `json:"provider"`

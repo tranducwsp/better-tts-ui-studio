@@ -1,6 +1,9 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -36,10 +39,34 @@ type Config struct {
 	DBConnectRetryIntervalSec int
 
 	// Cấu hình Storage & Limit
-	StorageDir       string
-	MaxUploadMB      int
-	CORSOrigins      []string
-	TTSClientTimeout int
+	StorageDir string
+	// Số giờ giữ tập tin âm thanh tạm trước khi bị quét xoá.
+	TempRetentionHours int
+	MaxUploadMB        int
+	CORSOrigins        []string
+	TTSClientTimeout   int
+}
+
+// resolveSecretKey lấy khoá ký JWT từ ENV, hoặc sinh ngẫu nhiên nếu không được cung cấp.
+//
+// Trước đây hàm này trả về một chuỗi mặc định cố định nằm sẵn trong mã nguồn. Bất kỳ ai
+// đọc được repo đều có thể tự ký một token admin hợp lệ mà không cần mật khẩu — nên một
+// giá trị mặc định dùng chung là lỗ hổng, không phải tiện ích.
+//
+// Khoá ngẫu nhiên khiến mọi phiên đăng nhập mất hiệu lực sau mỗi lần khởi động lại, và
+// không dùng được khi chạy nhiều replica. Đó là chủ ý: bất tiện nhưng an toàn, và log đã
+// nói rõ cách khắc phục.
+func resolveSecretKey() string {
+	if v := strings.TrimSpace(os.Getenv("SECRET_KEY")); v != "" {
+		return v
+	}
+
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		log.Fatalf("SECRET_KEY chưa được đặt và không thể sinh khoá ngẫu nhiên: %v", err)
+	}
+	log.Println("⚠️  SECRET_KEY chưa được đặt. Đã sinh khoá tạm thời: mọi người dùng sẽ bị đăng xuất sau mỗi lần khởi động lại, và nhiều replica sẽ không dùng chung được phiên. Hãy đặt SECRET_KEY cho môi trường thật.")
+	return hex.EncodeToString(buf)
 }
 
 // LoadConfig đọc file .env và nạp các biến môi trường kèm giá trị fallback an toàn.
@@ -49,7 +76,7 @@ func LoadConfig() *Config {
 	host := getEnv("HOST", "0.0.0.0")
 	port := getEnv("PORT", "8000")
 	dbURL := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/ai_studio?sslmode=disable")
-	secretKey := getEnv("SECRET_KEY", "default_secret_key_change_me")
+	secretKey := resolveSecretKey()
 	coreTTSURL := getEnv("CORE_ENGINE_URL", getEnv("CORE_TTS_URL", "http://localhost:8001"))
 	coreTTSGrpcURL := getEnv("CORE_ENGINE_GRPC_URL", getEnv("CORE_TTS_GRPC_URL", "localhost:50051"))
 	feBuilderURL := getEnv("FE_BUILDER_URL", "http://frontend-builder:3001")
@@ -70,6 +97,7 @@ func LoadConfig() *Config {
 	// Storage & App Limits
 	storageDir := getEnv("STORAGE_DIR", "storage")
 	maxUploadMB := getEnvInt("MAX_UPLOAD_SIZE_MB", 32)
+	tempRetentionHours := getEnvInt("TEMP_AUDIO_RETENTION_HOURS", 24)
 	corsOriginsStr := getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173")
 	corsOrigins := strings.Split(corsOriginsStr, ",")
 	for i := range corsOrigins {
@@ -79,18 +107,20 @@ func LoadConfig() *Config {
 	ttsTimeout := getEnvInt("TTS_CLIENT_TIMEOUT_SECONDS", 60)
 
 	return &Config{
-		Host:                      host,
-		Port:                      port,
-		DatabaseURL:               dbURL,
-		SecretKey:                 secretKey,
-		AccessTokenExpireMinutes:  expireMin,
-		CoreTTSURL:                coreTTSURL,
-		CoreTTSGrpcURL:            coreTTSGrpcURL,
-		FEBuilderURL:              feBuilderURL,
-		DefaultAdminUsername:      getEnv("DEFAULT_ADMIN_USERNAME", "amora"),
-		DefaultAdminPassword:      getEnv("DEFAULT_ADMIN_PASSWORD", "tranduc.tts"),
-		DefaultUserUsername:       getEnv("DEFAULT_USER_USERNAME", "thanhhai"),
-		DefaultUserPassword:       getEnv("DEFAULT_USER_PASSWORD", "aigiongnoi.123"),
+		Host:                     host,
+		Port:                     port,
+		DatabaseURL:              dbURL,
+		SecretKey:                secretKey,
+		AccessTokenExpireMinutes: expireMin,
+		CoreTTSURL:               coreTTSURL,
+		CoreTTSGrpcURL:           coreTTSGrpcURL,
+		FEBuilderURL:             feBuilderURL,
+		// Không có mật khẩu mặc định: seedDefaultAccounts bỏ qua tài khoản nào thiếu
+		// thông tin, nên không đặt ENV nghĩa là không có tài khoản nào được tạo sẵn.
+		DefaultAdminUsername:      getEnv("DEFAULT_ADMIN_USERNAME", ""),
+		DefaultAdminPassword:      getEnv("DEFAULT_ADMIN_PASSWORD", ""),
+		DefaultUserUsername:       getEnv("DEFAULT_USER_USERNAME", ""),
+		DefaultUserPassword:       getEnv("DEFAULT_USER_PASSWORD", ""),
 		RedisURL:                  redisURL,
 		RedisPassword:             redisPassword,
 		DBMaxConns:                dbMaxConns,
@@ -100,6 +130,7 @@ func LoadConfig() *Config {
 		DBConnectMaxRetries:       dbConnectMaxRetries,
 		DBConnectRetryIntervalSec: dbConnectRetryIntervalSec,
 		StorageDir:                storageDir,
+		TempRetentionHours:        tempRetentionHours,
 		MaxUploadMB:               maxUploadMB,
 		CORSOrigins:               corsOrigins,
 		TTSClientTimeout:          ttsTimeout,
