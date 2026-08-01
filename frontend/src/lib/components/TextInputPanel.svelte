@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { InputPanelSpec } from '../types';
+  import type { InputPanelSpec, UniversalManifest } from '../types';
+  import { resolveChunkSize } from '../textLimits';
   import { extractTextFromFile } from '../api';
   import { toast } from '../toast.svelte';
 
@@ -7,9 +8,10 @@
     text: string;
     isReadOnly?: boolean;
     inputPanelSpec?: InputPanelSpec | null;
+    manifest?: UniversalManifest | null;
   }
 
-  let { text = $bindable(), isReadOnly = $bindable(false), inputPanelSpec = null }: Props = $props();
+  let { text = $bindable(), isReadOnly = $bindable(false), inputPanelSpec = null, manifest = null }: Props = $props();
 
   let isCollapsed = $state(false);
   let isRegexMode = $state(false);
@@ -19,7 +21,8 @@
   let lastSearchIndex = $state(0);
   let textareaElement = $state<HTMLTextAreaElement | undefined>();
 
-  let maxChunkSize = $derived(inputPanelSpec?.max_chunk_size || 1000);
+  // Shared resolver: the preview must match what StreamingPanel actually sends.
+  let maxChunkSize = $derived(resolveChunkSize(manifest));
   let chunkDelimiters = $derived(inputPanelSpec?.chunk_delimiters || ['(?<=\\.\\s*\\n)', '[^.!?]+[.!?]+']);
 
   // Svelte 5 derived state for text chunks (Supports custom regex delimiters from manifest)
