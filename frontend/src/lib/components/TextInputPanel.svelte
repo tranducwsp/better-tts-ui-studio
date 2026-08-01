@@ -7,13 +7,19 @@
   interface Props {
     text: string;
     isReadOnly?: boolean;
+    isCollapsed?: boolean;
     inputPanelSpec?: InputPanelSpec | null;
     manifest?: UniversalManifest | null;
   }
 
-  let { text = $bindable(), isReadOnly = $bindable(false), inputPanelSpec = null, manifest = null }: Props = $props();
+  let {
+    text = $bindable(),
+    isReadOnly = $bindable(false),
+    isCollapsed = $bindable(false),
+    inputPanelSpec = null,
+    manifest = null
+  }: Props = $props();
 
-  let isCollapsed = $state(false);
   let isRegexMode = $state(false);
   let findQuery = $state('');
   let replaceQuery = $state('');
@@ -276,7 +282,7 @@
         <i class="fa-solid fa-file-lines"></i> Input Text
         {#if isReadOnly}
           <span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); font-size: 0.75rem; margin-left: 8px;">
-            <i class="fa-solid fa-lock"></i> Read-Only (History)
+            Locked
           </span>
         {/if}
       </label>

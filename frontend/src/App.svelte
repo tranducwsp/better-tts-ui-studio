@@ -3,6 +3,7 @@
   import Header from './lib/components/Header.svelte';
   import TextInputPanel from './lib/components/TextInputPanel.svelte';
   import GenericEnginePanel from './lib/components/GenericEnginePanel.svelte';
+  import StreamingPanel from './lib/components/StreamingPanel.svelte';
   import HistoryModal from './lib/components/HistoryModal.svelte';
   import AuthModal from './lib/components/AuthModal.svelte';
   import AdminModal from './lib/components/AdminModal.svelte';
@@ -128,6 +129,52 @@
     isHistoryOpen = false;
     toast.show(`Reloaded task ${job.job_id ? job.job_id.substring(0, 8) : ''}!`, 'success');
   }
+
+  /**
+   * A streaming job in flight. Non-null means the panel is open; the id changes on every
+   * start so the panel remounts and re-chunks the current text.
+   */
+  let streamingJob = $state<{
+    id: number;
+    engine: string;
+    voice: string;
+    speed: number;
+    pitch?: number;
+    emotion?: string;
+  } | null>(null);
+
+  let streamingJobCounter = 0;
+
+  // Accordion state for the two panels above the streaming panel. Both collapse when a
+  // job starts, as toggleTextPanel(false)/toggleSettingsPanel(false) did in the original.
+  let isTextCollapsed = $state(false);
+  let isSettingsCollapsed = $state(false);
+
+  function handleStartStreaming(params: {
+    engine: string;
+    voice: string;
+    speed: number;
+    pitch?: number;
+    emotion?: string;
+  }) {
+    // Lock the text for the duration of the job, as the original app did: the chunks
+    // being generated refer to this exact text, so editing it mid-run would leave the
+    // panel describing something the user can no longer see.
+    isReadOnly = true;
+    isTextCollapsed = true;
+    isSettingsCollapsed = true;
+    streamingJob = { id: ++streamingJobCounter, ...params };
+  }
+
+  function handleCloseStreaming() {
+    streamingJob = null;
+    // Unlike the original, which left the textarea read-only until a page reload, hand
+    // editing back so the user can adjust the text and run again.
+    isReadOnly = false;
+    isTextCollapsed = false;
+    isSettingsCollapsed = false;
+    reloadedJob = null;
+  }
 </script>
 
 <Toast />
@@ -148,7 +195,7 @@
 
   <main>
     <!-- Text Content Input Panel -->
-    <TextInputPanel bind:text={mainText} bind:isReadOnly={isReadOnly} inputPanelSpec={manifest?.ui_schema?.input_panel || null} {manifest} />
+    <TextInputPanel bind:text={mainText} bind:isReadOnly={isReadOnly} bind:isCollapsed={isTextCollapsed} inputPanelSpec={manifest?.ui_schema?.input_panel || null} {manifest} />
 
     <!-- Main Tabs dynamically ordered by Manifest -->
     <div id="main-tabs-container" style="margin-bottom: 1.5rem; width: 100%;">
@@ -165,15 +212,59 @@
       </div>
     </div>
 
-    <!-- Universal Dynamic Audio Settings & Generation Panel -->
-    <div class="glass-panel" style="margin-bottom: 1.5rem; min-height: 360px;">
-      <GenericEnginePanel
-        text={mainText}
-        activeMode={currentModeSpec}
-        {manifest}
-        {reloadedJob}
-      />
+    <!--
+      Universal Dynamic Audio Settings panel. Collapsible like the text panel, and
+      collapsed automatically while a job runs so the streaming panel is what the user
+      sees — the same accordion behaviour as the original app.
+    -->
+    <div class="glass-panel" class:collapsed={isSettingsCollapsed} style="margin-bottom: 1.5rem; transition: all 0.3s ease; {isSettingsCollapsed ? '' : 'min-height: 360px;'}">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 8px; font-weight: 600;">
+          <i class="fa-solid fa-sliders"></i> Audio Settings
+        </span>
+        <button
+          onclick={() => isSettingsCollapsed = !isSettingsCollapsed}
+          style="background: rgba(255,255,255,0.1); border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.8em; display: flex; align-items: center; gap: 5px; cursor: pointer;"
+        >
+          <i class="fa-solid {isSettingsCollapsed ? 'fa-chevron-down' : 'fa-chevron-up'}"></i>
+          <span>{isSettingsCollapsed ? 'Expand' : 'Collapse'}</span>
+        </button>
+      </div>
+
+      {#if !isSettingsCollapsed}
+        <div style="margin-top: 0.5rem;">
+          <GenericEnginePanel
+            text={mainText}
+            activeMode={currentModeSpec}
+            {manifest}
+            {reloadedJob}
+            onStartStreaming={handleStartStreaming}
+          />
+        </div>
+      {/if}
     </div>
+
+    <!--
+      Streaming panel is a sibling of the settings panel, not a child of it, mirroring
+      panel-settings-content vs streaming-panel in the original app. Keyed on the job so
+      that starting a new job remounts it and re-splits the text — without the key it
+      would keep the first job's chunks forever.
+    -->
+    {#if streamingJob}
+      {#key streamingJob.id}
+        <StreamingPanel
+          text={mainText}
+          engine={streamingJob.engine}
+          voice={streamingJob.voice}
+          speed={streamingJob.speed}
+          pitch={streamingJob.pitch}
+          emotion={streamingJob.emotion}
+          {manifest}
+          {reloadedJob}
+          onClose={handleCloseStreaming}
+        />
+      {/key}
+    {/if}
   </main>
 
   <footer>
