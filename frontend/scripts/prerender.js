@@ -9,20 +9,26 @@ const FALLBACK_MANIFEST = {
   version: "1.0.0-mock",
   provider: "Universal AI Testbed",
   supported_modes: [
-    { id: "fast", name: "Mock Fast", description: "Instant mock audio generator", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
-    { id: "express", name: "Mock Express", description: "Ultra-low latency streaming model", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
-    { id: "zero_shot_clone", name: "Mock Instant Zero-Shot Clone", description: "Instant voice cloning from uploaded reference audio with voice saving support", supports_preset_voices: true, supports_cloning: true, supports_voice_saving: true, supports_streaming: true },
-    { id: "multilingual", name: "Mock Multilingual", description: "Cross-lingual multi-accent voice engine", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
-    { id: "emotion_v2", name: "Mock Emotion & Style", description: "Dynamic prosody & pitch control model", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
-    { id: "standard", name: "Mock Standard", description: "Fast mock audio generator", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
-    { id: "clone", name: "Mock Voice Cloning", description: "Simulated speaker cloning", supports_preset_voices: true, supports_cloning: true, supports_voice_saving: true, supports_streaming: true }
+    { id: "fast", name: "Mock Fast", description: "Instant mock audio generator" },
+    { id: "express", name: "Mock Express", description: "Ultra-low latency streaming model" },
+    { id: "zero_shot_clone", name: "Mock Instant Zero-Shot Clone", description: "Instant voice cloning from uploaded reference audio with voice saving support", capabilities: { supports_cloning: true, supports_voice_saving: true } },
+    { id: "multilingual", name: "Mock Multilingual", description: "Cross-lingual multi-accent voice engine" },
+    { id: "emotion_v2", name: "Mock Emotion & Style", description: "Dynamic prosody & pitch control model", capabilities: { supports_pitch: true, supports_emotion: true } },
+    { id: "standard", name: "Mock Standard", description: "Fast mock audio generator" },
+    { id: "clone", name: "Mock Voice Cloning", description: "Simulated speaker cloning", capabilities: { supports_cloning: true, supports_voice_saving: true } }
   ],
-  capabilities: { supports_preset_voices: true, supports_cloning: true, supports_streaming: true, supports_speed: true, supports_pitch: false, supports_emotion: false },
+
+  // Engine-wide defaults; modes that state nothing inherit these.
+  capabilities: { supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true, supports_speed: true, supports_pitch: false, supports_emotion: false, supports_ssml: false },
   constraints: {
     max_text_length: 3000,
     speed_range: { min: 0.5, max: 2.0, default: 1.0, step: 0.1 },
     pitch_range: { min: -10.0, max: 10.0, default: 0.0, step: 0.5 },
-    supported_emotions: []
+    supported_emotions: ["neutral", "happy", "sad", "angry", "excited"],
+    chunking: {
+      max_chunk_size: 1000,
+      delimiters: ["(?<=\\.\\s*\\n)", "(?<=[.!?]\\s+)"]
+    }
   },
   audio_spec: {
     supported_formats: ["wav", "mp3"],
@@ -37,9 +43,7 @@ const FALLBACK_MANIFEST = {
       closeable: false,
       find_mode: "expert",
       replace_tool: true,
-      enable_chunk_box: true,
-      max_chunk_size: 1000,
-      chunk_delimiters: ["(?<=\\.\\s*\\n)", "(?<=[.!?]\\s+)"]
+      enable_chunk_box: true
     },
     model_sort: ["fast", "express", "zero_shot_clone", "multilingual", "emotion_v2", "standard", "clone"],
     option_panel: {
@@ -137,7 +141,7 @@ async function prerender() {
             'fa-bolt', 'fa-wave-square', 'fa-users-viewfinder', 'fa-users-gear',
             'fa-xmark', 'fa-check', 'fa-clock', 'fa-user-check', 'fa-clock-rotate-left',
             'fa-microphone-lines', 'fa-cloud-arrow-up', 'fa-bookmark', 'fa-scissors',
-            'fa-right-from-bracket', 'fa-right-to-bracket', 'fa-file-lines', 'fa-lock',
+            'fa-right-from-bracket', 'fa-right-to-bracket', 'fa-file-lines',
             'fa-file-import', 'fa-wand-magic-sparkles', 'fa-chevron-down', 'fa-chevron-up',
             'fa-code', 'fa-font', 'fa-magnifying-glass', 'fa-arrow-down', 'fa-layer-group',
             'fa-user-lock', 'fa-user-plus', 'fa-box-open', 'fa-rotate-right', 'fa-circle-check',

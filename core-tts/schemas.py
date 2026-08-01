@@ -25,14 +25,35 @@ class VoiceInfo(BaseModel):
     name: str
     descriptions: List[str] = Field(default_factory=list)
 
+class EngineCapabilities(BaseModel):
+    """What an engine can do.
+
+    Every field is Optional and defaults to None, meaning "not stated". The manifest
+    carries this shape twice:
+
+      - `UniversalManifest.capabilities` — engine-wide defaults.
+      - `EngineModeSpec.capabilities` — per-mode overrides.
+
+    Resolution is one rule: a mode's own value wins if it states one, otherwise the
+    engine-wide value applies, otherwise the platform default. That is why None is
+    distinct from False here — False means "this mode explicitly cannot", None means
+    "inherit". Never read these fields directly; go through the platform's resolver.
+    """
+    supports_preset_voices: Optional[bool] = None
+    supports_cloning: Optional[bool] = None
+    supports_voice_saving: Optional[bool] = None
+    supports_streaming: Optional[bool] = None
+    supports_speed: Optional[bool] = None
+    supports_pitch: Optional[bool] = None
+    supports_emotion: Optional[bool] = None
+    supports_ssml: Optional[bool] = None
+
 class EngineModeSpec(BaseModel):
+    """One processing mode. Capabilities stated here override the engine-wide set."""
     id: str
     name: str
     description: str = ""
-    supports_preset_voices: bool = True
-    supports_cloning: bool = False
-    supports_voice_saving: bool = False
-    supports_streaming: bool = True
+    capabilities: EngineCapabilities = Field(default_factory=EngineCapabilities)
 
 class RangeConstraint(BaseModel):
     min: float = 0.5
@@ -40,26 +61,34 @@ class RangeConstraint(BaseModel):
     default: float = 1.0
     step: float = 0.1
 
+class ChunkingSpec(BaseModel):
+    """How the platform must divide text that exceeds max_text_length.
+
+    This lives under constraints rather than ui_schema because it determines what is
+    actually transmitted, not how anything looks. `max_chunk_size` is clamped to
+    `max_text_length` by the platform, since a larger chunk would be rejected anyway.
+
+    `delimiters` is an ordered list of cut points, most preferred first. The platform
+    tries each in turn on any fragment still too long, and hard-splits whatever survives
+    all of them. Patterns are used with a split operation, so zero-width lookbehinds such
+    as `(?<=[.!?]\\s+)` are the expected shape — they mark a boundary without consuming
+    text. Any number of entries is allowed.
+    """
+    max_chunk_size: Optional[int] = 1000
+    delimiters: List[str] = Field(default_factory=lambda: [r"(?<=\.\s*\n)", r"(?<=[.!?]\s+)"])
+
 class EngineConstraints(BaseModel):
     max_text_length: int = 3000
     speed_range: RangeConstraint = Field(default_factory=RangeConstraint)
     pitch_range: RangeConstraint = Field(default_factory=lambda: RangeConstraint(min=-10.0, max=10.0, default=0.0, step=0.5))
     supported_emotions: List[str] = Field(default_factory=list)
+    chunking: ChunkingSpec = Field(default_factory=ChunkingSpec)
 
 class AudioSpec(BaseModel):
     supported_formats: List[str] = Field(default_factory=lambda: ["wav", "mp3"])
     supported_sample_rates: List[int] = Field(default_factory=lambda: [16000, 22050, 24000, 44100])
     default_format: str = "wav"
     default_sample_rate: int = 24000
-
-class EngineCapabilities(BaseModel):
-    supports_preset_voices: bool = True
-    supports_cloning: bool = True
-    supports_streaming: bool = True
-    supports_speed: bool = True
-    supports_pitch: bool = False
-    supports_emotion: bool = False
-    supports_ssml: bool = False
 
 class AutoFormatRule(BaseModel):
     find: str
@@ -84,8 +113,6 @@ class InputPanelSpec(BaseModel):
     find_mode: str = "expert" # "express" (tìm kiếm chuỗi đơn giản) | "expert" (cho phép bật/tắt công cụ Regex)
     replace_tool: bool = True
     enable_chunk_box: bool = True
-    max_chunk_size: Optional[int] = 1000
-    chunk_delimiters: Optional[List[str]] = Field(default_factory=lambda: [r"(?<=\.\s*\n)", r"(?<=[.!?]\s+)"])
     auto_format: List[AutoFormatRule] = Field(default_factory=lambda: DEFAULT_AUTO_FORMAT_RULES)
 
 class VoiceMetadataFieldSpec(BaseModel):
@@ -96,13 +123,27 @@ class VoiceMetadataFieldSpec(BaseModel):
     placeholder: Optional[str] = None
     options: Optional[List[str]] = None
 
+class PresetVoiceSpec(BaseModel):
+    """A voice the engine ships with, listed in the manifest instead of via /voices."""
+    id: str
+    name: str
+    gender: Optional[str] = None       # "male", "female", or anything the engine uses
+    descriptions: List[str] = Field(default_factory=list)
+    sample_url: Optional[str] = None
+
 class ModelOptionSpec(BaseModel):
+    """Presentation only: how a mode's controls are drawn, never whether they exist.
+
+    Whether a control appears at all is decided by capabilities. These fields pick the
+    widget for a control that is already known to be supported — so `pitch_type` on a mode
+    whose resolved `supports_pitch` is False has no effect.
+    """
     notice_banner: Optional[NoticeBannerSpec] = None
-    voice_type: Optional[str] = None # "select", "radio"
-    speed_type: Optional[str] = None # "slider", "number", "stepped"
-    pitch_type: Optional[str] = None
-    emotion_type: Optional[str] = None
-    preset_voices: Optional[List[Dict[str, str]]] = None
+    voice_type: Optional[str] = None    # "select", "radio"
+    speed_type: Optional[str] = None    # "slider", "number"
+    pitch_type: Optional[str] = None    # "slider", "number"
+    emotion_type: Optional[str] = None  # "select", "radio"
+    preset_voices: Optional[List[PresetVoiceSpec]] = None
     voice_metadata_schema: Optional[List[VoiceMetadataFieldSpec]] = None
 
 class UISchemaSpec(BaseModel):
@@ -118,8 +159,8 @@ class UISchemaSpec(BaseModel):
             voice_type="radio",
             speed_type="slider",
             preset_voices=[
-                {"id": "Voice A (Female)", "name": "Voice A (Female)", "gender": "female"},
-                {"id": "Voice B (Male)", "name": "Voice B (Male)", "gender": "male"}
+                PresetVoiceSpec(id="Voice A (Female)", name="Voice A (Female)", gender="female"),
+                PresetVoiceSpec(id="Voice B (Male)", name="Voice B (Male)", gender="male")
             ]
         ),
         "standard": ModelOptionSpec(
@@ -144,11 +185,30 @@ class UniversalManifest(BaseModel):
     version: str = Field(default_factory=lambda: os.getenv("ENGINE_VERSION", "1.0.0"))
     provider: str = Field(default_factory=lambda: os.getenv("ENGINE_PROVIDER", "Universal AI Platform"))
     supported_modes: List[EngineModeSpec] = Field(default_factory=lambda: [
-        EngineModeSpec(id="standard", name="Standard Neural", description="High fidelity neural voice inference", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
-        EngineModeSpec(id="fast", name="Fast Streaming", description="Low latency streaming TTS", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
-        EngineModeSpec(id="clone", name="Voice Cloning", description="Reference audio speaker cloning", supports_preset_voices=True, supports_cloning=True, supports_voice_saving=True, supports_streaming=True)
+        EngineModeSpec(
+            id="standard", name="Standard Neural", description="High fidelity neural voice inference",
+            capabilities=EngineCapabilities(supports_cloning=False, supports_voice_saving=False)
+        ),
+        EngineModeSpec(
+            id="fast", name="Fast Streaming", description="Low latency streaming TTS",
+            capabilities=EngineCapabilities(supports_cloning=False, supports_voice_saving=False)
+        ),
+        EngineModeSpec(
+            id="clone", name="Voice Cloning", description="Reference audio speaker cloning",
+            capabilities=EngineCapabilities(supports_cloning=True, supports_voice_saving=True)
+        )
     ])
-    capabilities: EngineCapabilities = Field(default_factory=EngineCapabilities)
+    # Engine-wide defaults. Modes that state nothing inherit these.
+    capabilities: EngineCapabilities = Field(default_factory=lambda: EngineCapabilities(
+        supports_preset_voices=True,
+        supports_cloning=False,
+        supports_voice_saving=False,
+        supports_streaming=True,
+        supports_speed=True,
+        supports_pitch=False,
+        supports_emotion=False,
+        supports_ssml=False
+    ))
     constraints: EngineConstraints = Field(default_factory=EngineConstraints)
     audio_spec: AudioSpec = Field(default_factory=AudioSpec)
     ui_schema: Optional[UISchemaSpec] = Field(default_factory=UISchemaSpec)

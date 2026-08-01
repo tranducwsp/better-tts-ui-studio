@@ -67,6 +67,34 @@ that choice. Add one to the synthesize payload first if this should be selectabl
 
 ---
 
+## Resolved: capability and chunking fragmentation
+
+Recorded here because the shape of the fix matters for anything added later.
+
+**Capabilities used to be stated in three places.** `capabilities` carried engine-wide
+booleans, `supported_modes[]` carried four *different* flat booleans, and `option_panel`
+carried `pitch_type`/`emotion_type`. The three sets neither matched nor complemented each
+other: `supports_voice_saving` existed only per mode, `supports_pitch` only engine-wide, and
+three flags existed in both with no stated precedence. The frontend had to invent a
+reconciliation rule per call site — including a `modeGate()` helper that inferred whether a
+mode supported pitch from whether it declared a *widget* for it, which is presentation data
+answering a capability question.
+
+Now `EngineCapabilities` has one shape used at both levels, every field nullable, and one
+rule: mode value wins, else engine value, else platform default. Nullability is what makes
+it work — `false` means "this mode cannot", `undefined` means "inherit". Resolution lives in
+exactly two places, `types.ResolveCapabilities` (Go) and `lib/capabilities.ts` (frontend),
+which are kept behaviourally identical and tested against the same cases.
+
+**Chunking moved from `ui_schema.input_panel` to `constraints.chunking`.** It decides what
+is transmitted, not how anything looks, and it needs clamping against `max_text_length`
+which lives under `constraints`. `chunk_delimiters` also became `delimiters` and is now
+walked recursively, so an engine may declare one boundary or five instead of the previous
+hardcoded pair where a third entry was silently ignored.
+
+**`preset_voices` gained a type.** It was `[]map[string]string`, which forced the frontend
+to cast to `Record<string, unknown>` to read `gender`. Now `PresetVoiceSpec`.
+
 ## Text length and chunking: single source of truth
 
 Chunk sizing used to be decided in three places with three different fallbacks, and the
@@ -78,9 +106,9 @@ All of it now resolves through `frontend/src/lib/textLimits.ts`:
 | Concern | Function | Source |
 |---|---|---|
 | Per-request ceiling | `resolveMaxTextLength()` | `constraints.max_text_length` |
-| Chunk size | `resolveChunkSize()` | `input_panel.max_chunk_size`, **clamped** to the ceiling |
+| Chunk size | `resolveChunkSize()` | `constraints.chunking.max_chunk_size`, **clamped** to the ceiling |
 | Streaming threshold | `resolveStreamingThreshold()` | `constraints.max_text_length` |
-| **How text is cut** | `splitIntoChunks()` | `input_panel.chunk_delimiters` |
+| **How text is cut** | `splitIntoChunks()` | `constraints.chunking.delimiters` |
 
 `TextInputPanel` (the preview box) and `StreamingPanel` (what is sent) both call
 `splitIntoChunks(text, manifest)`, so they cannot disagree — it is the same call.

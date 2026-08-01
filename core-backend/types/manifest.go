@@ -1,14 +1,43 @@
 package types
 
-// EngineModeSpec mô tả chi tiết một chế độ xử lý của AI Engine (ví dụ: standard, fast, clone, zero_shot).
+// EngineCapabilities mô tả những gì một Engine (hoặc một Mode của nó) làm được.
+//
+// Mọi trường dùng con trỏ để phân biệt ba trạng thái, chứ không phải hai:
+//   - nil   — Mode không nói gì, kế thừa giá trị toàn Engine.
+//   - false — Mode khẳng định KHÔNG hỗ trợ, kể cả khi Engine nói có.
+//   - true  — Mode khẳng định có hỗ trợ.
+//
+// Không đọc trực tiếp các trường này. Dùng ResolveCapabilities để lấy giá trị đã hoà giải
+// giữa hai tầng, nếu không mỗi nơi lại tự bịa một quy tắc ưu tiên khác nhau.
+type EngineCapabilities struct {
+	SupportsPresetVoices *bool `json:"supports_preset_voices,omitempty"`
+	SupportsCloning      *bool `json:"supports_cloning,omitempty"`
+	SupportsVoiceSaving  *bool `json:"supports_voice_saving,omitempty"`
+	SupportsStreaming    *bool `json:"supports_streaming,omitempty"`
+	SupportsSpeed        *bool `json:"supports_speed,omitempty"`
+	SupportsPitch        *bool `json:"supports_pitch,omitempty"`
+	SupportsEmotion      *bool `json:"supports_emotion,omitempty"`
+	SupportsSsml         *bool `json:"supports_ssml,omitempty"`
+}
+
+// ResolvedCapabilities là kết quả sau khi hoà giải hai tầng — không còn nil, dùng được ngay.
+type ResolvedCapabilities struct {
+	SupportsPresetVoices bool `json:"supports_preset_voices"`
+	SupportsCloning      bool `json:"supports_cloning"`
+	SupportsVoiceSaving  bool `json:"supports_voice_saving"`
+	SupportsStreaming    bool `json:"supports_streaming"`
+	SupportsSpeed        bool `json:"supports_speed"`
+	SupportsPitch        bool `json:"supports_pitch"`
+	SupportsEmotion      bool `json:"supports_emotion"`
+	SupportsSsml         bool `json:"supports_ssml"`
+}
+
+// EngineModeSpec mô tả một chế độ xử lý của AI Engine (ví dụ: standard, fast, clone).
 type EngineModeSpec struct {
-	ID                   string `json:"id"`                    // "standard", "fast", "clone"
-	Name                 string `json:"name"`                  // "Standard Neural", "Fast Streaming", "Zero-shot Clone"
-	Description          string `json:"description"`           // Mô tả ngắn về mode
-	SupportsPresetVoices bool   `json:"supports_preset_voices"` // Có hỗ trợ chọn giọng đọc có sẵn không
-	SupportsCloning      bool   `json:"supports_cloning"`       // Có hỗ trợ upload file mẫu dùng tạm 1 lần không
-	SupportsVoiceSaving  bool   `json:"supports_voice_saving"`  // Có hỗ trợ tạo & lưu giọng mới vào thư viện không
-	SupportsStreaming    bool   `json:"supports_streaming"`     // Có hỗ trợ luồng phát âm thanh streaming không
+	ID           string             `json:"id"`          // "standard", "fast", "clone"
+	Name         string             `json:"name"`        // "Standard Neural", "Fast Streaming"
+	Description  string             `json:"description"` // Mô tả ngắn về mode
+	Capabilities EngineCapabilities `json:"capabilities"`
 }
 
 // RangeConstraint định nghĩa giới hạn tham số số (Min, Max, Default, Step) cho UI Sliders.
@@ -19,12 +48,23 @@ type RangeConstraint struct {
 	Step    float64 `json:"step"`
 }
 
+// ChunkingSpec quy định cách chia nhỏ văn bản vượt quá MaxTextLength.
+//
+// Đặt trong Constraints chứ không phải UISchema vì nó quyết định dữ liệu thực sự được gửi
+// đi, không phải cách hiển thị. Delimiters là danh sách điểm cắt xếp theo mức ưu tiên
+// giảm dần; nền tảng thử lần lượt trên các mảnh còn quá dài rồi cắt cứng phần còn lại.
+type ChunkingSpec struct {
+	MaxChunkSize int      `json:"max_chunk_size,omitempty"`
+	Delimiters   []string `json:"delimiters,omitempty"`
+}
+
 // EngineConstraints định nghĩa các ràng buộc về kỹ thuật và tham số của AI Engine.
 type EngineConstraints struct {
 	MaxTextLength     int             `json:"max_text_length"`
 	SpeedRange        RangeConstraint `json:"speed_range"`
 	PitchRange        RangeConstraint `json:"pitch_range"`
 	SupportedEmotions []string        `json:"supported_emotions"`
+	Chunking          ChunkingSpec    `json:"chunking"`
 }
 
 // AudioSpec định nghĩa thông số kỹ thuật âm thanh xuất ra.
@@ -33,17 +73,6 @@ type AudioSpec struct {
 	SupportedSampleRates []int    `json:"supported_sample_rates"`
 	DefaultFormat        string   `json:"default_format"`
 	DefaultSampleRate    int      `json:"default_sample_rate"`
-}
-
-// EngineCapabilities định nghĩa các tính năng tính toán AI được hỗ trợ (dùng để render Dynamic UI).
-type EngineCapabilities struct {
-	SupportsPresetVoices bool `json:"supports_preset_voices"`
-	SupportsCloning      bool `json:"supports_cloning"`
-	SupportsStreaming    bool `json:"supports_streaming"`
-	SupportsSpeed        bool `json:"supports_speed"`
-	SupportsPitch        bool `json:"supports_pitch"`
-	SupportsEmotion      bool `json:"supports_emotion"`
-	SupportsSsml         bool `json:"supports_ssml"`
 }
 
 // AutoFormatRule định nghĩa quy tắc thay thế văn bản Regex tự động.
@@ -60,14 +89,12 @@ type NoticeBannerSpec struct {
 
 // InputPanelSpec cấu hình các tính năng cho khung nhập văn bản.
 type InputPanelSpec struct {
-	FileServe       bool             `json:"file_serve"`
-	Closeable       bool             `json:"closeable"`
-	FindMode        string           `json:"find_mode"` // "expert", "express"
-	ReplaceTool     bool             `json:"replace_tool"`
-	EnableChunkBox  bool             `json:"enable_chunk_box"`
-	MaxChunkSize    int              `json:"max_chunk_size,omitempty"`
-	ChunkDelimiters []string         `json:"chunk_delimiters,omitempty"`
-	AutoFormat      []AutoFormatRule `json:"auto_format,omitempty"`
+	FileServe      bool             `json:"file_serve"`
+	Closeable      bool             `json:"closeable"`
+	FindMode       string           `json:"find_mode"` // "expert", "express"
+	ReplaceTool    bool             `json:"replace_tool"`
+	EnableChunkBox bool             `json:"enable_chunk_box"`
+	AutoFormat     []AutoFormatRule `json:"auto_format,omitempty"`
 }
 
 // VoiceMetadataFieldSpec định nghĩa cấu hình một trường thông tin khi tạo giọng mẫu mới.
@@ -80,14 +107,25 @@ type VoiceMetadataFieldSpec struct {
 	Options     []string `json:"options,omitempty"`
 }
 
-// ModelOptionSpec cấu hình các widget điều khiển dành riêng cho từng model.
+// PresetVoiceSpec là giọng đọc Engine kèm sẵn, khai ngay trong Manifest thay vì qua /voices.
+type PresetVoiceSpec struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Gender       string   `json:"gender,omitempty"`
+	Descriptions []string `json:"descriptions,omitempty"`
+	SampleURL    string   `json:"sample_url,omitempty"`
+}
+
+// ModelOptionSpec chỉ mô tả CÁCH VẼ điều khiển, không quyết định điều khiển có tồn tại hay
+// không — việc đó thuộc về Capabilities. PitchType trên một Mode có SupportsPitch = false
+// sẽ không có tác dụng gì.
 type ModelOptionSpec struct {
 	NoticeBanner        *NoticeBannerSpec        `json:"notice_banner,omitempty"`
-	VoiceType           string                   `json:"voice_type,omitempty"` // "select", "radio"
-	SpeedType           string                   `json:"speed_type,omitempty"` // "slider", "number", "stepped"
-	PitchType           string                   `json:"pitch_type,omitempty"`
-	EmotionType         string                   `json:"emotion_type,omitempty"`
-	PresetVoices        []map[string]string      `json:"preset_voices,omitempty"`
+	VoiceType           string                   `json:"voice_type,omitempty"`   // "select", "radio"
+	SpeedType           string                   `json:"speed_type,omitempty"`   // "slider", "number"
+	PitchType           string                   `json:"pitch_type,omitempty"`   // "slider", "number"
+	EmotionType         string                   `json:"emotion_type,omitempty"` // "select", "radio"
+	PresetVoices        []PresetVoiceSpec        `json:"preset_voices,omitempty"`
 	VoiceMetadataSchema []VoiceMetadataFieldSpec `json:"voice_metadata_schema,omitempty"`
 }
 
@@ -110,4 +148,64 @@ type UniversalManifest struct {
 	Constraints    EngineConstraints  `json:"constraints"`
 	AudioSpec      AudioSpec          `json:"audio_spec"`
 	UISchema       *UISchemaSpec      `json:"ui_schema,omitempty"`
+}
+
+// pick trả về giá trị Mode khai nếu có, ngược lại lấy của Engine, cuối cùng là mặc định.
+func pick(mode, engine *bool, fallback bool) bool {
+	if mode != nil {
+		return *mode
+	}
+	if engine != nil {
+		return *engine
+	}
+	return fallback
+}
+
+// ResolveCapabilities hoà giải Capabilities của một Mode với Capabilities toàn Engine.
+//
+// Đây là nơi DUY NHẤT được phép quyết định "mode này có làm được X không". Mọi handler,
+// validator và tầng UI đều phải hỏi qua đây, nhờ vậy quy tắc ưu tiên chỉ tồn tại một bản.
+//
+// modeID rỗng hoặc không khớp Mode nào thì trả về Capabilities toàn Engine.
+func (m *UniversalManifest) ResolveCapabilities(modeID string) ResolvedCapabilities {
+	if m == nil {
+		return ResolvedCapabilities{
+			SupportsPresetVoices: true,
+			SupportsStreaming:    true,
+			SupportsSpeed:        true,
+		}
+	}
+
+	var mode EngineCapabilities
+	for i := range m.SupportedModes {
+		if m.SupportedModes[i].ID == modeID {
+			mode = m.SupportedModes[i].Capabilities
+			break
+		}
+	}
+
+	e := m.Capabilities
+	return ResolvedCapabilities{
+		SupportsPresetVoices: pick(mode.SupportsPresetVoices, e.SupportsPresetVoices, true),
+		SupportsCloning:      pick(mode.SupportsCloning, e.SupportsCloning, false),
+		SupportsVoiceSaving:  pick(mode.SupportsVoiceSaving, e.SupportsVoiceSaving, false),
+		SupportsStreaming:    pick(mode.SupportsStreaming, e.SupportsStreaming, true),
+		SupportsSpeed:        pick(mode.SupportsSpeed, e.SupportsSpeed, true),
+		SupportsPitch:        pick(mode.SupportsPitch, e.SupportsPitch, false),
+		SupportsEmotion:      pick(mode.SupportsEmotion, e.SupportsEmotion, false),
+		SupportsSsml:         pick(mode.SupportsSsml, e.SupportsSsml, false),
+	}
+}
+
+// ChunkSize trả về kích thước một đoạn văn bản, đã kẹp theo MaxTextLength để không bao giờ
+// sinh ra đoạn mà chính Engine sẽ từ chối.
+func (m *UniversalManifest) ChunkSize() int {
+	if m == nil || m.Constraints.MaxTextLength <= 0 {
+		return 3000
+	}
+	ceiling := m.Constraints.MaxTextLength
+	if pref := m.Constraints.Chunking.MaxChunkSize; pref > 0 && pref < ceiling {
+		return pref
+	}
+	return ceiling
 }

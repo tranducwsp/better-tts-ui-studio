@@ -37,9 +37,9 @@ func (s *EngineManifestState) IsLoaded() bool {
 	return s.manifest != nil
 }
 
-// ValidatePitch kiểm tra giá trị Pitch có được Engine hỗ trợ và nằm trong Range của
-// Manifest không. Truyền nil khi client không gửi Pitch (Engine không bật control này).
-func (s *EngineManifestState) ValidatePitch(pitch *float64) error {
+// ValidatePitch kiểm tra Pitch theo đúng Mode được yêu cầu, vì cùng một Engine có thể có
+// Mode hỗ trợ và Mode không. Truyền nil khi client không gửi Pitch.
+func (s *EngineManifestState) ValidatePitch(pitch *float64, mode string) error {
 	if pitch == nil {
 		return nil
 	}
@@ -52,8 +52,8 @@ func (s *EngineManifestState) ValidatePitch(pitch *float64) error {
 		return nil
 	}
 
-	if !m.Capabilities.SupportsPitch {
-		return fmt.Errorf("pitch control is not supported by AI Engine")
+	if !m.ResolveCapabilities(mode).SupportsPitch {
+		return fmt.Errorf("pitch control is not supported by mode '%s'", mode)
 	}
 
 	r := m.Constraints.PitchRange
@@ -66,9 +66,9 @@ func (s *EngineManifestState) ValidatePitch(pitch *float64) error {
 	return nil
 }
 
-// ValidateEmotion kiểm tra Emotion có nằm trong danh sách SupportedEmotions của Manifest
-// không. Chuỗi rỗng nghĩa là "để Engine tự quyết" nên luôn hợp lệ.
-func (s *EngineManifestState) ValidateEmotion(emotion *string) error {
+// ValidateEmotion kiểm tra Emotion theo Mode và đối chiếu SupportedEmotions của Manifest.
+// Chuỗi rỗng nghĩa là "để Engine tự quyết" nên luôn hợp lệ.
+func (s *EngineManifestState) ValidateEmotion(emotion *string, mode string) error {
 	if emotion == nil || *emotion == "" {
 		return nil
 	}
@@ -81,8 +81,8 @@ func (s *EngineManifestState) ValidateEmotion(emotion *string) error {
 		return nil
 	}
 
-	if !m.Capabilities.SupportsEmotion {
-		return fmt.Errorf("emotion control is not supported by AI Engine")
+	if !m.ResolveCapabilities(mode).SupportsEmotion {
+		return fmt.Errorf("emotion control is not supported by mode '%s'", mode)
 	}
 
 	for _, e := range m.Constraints.SupportedEmotions {

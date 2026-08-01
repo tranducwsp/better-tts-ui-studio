@@ -44,7 +44,7 @@ func main() {
 					manifest.EngineName, manifest.Version, manifest.Constraints.MaxTextLength)
 				break
 			}
-			log.Printf("⏳ Waiting for AI Engine Manifest discovery at %s... Retrying in 3s", cfg.CoreTTSURL)
+			log.Printf("⏳ Waiting for AI Engine Manifest discovery at %s (%v)... Retrying in 3s", cfg.CoreTTSURL, err)
 			time.Sleep(3 * time.Second)
 		}
 	}()
