@@ -266,6 +266,31 @@ func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {
 	return nil, false
 }
 
+// SetAudioMP3 ghi nhớ bản MP3 đã chuyển mã vào Task (và Redis nếu có), để lần tải sau
+// không phải chạy lại ffmpeg. Bỏ qua im lặng nếu Task không còn tồn tại.
+func (tm *TaskManager) SetAudioMP3(taskID string, data []byte) {
+	if len(data) == 0 {
+		return
+	}
+
+	tm.mu.Lock()
+	item, ok := tm.tasks[taskID]
+	if ok {
+		item.AudioMP3 = data
+	}
+	tm.mu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	if RedisClient != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = RedisClient.Set(ctx, "task:audio:"+taskID+":mp3", data, 1*time.Hour).Err()
+	}
+}
+
 func (tm *TaskManager) Cancel(taskID string) bool {
 	item, ok := tm.Get(taskID)
 	if !ok {

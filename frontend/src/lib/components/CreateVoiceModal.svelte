@@ -2,7 +2,8 @@
   import WaveformTrimmer from './WaveformTrimmer.svelte';
   import { cloneVoice } from '../api';
   import { toast } from '../toast.svelte';
-  import type { VoiceMetadataFieldSpec } from '../types';
+  import type { VoiceMetadataFieldSpec, UniversalManifest } from '../types';
+  import { acceptedUploadFormats } from '../audioSpec';
 
   interface Props {
     isOpen: boolean;
@@ -10,9 +11,10 @@
     onSaved: (newVoiceId: string, newVoiceName: string) => void;
     modelId?: string;
     metadataSchema?: VoiceMetadataFieldSpec[];
+    manifest?: UniversalManifest | null;
   }
 
-  let { isOpen, onClose, onSaved, modelId = 'clone', metadataSchema }: Props = $props();
+  let { isOpen, onClose, onSaved, modelId = 'clone', metadataSchema, manifest = null }: Props = $props();
 
   let fileInput = $state<HTMLInputElement | null>(null);
   let selectedFile = $state<File | null>(null);
@@ -103,7 +105,7 @@
           <p style="color: #cbd5e1; margin: 0;">Drag & drop audio file here or <strong style="color: var(--primary);">click to browse</strong></p>
           <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: WAV (Max 10MB)</span>
         {/if}
-        <input id="create-voice-file-input" type="file" bind:this={fileInput} onchange={handleFileSelect} accept=".wav,audio/wav" style="display: none;" />
+        <input id="create-voice-file-input" type="file" bind:this={fileInput} onchange={handleFileSelect} accept={acceptedUploadFormats(manifest)} style="display: none;" />
       </label>
 
       <!-- Trimmer if file loaded -->

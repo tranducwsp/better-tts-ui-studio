@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"core-backend/audio"
 	"core-backend/state"
 
 	"github.com/bytedance/sonic"
@@ -47,48 +50,90 @@ func (h *TasksHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Cancellation requested"})
 }
 
-// GetTaskAudio gets audio bytes (WAV or MP3) after task completes.
+// GetTaskAudio trả về dữ liệu âm thanh của Task sau khi hoàn tất, chuyển mã theo yêu cầu.
+//
+// Nguồn âm thanh gốc là WAV do Engine sinh ra. Nếu client hỏi định dạng khác, ffmpeg sẽ
+// chuyển mã tại thời điểm gọi và kết quả được ghi nhớ (cache) trong Task để lần sau không
+// phải chuyển lại.
 func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "task_id")
-	format := strings.ToLower(r.URL.Query().Get("format"))
+	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	if format == "" {
+		format = "wav"
+	}
 
-	task, ok := state.GlobalTaskManager.Get(taskID)
-	if ok && task.Status == "done" {
+	// 1. Lấy dữ liệu WAV gốc, từ RAM hoặc từ đĩa.
+	var source []byte
+	if task, ok := state.GlobalTaskManager.Get(taskID); ok && task.Status == "done" {
 		if format == "mp3" && len(task.AudioMP3) > 0 {
-			w.Header().Set("Content-Type", "audio/mpeg")
-			w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.mp3"`)
-			_, _ = w.Write(task.AudioMP3)
+			writeAudio(w, task.AudioMP3, "mp3")
 			return
 		}
 		if len(task.AudioWAV) > 0 {
-			w.Header().Set("Content-Type", "audio/wav")
-			w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.wav"`)
-			_, _ = w.Write(task.AudioWAV)
-			return
+			source = task.AudioWAV
 		}
 	}
 
-	// Fallback 1: Read file from disk storage/temp/{taskID}.wav
-	filePathWAV := filepath.Join("storage/temp", taskID+".wav")
-	if wavBytes, err := os.ReadFile(filePathWAV); err == nil && len(wavBytes) > 0 {
-		w.Header().Set("Content-Type", "audio/wav")
-		w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.wav"`)
-		_, _ = w.Write(wavBytes)
+	if source == nil {
+		for _, ext := range []string{"wav", "mp3"} {
+			if b, err := os.ReadFile(filepath.Join("storage/temp", taskID+"."+ext)); err == nil && len(b) > 0 {
+				// Tập tin trên đĩa đã đúng định dạng được hỏi thì trả về trực tiếp.
+				if ext == format {
+					writeAudio(w, b, format)
+					return
+				}
+				source = b
+				break
+			}
+		}
+	}
+
+	if source == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Audio is not ready"})
 		return
 	}
 
-	// Fallback 2: Read file from disk storage/temp/{taskID}.mp3
-	filePathMP3 := filepath.Join("storage/temp", taskID+".mp3")
-	if mp3Bytes, err := os.ReadFile(filePathMP3); err == nil && len(mp3Bytes) > 0 {
-		w.Header().Set("Content-Type", "audio/mpeg")
-		w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.mp3"`)
-		_, _ = w.Write(mp3Bytes)
+	// 2. Định dạng gốc là WAV, nên hỏi WAV thì trả luôn.
+	if format == "wav" {
+		writeAudio(w, source, "wav")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotFound)
-	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Audio is not ready"})
+	if !audio.CanTranscode(format) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
+			"detail": fmt.Sprintf("Audio format '%s' is not supported", format),
+		})
+		return
+	}
+
+	converted, err := audio.Transcode(r.Context(), source, format)
+	if err != nil {
+		log.Printf("Transcode task %s to %s failed: %v", taskID, format, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
+			"detail": fmt.Sprintf("Could not convert audio to %s", format),
+		})
+		return
+	}
+
+	// 3. Ghi nhớ MP3 vì đây là định dạng được tải nhiều nhất.
+	if format == "mp3" {
+		state.GlobalTaskManager.SetAudioMP3(taskID, converted)
+	}
+
+	writeAudio(w, converted, format)
+}
+
+// writeAudio ghi dữ liệu âm thanh kèm Content-Type và tên tập tin đúng định dạng.
+func writeAudio(w http.ResponseWriter, data []byte, format string) {
+	w.Header().Set("Content-Type", audio.MimeType(format))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="tts_studio_audio.%s"`, format))
+	_, _ = w.Write(data)
 }
 
 // StreamTaskProgress truyền dữ liệu tiến độ thời gian thực (Real-time SSE Stream) qua kết nối HTTP Persistent/Event-Stream.

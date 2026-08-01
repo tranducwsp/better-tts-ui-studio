@@ -74,12 +74,7 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	m := state.GlobalManifestState.Get()
 	supportsPreset := true
 	if m != nil && modelID != "" && modelID != "all" {
-		for _, mode := range m.SupportedModes {
-			if strings.EqualFold(mode.ID, modelID) {
-				supportsPreset = mode.SupportsPresetVoices
-				break
-			}
-		}
+		supportsPreset = m.ResolveCapabilities(modelID).SupportsPresetVoices
 	}
 
 	if supportsPreset {
@@ -181,13 +176,13 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := state.GlobalManifestState.ValidatePitch(req.Pitch); err != nil {
+	if err := state.GlobalManifestState.ValidatePitch(req.Pitch, req.Engine); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
 	}
 
-	if err := state.GlobalManifestState.ValidateEmotion(req.Emotion); err != nil {
+	if err := state.GlobalManifestState.ValidateEmotion(req.Emotion, req.Engine); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
@@ -239,7 +234,10 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		}
 
 		taskItem.AudioWAV = audioBytes
-		taskItem.AudioMP3 = audioBytes
+		// Không gán AudioMP3 = audioBytes ở đây. Trước đây dòng đó khiến /audio?format=mp3
+		// trả về đúng bytes WAV kèm Content-Type audio/mpeg — tập tin sai định dạng mà
+		// người dùng không thể biết. Việc chuyển mã giờ do GetTaskAudio thực hiện theo yêu
+		// cầu, chỉ khi client hỏi định dạng khác.
 
 		_ = os.MkdirAll("storage/temp", 0755)
 		filePath := filepath.Join("storage/temp", fmt.Sprintf("%s.wav", taskID))
