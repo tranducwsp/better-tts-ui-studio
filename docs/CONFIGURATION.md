@@ -41,8 +41,25 @@ default.** `undefined` means inherit; `false` means this mode explicitly cannot.
 
 ## 2. Environment — decided by the deployment
 
-**File:** `.env` (git-ignored), or `environment:` in `docker-compose.yml`. Template:
-`.env.example`.
+**Declared in:** `core-backend/config/settings.go` — one table, one row per variable, each
+carrying its default, valid range, group and reason for existing.
+
+**Read from:** `.env` (git-ignored) or `environment:` in `docker-compose.yml`.
+**Template:** `.env.example`, *generated* from that table:
+
+```
+cd core-backend && go generate ./config
+```
+
+Do not edit `.env.example` by hand. `config.TestEnvExampleIsUpToDate` regenerates it into a
+temp file and diffs, so a forgotten `go generate` fails the build rather than leaving the
+template describing a configuration the backend no longer has. Defaults used to be written
+three times — in the `getEnv` call, in the template, and in this document — with nothing
+keeping them equal.
+
+Adding a variable: add a row to `Settings`, read it in `LoadConfig` with `str()` or
+`num()`, run `go generate`. The table is also the only place ranges live, so a value outside
+one is rejected by name at startup.
 
 Anything here is infrastructure: credentials, addresses, pool sizes, retention. An engine
 never sees these values and must not depend on them.
@@ -51,6 +68,8 @@ Malformed values **stop the process at startup** rather than falling back silent
 mistyped `DB_MAX_CONNS=twenty` used to be ignored, leaving the operator convinced a setting
 had taken effect when it had not. The backend also logs the resolved configuration on boot
 (secrets shown as state, never as values), so a misspelled *variable name* is visible too.
+
+The table below is a summary; `settings.go` and `.env.example` are authoritative.
 
 | Variable | Default | Notes |
 |---|---|---|

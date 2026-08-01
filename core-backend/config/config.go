@@ -69,77 +69,58 @@ func resolveSecretKey() string {
 	return hex.EncodeToString(buf)
 }
 
-// LoadConfig đọc file .env và nạp các biến môi trường kèm giá trị fallback an toàn.
+// LoadConfig đọc .env rồi nạp mọi biến theo bảng đặc tả trong settings.go.
+//
+// Không giá trị mặc định nào xuất hiện ở đây — chúng chỉ tồn tại trong Settings, để một
+// người muốn biết "biến X mặc định là gì" chỉ phải đọc một bảng thay vì lần theo mã khởi
+// tạo.
 func LoadConfig() *Config {
 	_ = godotenv.Load()
 
-	host := getEnv("HOST", "0.0.0.0")
-	port := getEnv("PORT", "8000")
-	dbURL := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/ai_studio?sslmode=disable")
-	secretKey := resolveSecretKey()
-	coreTTSURL := getEnv("CORE_ENGINE_URL", getEnv("CORE_TTS_URL", "http://localhost:8001"))
-	coreTTSGrpcURL := getEnv("CORE_ENGINE_GRPC_URL", getEnv("CORE_TTS_GRPC_URL", "localhost:50051"))
-	feBuilderURL := getEnv("FE_BUILDER_URL", "http://frontend-builder:3001")
-
-	redisURL := getEnv("REDIS_URL", "localhost:6379")
-	redisPassword := getEnv("REDIS_PASSWORD", "")
-
-	expireMin := getEnvInt("ACCESS_TOKEN_EXPIRE_MINUTES", 10080, 1, 525600)
-
-	// Database Connection Pool Configs
-	dbMaxConns := int32(getEnvInt("DB_MAX_CONNS", 25, 1, 10000))
-	dbMinConns := int32(getEnvInt("DB_MIN_CONNS", 5, 0, 10000))
-	dbMaxConnLifetimeMin := getEnvInt("DB_MAX_CONN_LIFETIME_MINUTES", 30, 1, 10080)
-	dbMaxConnIdleMin := getEnvInt("DB_MAX_CONN_IDLE_MINUTES", 15, 1, 10080)
-	dbConnectMaxRetries := getEnvInt("DB_CONNECT_MAX_RETRIES", 10, 1, 1000)
-	dbConnectRetryIntervalSec := getEnvInt("DB_CONNECT_RETRY_INTERVAL_SECONDS", 2, 1, 3600)
-
-	// Storage & App Limits
-	storageDir := getEnv("STORAGE_DIR", "storage")
-	maxUploadMB := getEnvInt("MAX_UPLOAD_SIZE_MB", 32, 1, 10240)
-	tempRetentionHours := getEnvInt("TEMP_AUDIO_RETENTION_HOURS", 24, 1, 8760)
-	corsOriginsStr := getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173")
-	corsOrigins := strings.Split(corsOriginsStr, ",")
+	corsOrigins := strings.Split(str("CORS_ALLOWED_ORIGINS"), ",")
 	for i := range corsOrigins {
 		corsOrigins[i] = strings.TrimSpace(corsOrigins[i])
 	}
 
-	ttsTimeout := getEnvInt("TTS_CLIENT_TIMEOUT_SECONDS", 60, 1, 3600)
+	dbMaxConns := int32(num("DB_MAX_CONNS"))
+	dbMinConns := int32(num("DB_MIN_CONNS"))
 
-	// Ràng buộc chéo: pgxpool sẽ báo lỗi khi khởi tạo nếu MinConns lớn hơn MaxConns, nhưng
-	// thông báo của nó không chỉ ra biến môi trường nào cần sửa.
+	// Ràng buộc chéo: pgxpool báo lỗi khi MinConns lớn hơn MaxConns, nhưng thông báo của nó
+	// không chỉ ra biến môi trường nào cần sửa.
 	if dbMinConns > dbMaxConns {
 		log.Fatalf("DB_MIN_CONNS (%d) không được lớn hơn DB_MAX_CONNS (%d).", dbMinConns, dbMaxConns)
 	}
 
 	cfg := &Config{
-		Host:                     host,
-		Port:                     port,
-		DatabaseURL:              dbURL,
-		SecretKey:                secretKey,
-		AccessTokenExpireMinutes: expireMin,
-		CoreTTSURL:               coreTTSURL,
-		CoreTTSGrpcURL:           coreTTSGrpcURL,
-		FEBuilderURL:             feBuilderURL,
-		// Không có mật khẩu mặc định: seedDefaultAccounts bỏ qua tài khoản nào thiếu
-		// thông tin, nên không đặt ENV nghĩa là không có tài khoản nào được tạo sẵn.
-		DefaultAdminUsername:      getEnv("DEFAULT_ADMIN_USERNAME", ""),
-		DefaultAdminPassword:      getEnv("DEFAULT_ADMIN_PASSWORD", ""),
-		DefaultUserUsername:       getEnv("DEFAULT_USER_USERNAME", ""),
-		DefaultUserPassword:       getEnv("DEFAULT_USER_PASSWORD", ""),
-		RedisURL:                  redisURL,
-		RedisPassword:             redisPassword,
+		Host:                     str("HOST"),
+		Port:                     str("PORT"),
+		DatabaseURL:              str("DATABASE_URL"),
+		SecretKey:                resolveSecretKey(),
+		AccessTokenExpireMinutes: num("ACCESS_TOKEN_EXPIRE_MINUTES"),
+		CoreTTSURL:               str("CORE_ENGINE_URL"),
+		CoreTTSGrpcURL:           str("CORE_ENGINE_GRPC_URL"),
+		FEBuilderURL:             str("FE_BUILDER_URL"),
+
+		DefaultAdminUsername: str("DEFAULT_ADMIN_USERNAME"),
+		DefaultAdminPassword: str("DEFAULT_ADMIN_PASSWORD"),
+		DefaultUserUsername:  str("DEFAULT_USER_USERNAME"),
+		DefaultUserPassword:  str("DEFAULT_USER_PASSWORD"),
+
+		RedisURL:      str("REDIS_URL"),
+		RedisPassword: str("REDIS_PASSWORD"),
+
 		DBMaxConns:                dbMaxConns,
 		DBMinConns:                dbMinConns,
-		DBMaxConnLifetimeMinutes:  dbMaxConnLifetimeMin,
-		DBMaxConnIdleMinutes:      dbMaxConnIdleMin,
-		DBConnectMaxRetries:       dbConnectMaxRetries,
-		DBConnectRetryIntervalSec: dbConnectRetryIntervalSec,
-		StorageDir:                storageDir,
-		TempRetentionHours:        tempRetentionHours,
-		MaxUploadMB:               maxUploadMB,
-		CORSOrigins:               corsOrigins,
-		TTSClientTimeout:          ttsTimeout,
+		DBMaxConnLifetimeMinutes:  num("DB_MAX_CONN_LIFETIME_MINUTES"),
+		DBMaxConnIdleMinutes:      num("DB_MAX_CONN_IDLE_MINUTES"),
+		DBConnectMaxRetries:       num("DB_CONNECT_MAX_RETRIES"),
+		DBConnectRetryIntervalSec: num("DB_CONNECT_RETRY_INTERVAL_SECONDS"),
+
+		StorageDir:         str("STORAGE_DIR"),
+		TempRetentionHours: num("TEMP_AUDIO_RETENTION_HOURS"),
+		MaxUploadMB:        num("MAX_UPLOAD_SIZE_MB"),
+		CORSOrigins:        corsOrigins,
+		TTSClientTimeout:   num("TTS_CLIENT_TIMEOUT_SECONDS"),
 	}
 
 	cfg.logSummary()
@@ -174,33 +155,45 @@ func (c *Config) logSummary() {
 	log.Printf("  cors          %s", strings.Join(c.CORSOrigins, ", "))
 }
 
-func getEnv(key, fallback string) string {
-	if value, exists := os.LookupEnv(key); exists && value != "" {
-		return value
+// str đọc một biến chuỗi theo đặc tả, thử các tên cũ (Aliases) trước khi dùng mặc định.
+func str(key string) string {
+	s := lookup(key)
+	if v, ok := firstSet(append([]string{s.Key}, s.Aliases...)); ok {
+		return v
 	}
-	return fallback
+	return s.Default
 }
 
-// getEnvInt đọc một biến môi trường kiểu số nguyên.
+// num đọc một biến số nguyên theo đặc tả.
 //
 // Giá trị không phân tích được sẽ làm tiến trình dừng lại, thay vì lặng lẽ quay về mặc
-// định. Một biến gõ sai — "twenty", "32MB", "10 " — trước đây bị bỏ qua không dấu vết, nên
-// người vận hành tin rằng cấu hình đã có hiệu lực trong khi hệ thống chạy bằng giá trị
-// khác. Hỏng ngay lúc khởi động dễ sửa hơn nhiều so với hỏng ngầm.
-//
-// min và max là khoảng đóng cho phép; truyền math.MinInt/math.MaxInt nếu không cần chặn.
-func getEnvInt(key string, fallback, min, max int) int {
-	raw, exists := os.LookupEnv(key)
-	if !exists || strings.TrimSpace(raw) == "" {
-		return fallback
+// định. Một biến gõ sai — "twenty", "32MB" — trước đây bị bỏ qua không dấu vết, nên người
+// vận hành tin rằng cấu hình đã có hiệu lực trong khi hệ thống chạy bằng giá trị khác.
+// Hỏng ngay lúc khởi động dễ sửa hơn nhiều so với hỏng ngầm.
+func num(key string) int {
+	s := lookup(key)
+
+	raw, ok := firstSet(append([]string{s.Key}, s.Aliases...))
+	if !ok {
+		raw = s.Default
 	}
 
 	val, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil {
-		log.Fatalf("Biến môi trường %s = %q không phải số nguyên hợp lệ. Hãy sửa hoặc bỏ biến này để dùng mặc định (%d).", key, raw, fallback)
+		log.Fatalf("Biến môi trường %s = %q không phải số nguyên hợp lệ. Hãy sửa hoặc bỏ biến này để dùng mặc định (%s).", s.Key, raw, s.Default)
 	}
-	if val < min || val > max {
-		log.Fatalf("Biến môi trường %s = %d nằm ngoài khoảng cho phép (%d đến %d).", key, val, min, max)
+	if val < s.Min || val > s.Max {
+		log.Fatalf("Biến môi trường %s = %d nằm ngoài khoảng cho phép (%d đến %d).", s.Key, val, s.Min, s.Max)
 	}
 	return val
+}
+
+// firstSet trả về giá trị không rỗng đầu tiên trong danh sách tên.
+func firstSet(keys []string) (string, bool) {
+	for _, k := range keys {
+		if v, exists := os.LookupEnv(k); exists && strings.TrimSpace(v) != "" {
+			return v, true
+		}
+	}
+	return "", false
 }
