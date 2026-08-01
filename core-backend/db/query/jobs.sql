@@ -1,6 +1,6 @@
 -- name: CreateTTSJob :one
-INSERT INTO tts_jobs (id, user_id, engine, voice, speed, total_chunks, text)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO tts_jobs (id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: GetTTSJobByID :one

@@ -21,14 +21,16 @@ import (
 
 // UnifiedSynthesizeRequest là cấu trúc DTO duy nhất đại diện cho bất kỳ yêu cầu tổng hợp tiếng nói nào.
 type UnifiedSynthesizeRequest struct {
-	Text        string  `json:"text"`
-	Voice       string  `json:"voice"`
-	Engine      string  `json:"engine"` // "standard" | "fast" | "clone"
-	Speed       float64 `json:"speed"`
-	JobID       *string `json:"job_id"`
-	ChunkIndex  *int    `json:"chunk_index"`
-	TotalChunks *int    `json:"total_chunks"`
-	TaskID      *string `json:"task_id"`
+	Text        string   `json:"text"`
+	Voice       string   `json:"voice"`
+	Engine      string   `json:"engine"` // "standard" | "fast" | "clone"
+	Speed       float64  `json:"speed"`
+	Pitch       *float64 `json:"pitch"`
+	Emotion     *string  `json:"emotion"`
+	JobID       *string  `json:"job_id"`
+	ChunkIndex  *int     `json:"chunk_index"`
+	TotalChunks *int     `json:"total_chunks"`
+	TaskID      *string  `json:"task_id"`
 }
 
 // UnifiedVoiceResponse cấu trúc gọn tối giản cho Frontend: ID, Name, Descriptions.
@@ -179,6 +181,18 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := state.GlobalManifestState.ValidatePitch(req.Pitch); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
+		return
+	}
+
+	if err := state.GlobalManifestState.ValidateEmotion(req.Emotion); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
+		return
+	}
+
 	taskID := uuid.NewString()
 	if req.TaskID != nil && *req.TaskID != "" {
 		taskID = *req.TaskID
@@ -201,12 +215,18 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		totalChunks = *req.TotalChunks
 	}
 
-	_ = db.RegisterJobAndChunk(context.Background(), user.ID, jobID, req.Engine, req.Voice, req.Speed, totalChunks, taskID, chunkIndex, req.Text)
+	audioParams := db.JobAudioParams{
+		Speed:   req.Speed,
+		Pitch:   req.Pitch,
+		Emotion: req.Emotion,
+	}
+
+	_ = db.RegisterJobAndChunk(context.Background(), user.ID, jobID, req.Engine, req.Voice, audioParams, totalChunks, taskID, chunkIndex, req.Text)
 
 	// Async Task Worker Goroutine
 	go func() {
 		bgCtx := context.Background()
-		audioBytes, err := h.TTSClient.Synthesize(req.Text, req.Voice, req.Speed, req.Engine)
+		audioBytes, err := h.TTSClient.Synthesize(req.Text, req.Voice, req.Speed, req.Engine, req.Pitch, req.Emotion)
 		if err != nil {
 			taskItem.Notify(state.TaskUpdate{
 				Status:   "error",

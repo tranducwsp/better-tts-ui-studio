@@ -38,10 +38,12 @@ type CoreVoice struct {
 }
 
 type SynthesizeRequest struct {
-	Text    string  `json:"text"`
-	VoiceID string  `json:"voice_id"`
-	Speed   float64 `json:"speed"`
-	Engine  string  `json:"engine"`
+	Text    string   `json:"text"`
+	VoiceID string   `json:"voice_id"`
+	Speed   float64  `json:"speed"`
+	Engine  string   `json:"engine"`
+	Pitch   *float64 `json:"pitch,omitempty"`
+	Emotion *string  `json:"emotion,omitempty"`
 }
 
 func (c *CoreTTSClient) GetInfo() (*types.UniversalManifest, error) {
@@ -76,12 +78,14 @@ func (c *CoreTTSClient) GetVoices() ([]CoreVoice, error) {
 	return voices, nil
 }
 
-func (c *CoreTTSClient) Synthesize(text, voice string, speed float64, engine string) ([]byte, error) {
+func (c *CoreTTSClient) Synthesize(text, voice string, speed float64, engine string, pitch *float64, emotion *string) ([]byte, error) {
 	payload := SynthesizeRequest{
 		Text:    text,
 		VoiceID: voice,
 		Speed:   speed,
 		Engine:  engine,
+		Pitch:   pitch,
+		Emotion: emotion,
 	}
 
 	bodyBytes, err := sonic.Marshal(payload)

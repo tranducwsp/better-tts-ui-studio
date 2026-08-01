@@ -12,19 +12,21 @@ import (
 )
 
 const createTTSJob = `-- name: CreateTTSJob :one
-INSERT INTO tts_jobs (id, user_id, engine, voice, speed, total_chunks, text)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, engine, voice, speed, total_chunks, text, created_at
+INSERT INTO tts_jobs (id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text, created_at
 `
 
 type CreateTTSJobParams struct {
-	ID          string  `json:"id"`
-	UserID      string  `json:"user_id"`
-	Engine      string  `json:"engine"`
-	Voice       string  `json:"voice"`
-	Speed       float64 `json:"speed"`
-	TotalChunks int32   `json:"total_chunks"`
-	Text        string  `json:"text"`
+	ID          string        `json:"id"`
+	UserID      string        `json:"user_id"`
+	Engine      string        `json:"engine"`
+	Voice       string        `json:"voice"`
+	Speed       float64       `json:"speed"`
+	Pitch       pgtype.Float8 `json:"pitch"`
+	Emotion     pgtype.Text   `json:"emotion"`
+	TotalChunks int32         `json:"total_chunks"`
+	Text        string        `json:"text"`
 }
 
 func (q *Queries) CreateTTSJob(ctx context.Context, arg CreateTTSJobParams) (TtsJob, error) {
@@ -34,6 +36,8 @@ func (q *Queries) CreateTTSJob(ctx context.Context, arg CreateTTSJobParams) (Tts
 		arg.Engine,
 		arg.Voice,
 		arg.Speed,
+		arg.Pitch,
+		arg.Emotion,
 		arg.TotalChunks,
 		arg.Text,
 	)
@@ -44,6 +48,8 @@ func (q *Queries) CreateTTSJob(ctx context.Context, arg CreateTTSJobParams) (Tts
 		&i.Engine,
 		&i.Voice,
 		&i.Speed,
+		&i.Pitch,
+		&i.Emotion,
 		&i.TotalChunks,
 		&i.Text,
 		&i.CreatedAt,
@@ -52,7 +58,7 @@ func (q *Queries) CreateTTSJob(ctx context.Context, arg CreateTTSJobParams) (Tts
 }
 
 const getTTSJobByID = `-- name: GetTTSJobByID :one
-SELECT id, user_id, engine, voice, speed, total_chunks, text, created_at FROM tts_jobs
+SELECT id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text, created_at FROM tts_jobs
 WHERE id = $1 LIMIT 1
 `
 
@@ -65,6 +71,8 @@ func (q *Queries) GetTTSJobByID(ctx context.Context, id string) (TtsJob, error) 
 		&i.Engine,
 		&i.Voice,
 		&i.Speed,
+		&i.Pitch,
+		&i.Emotion,
 		&i.TotalChunks,
 		&i.Text,
 		&i.CreatedAt,
@@ -73,7 +81,7 @@ func (q *Queries) GetTTSJobByID(ctx context.Context, id string) (TtsJob, error) 
 }
 
 const getTTSJobByIDAndUser = `-- name: GetTTSJobByIDAndUser :one
-SELECT id, user_id, engine, voice, speed, total_chunks, text, created_at FROM tts_jobs
+SELECT id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text, created_at FROM tts_jobs
 WHERE id = $1 AND user_id = $2 LIMIT 1
 `
 
@@ -91,6 +99,8 @@ func (q *Queries) GetTTSJobByIDAndUser(ctx context.Context, arg GetTTSJobByIDAnd
 		&i.Engine,
 		&i.Voice,
 		&i.Speed,
+		&i.Pitch,
+		&i.Emotion,
 		&i.TotalChunks,
 		&i.Text,
 		&i.CreatedAt,
@@ -99,7 +109,7 @@ func (q *Queries) GetTTSJobByIDAndUser(ctx context.Context, arg GetTTSJobByIDAnd
 }
 
 const listAllTTSJobs = `-- name: ListAllTTSJobs :many
-SELECT id, user_id, engine, voice, speed, total_chunks, text, created_at FROM tts_jobs
+SELECT id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text, created_at FROM tts_jobs
 ORDER BY created_at DESC
 `
 
@@ -118,6 +128,8 @@ func (q *Queries) ListAllTTSJobs(ctx context.Context) ([]TtsJob, error) {
 			&i.Engine,
 			&i.Voice,
 			&i.Speed,
+			&i.Pitch,
+			&i.Emotion,
 			&i.TotalChunks,
 			&i.Text,
 			&i.CreatedAt,
@@ -133,7 +145,7 @@ func (q *Queries) ListAllTTSJobs(ctx context.Context) ([]TtsJob, error) {
 }
 
 const listTTSJobsByUserID = `-- name: ListTTSJobsByUserID :many
-SELECT id, user_id, engine, voice, speed, total_chunks, text, created_at FROM tts_jobs
+SELECT id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text, created_at FROM tts_jobs
 WHERE user_id = $1
 ORDER BY created_at DESC
 `
@@ -153,6 +165,8 @@ func (q *Queries) ListTTSJobsByUserID(ctx context.Context, userID string) ([]Tts
 			&i.Engine,
 			&i.Voice,
 			&i.Speed,
+			&i.Pitch,
+			&i.Emotion,
 			&i.TotalChunks,
 			&i.Text,
 			&i.CreatedAt,

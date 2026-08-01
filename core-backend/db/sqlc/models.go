@@ -24,6 +24,8 @@ type TtsJob struct {
 	Engine      string             `json:"engine"`
 	Voice       string             `json:"voice"`
 	Speed       float64            `json:"speed"`
+	Pitch       pgtype.Float8      `json:"pitch"`
+	Emotion     pgtype.Text        `json:"emotion"`
 	TotalChunks int32              `json:"total_chunks"`
 	Text        string             `json:"text"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`

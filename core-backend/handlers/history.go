@@ -132,6 +132,8 @@ type JobDetailResponse struct {
 	Engine      string              `json:"engine"`
 	Voice       string              `json:"voice"`
 	Speed       float64             `json:"speed"`
+	Pitch       *float64            `json:"pitch,omitempty"`
+	Emotion     *string             `json:"emotion,omitempty"`
 	TotalChunks int                 `json:"total_chunks"`
 	Text        string              `json:"text"`
 	Chunks      []ChunkItemResponse `json:"chunks"`
@@ -216,11 +218,24 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 		totalChunks = len(sortedChunks)
 	}
 
+	// NULL pitch/emotion means the engine had no such control for this job; leave the
+	// pointers nil so they are omitted and the client keeps its manifest defaults.
+	var pitchPtr *float64
+	if job.Pitch.Valid {
+		pitchPtr = &job.Pitch.Float64
+	}
+	var emotionPtr *string
+	if job.Emotion.Valid && job.Emotion.String != "" {
+		emotionPtr = &job.Emotion.String
+	}
+
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(JobDetailResponse{
 		JobID:       job.ID,
 		Engine:      job.Engine,
 		Voice:       job.Voice,
 		Speed:       job.Speed,
+		Pitch:       pitchPtr,
+		Emotion:     emotionPtr,
 		TotalChunks: totalChunks,
 		Text:        fullText,
 		Chunks:      chunkResponses,
@@ -229,12 +244,14 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 
 // JobInitRequest yêu cầu khởi tạo thông tin cho một Job TTS lớn.
 type JobInitRequest struct {
-	JobID       string  `json:"job_id"`
-	Engine      string  `json:"engine"`
-	Voice       string  `json:"voice"`
-	Speed       float64 `json:"speed"`
-	TotalChunks int     `json:"total_chunks"`
-	Text        string  `json:"text"`
+	JobID       string   `json:"job_id"`
+	Engine      string   `json:"engine"`
+	Voice       string   `json:"voice"`
+	Speed       float64  `json:"speed"`
+	Pitch       *float64 `json:"pitch"`
+	Emotion     *string  `json:"emotion"`
+	TotalChunks int      `json:"total_chunks"`
+	Text        string   `json:"text"`
 }
 
 // InitJob khởi tạo thông tin ban đầu của Job TTS trước khi tiến hành chia nhỏ văn bản và phát âm từng chunk.
@@ -256,12 +273,15 @@ func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 
 	_, err := db.Queries.GetTTSJobByID(r.Context(), req.JobID)
 	if err != nil {
+		audio := db.JobAudioParams{Speed: req.Speed, Pitch: req.Pitch, Emotion: req.Emotion}
 		_, _ = db.Queries.CreateTTSJob(r.Context(), sqlc.CreateTTSJobParams{
 			ID:          req.JobID,
 			UserID:      user.ID,
 			Engine:      req.Engine,
 			Voice:       req.Voice,
 			Speed:       req.Speed,
+			Pitch:       audio.PitchColumn(),
+			Emotion:     audio.EmotionColumn(),
 			TotalChunks: int32(req.TotalChunks),
 			Text:        req.Text,
 		})
