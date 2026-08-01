@@ -76,6 +76,8 @@ Detailed documentation is available in the [`docs/`](./docs/) directory:
 - 🛠️ [**Frontend Technical & Engineering Spec**](./docs/frontend_tech_and_engineering.md): Detailed technical spec on Svelte 5 Runes, Web Audio API binary handling, streaming, and build pipeline.
 - 📖 [**AI Engineer Integration Guide**](./docs/ENGINEER_INTEGRATION_GUIDE.md): How to plug your custom AI Model into the system using Python schemas.
 - 📜 [**Universal TTS Core Protocol Specification**](./docs/core_tts_protocol_spec.md): Complete REST & gRPC API protocol reference.
+- ⚙️ [**Configuration Reference**](./docs/CONFIGURATION.md): Which knob lives in the manifest, which in the environment, and why.
+- 🕳️ [**Platform Gaps**](./docs/PLATFORM_GAPS.md): Manifest fields the platform does not honour yet, and what was already resolved.
 
 ---
 

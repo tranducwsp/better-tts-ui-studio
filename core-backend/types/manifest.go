@@ -150,6 +150,23 @@ type UniversalManifest struct {
 	UISchema       *UISchemaSpec      `json:"ui_schema,omitempty"`
 }
 
+// Giá trị áp dụng khi cả Mode lẫn Engine đều không khai. Phải khớp với PLATFORM_DEFAULTS
+// trong frontend/src/lib/capabilities.ts — cặp này được đối chiếu bằng test ở cả hai phía.
+var PlatformDefaultCapabilities = ResolvedCapabilities{
+	SupportsPresetVoices: true,
+	SupportsCloning:      false,
+	SupportsVoiceSaving:  false,
+	SupportsStreaming:    true,
+	SupportsSpeed:        true,
+	SupportsPitch:        false,
+	SupportsEmotion:      false,
+	SupportsSsml:         false,
+}
+
+// DefaultMaxTextLength dùng khi Manifest chưa nạp được. Phải khớp DEFAULT_TEXT_LIMIT
+// trong frontend/src/lib/textLimits.ts.
+const DefaultMaxTextLength = 3000
+
 // pick trả về giá trị Mode khai nếu có, ngược lại lấy của Engine, cuối cùng là mặc định.
 func pick(mode, engine *bool, fallback bool) bool {
 	if mode != nil {
@@ -169,11 +186,7 @@ func pick(mode, engine *bool, fallback bool) bool {
 // modeID rỗng hoặc không khớp Mode nào thì trả về Capabilities toàn Engine.
 func (m *UniversalManifest) ResolveCapabilities(modeID string) ResolvedCapabilities {
 	if m == nil {
-		return ResolvedCapabilities{
-			SupportsPresetVoices: true,
-			SupportsStreaming:    true,
-			SupportsSpeed:        true,
-		}
+		return PlatformDefaultCapabilities
 	}
 
 	var mode EngineCapabilities
@@ -185,15 +198,16 @@ func (m *UniversalManifest) ResolveCapabilities(modeID string) ResolvedCapabilit
 	}
 
 	e := m.Capabilities
+	d := PlatformDefaultCapabilities
 	return ResolvedCapabilities{
-		SupportsPresetVoices: pick(mode.SupportsPresetVoices, e.SupportsPresetVoices, true),
-		SupportsCloning:      pick(mode.SupportsCloning, e.SupportsCloning, false),
-		SupportsVoiceSaving:  pick(mode.SupportsVoiceSaving, e.SupportsVoiceSaving, false),
-		SupportsStreaming:    pick(mode.SupportsStreaming, e.SupportsStreaming, true),
-		SupportsSpeed:        pick(mode.SupportsSpeed, e.SupportsSpeed, true),
-		SupportsPitch:        pick(mode.SupportsPitch, e.SupportsPitch, false),
-		SupportsEmotion:      pick(mode.SupportsEmotion, e.SupportsEmotion, false),
-		SupportsSsml:         pick(mode.SupportsSsml, e.SupportsSsml, false),
+		SupportsPresetVoices: pick(mode.SupportsPresetVoices, e.SupportsPresetVoices, d.SupportsPresetVoices),
+		SupportsCloning:      pick(mode.SupportsCloning, e.SupportsCloning, d.SupportsCloning),
+		SupportsVoiceSaving:  pick(mode.SupportsVoiceSaving, e.SupportsVoiceSaving, d.SupportsVoiceSaving),
+		SupportsStreaming:    pick(mode.SupportsStreaming, e.SupportsStreaming, d.SupportsStreaming),
+		SupportsSpeed:        pick(mode.SupportsSpeed, e.SupportsSpeed, d.SupportsSpeed),
+		SupportsPitch:        pick(mode.SupportsPitch, e.SupportsPitch, d.SupportsPitch),
+		SupportsEmotion:      pick(mode.SupportsEmotion, e.SupportsEmotion, d.SupportsEmotion),
+		SupportsSsml:         pick(mode.SupportsSsml, e.SupportsSsml, d.SupportsSsml),
 	}
 }
 
@@ -201,7 +215,7 @@ func (m *UniversalManifest) ResolveCapabilities(modeID string) ResolvedCapabilit
 // sinh ra đoạn mà chính Engine sẽ từ chối.
 func (m *UniversalManifest) ChunkSize() int {
 	if m == nil || m.Constraints.MaxTextLength <= 0 {
-		return 3000
+		return DefaultMaxTextLength
 	}
 	ceiling := m.Constraints.MaxTextLength
 	if pref := m.Constraints.Chunking.MaxChunkSize; pref > 0 && pref < ceiling {

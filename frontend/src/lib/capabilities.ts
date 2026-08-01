@@ -19,7 +19,7 @@ import type {
  */
 
 /** Applied when neither the mode nor the engine states a value. */
-const PLATFORM_DEFAULTS: ResolvedCapabilities = {
+export const PLATFORM_DEFAULTS: ResolvedCapabilities = {
   supports_preset_voices: true,
   supports_cloning: false,
   supports_voice_saving: false,
