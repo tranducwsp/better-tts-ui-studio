@@ -4,7 +4,7 @@ Running list of places where the platform does not yet fully honour the manifest
 where a manifest field exists but nothing consumes it. Kept so an AI engineer plugging in
 a new Core TTS engine knows what the platform will and will not do for them today.
 
-Last updated: 2026-08-01
+Last updated: 2026-08-02
 
 ---
 
@@ -66,6 +66,35 @@ used — there is no UI for choosing an output sample rate, and no request field
 that choice. Add one to the synthesize payload first if this should be selectable.
 
 ---
+
+## Resolved: the manifest has exactly one definition
+
+`core-tts/schemas.py` is the only place the manifest is *declared*. Everything downstream
+merely describes its shape to decode it:
+
+| Layer | Role |
+|---|---|
+| `core-tts/schemas.py` | **declares** the manifest (Pydantic defaults) |
+| `core-backend/types/manifest.go` | structs to decode it, plus `ResolveCapabilities` |
+| `frontend/src/lib/types.ts` | interfaces to read it, plus `lib/capabilities.ts` |
+
+Neither the Go nor the TypeScript layer holds manifest *values* — only field definitions.
+The backend caches what the engine returned and serves it back verbatim.
+
+`frontend/scripts/prerender.js` used to break this, carrying an 89-line hand-written
+FALLBACK_MANIFEST for build-time SSG when the backend was unreachable. It was a second
+definition to keep in sync, and it silently went stale whenever the schema changed — which
+is precisely what happened during the capability refactor.
+
+It is gone. When the backend cannot be reached at build time the page is prerendered with
+`initialManifest: null`: the shell renders, no `__SSG_MANIFEST__` global is injected, and
+the client fetches the manifest on hydrate — the same path any cold client already takes.
+Verified both ways: with the backend up, 7171 bytes of prerendered DOM and the manifest
+inlined; with it down, 5866 bytes of shell, no global, CSS still inlined and JS still moved
+to the end of body.
+
+The trade is losing prerendered tab markup for builds made against a dead backend. That is
+worth strictly less than a copy of the schema that no test would catch drifting.
 
 ## Resolved: capability and chunking fragmentation
 
