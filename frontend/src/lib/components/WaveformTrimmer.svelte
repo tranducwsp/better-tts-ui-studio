@@ -2,15 +2,16 @@
   import { audioBufferToWav } from '../audioWav';
   import { toast } from '../toast.svelte';
   import { referenceAudioSeconds } from '../audioSpec';
-  import type { UniversalManifest } from '../types';
+  import type { UniversalManifest, EngineModeSpec } from '../types';
 
   interface Props {
     file: File;
     manifest?: UniversalManifest | null;
+    mode?: EngineModeSpec | null;
     onTrimmed: (trimmedBlob: Blob, trimmedFile: File) => void;
   }
 
-  let { file, onTrimmed, manifest = null }: Props = $props();
+  let { file, onTrimmed, manifest = null, mode = null }: Props = $props();
 
   let canvasElement = $state<HTMLCanvasElement | null>(null);
   let audioBuffer = $state<AudioBuffer | null>(null);
@@ -22,7 +23,7 @@
 
   // How long a reference clip the engine wants. Engines differ — some need three seconds,
   // some ten — so this comes from audio_spec rather than a constant here.
-  let TRIM_LENGTH = $derived(referenceAudioSeconds(manifest));
+  let TRIM_LENGTH = $derived(referenceAudioSeconds(manifest, mode));
 
   let wavePeaks: { min: number; max: number }[] = [];
   let rafPending = false;

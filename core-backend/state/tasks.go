@@ -65,11 +65,19 @@ type TaskUpdate struct {
 }
 
 type TaskItem struct {
-	ID          string    `json:"id"`
-	Status      string    `json:"status"`
-	Progress    int       `json:"progress"`
-	AudioWAV    []byte    `json:"audio_wav,omitempty"`
-	AudioMP3    []byte    `json:"audio_mp3,omitempty"`
+	ID       string `json:"id"`
+	Status   string `json:"status"`
+	Progress int    `json:"progress"`
+
+	// Audio là dữ liệu Engine trả về, ở đúng định dạng SourceFormat khai. Trước đây trường
+	// này tên AudioWAV và mọi nơi coi nó là WAV — trong khi Mode chạy Edge TTS trả MP3, nên
+	// tệp tải xuống mang phần mở rộng .wav mà bên trong là MP3.
+	Audio        []byte `json:"audio,omitempty"`
+	SourceFormat string `json:"source_format,omitempty"`
+
+	// Bản đã chuyển mã, ghi nhớ theo định dạng để không chạy lại ffmpeg mỗi lần tải.
+	Transcoded map[string][]byte `json:"transcoded,omitempty"`
+
 	Cancel      bool      `json:"cancel"`
 	CreatedAt   time.Time `json:"created_at"`
 	Error       string    `json:"error,omitempty"`
@@ -160,12 +168,12 @@ func (t *TaskItem) Notify(update TaskUpdate) {
 			_ = RedisClient.Set(ctx, "task:"+t.ID, string(taskStateData), 1*time.Hour).Err()
 		}
 
-		// Lưu Audio Bytes vào Redis Key nếu hoàn thành
-		if len(t.AudioWAV) > 0 {
-			_ = RedisClient.Set(ctx, "task:audio:"+t.ID+":wav", t.AudioWAV, 1*time.Hour).Err()
+		// Lưu Audio Bytes vào Redis, khoá theo đúng định dạng đang giữ.
+		if len(t.Audio) > 0 && t.SourceFormat != "" {
+			_ = RedisClient.Set(ctx, "task:audio:"+t.ID+":"+t.SourceFormat, t.Audio, 1*time.Hour).Err()
 		}
-		if len(t.AudioMP3) > 0 {
-			_ = RedisClient.Set(ctx, "task:audio:"+t.ID+":mp3", t.AudioMP3, 1*time.Hour).Err()
+		for format, data := range t.Transcoded {
+			_ = RedisClient.Set(ctx, "task:audio:"+t.ID+":"+format, data, 1*time.Hour).Err()
 		}
 	}
 }
@@ -221,17 +229,10 @@ func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {
 	tm.mu.RUnlock()
 
 	if ok {
-		// Kiểm tra thêm Audio từ Redis nếu RAM rỗng (trường hợp do Node khác tạo audio)
-		if RedisClient != nil {
-			if len(item.AudioWAV) == 0 {
-				if wavBytes, err := RedisClient.Get(context.Background(), "task:audio:"+taskID+":wav").Bytes(); err == nil {
-					item.AudioWAV = wavBytes
-				}
-			}
-			if len(item.AudioMP3) == 0 {
-				if mp3Bytes, err := RedisClient.Get(context.Background(), "task:audio:"+taskID+":mp3").Bytes(); err == nil {
-					item.AudioMP3 = mp3Bytes
-				}
+		// Audio có thể do replica khác sinh ra, nên nạp bù từ Redis khi RAM rỗng.
+		if RedisClient != nil && len(item.Audio) == 0 && item.SourceFormat != "" {
+			if b, err := RedisClient.Get(context.Background(), "task:audio:"+taskID+":"+item.SourceFormat).Bytes(); err == nil {
+				item.Audio = b
 			}
 		}
 		return item, true
@@ -246,12 +247,11 @@ func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {
 			if err := sonic.Unmarshal([]byte(val), &fetchedItem); err == nil {
 				fetchedItem.subscribers = make(map[chan TaskUpdate]struct{})
 
-				// Nạp Audio bytes từ Redis
-				if wavBytes, err := RedisClient.Get(ctx, "task:audio:"+taskID+":wav").Bytes(); err == nil {
-					fetchedItem.AudioWAV = wavBytes
-				}
-				if mp3Bytes, err := RedisClient.Get(ctx, "task:audio:"+taskID+":mp3").Bytes(); err == nil {
-					fetchedItem.AudioMP3 = mp3Bytes
+				// Nạp Audio bytes từ Redis theo định dạng gốc đã ghi trong Task.
+				if fetchedItem.SourceFormat != "" {
+					if b, err := RedisClient.Get(ctx, "task:audio:"+taskID+":"+fetchedItem.SourceFormat).Bytes(); err == nil {
+						fetchedItem.Audio = b
+					}
 				}
 
 				tm.mu.Lock()
@@ -266,17 +266,20 @@ func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {
 	return nil, false
 }
 
-// SetAudioMP3 ghi nhớ bản MP3 đã chuyển mã vào Task (và Redis nếu có), để lần tải sau
-// không phải chạy lại ffmpeg. Bỏ qua im lặng nếu Task không còn tồn tại.
-func (tm *TaskManager) SetAudioMP3(taskID string, data []byte) {
-	if len(data) == 0 {
+// CacheTranscoded ghi nhớ một bản đã chuyển mã, để lần tải sau không phải chạy lại ffmpeg.
+// Bỏ qua im lặng nếu Task không còn tồn tại.
+func (tm *TaskManager) CacheTranscoded(taskID, format string, data []byte) {
+	if len(data) == 0 || format == "" {
 		return
 	}
 
 	tm.mu.Lock()
 	item, ok := tm.tasks[taskID]
 	if ok {
-		item.AudioMP3 = data
+		if item.Transcoded == nil {
+			item.Transcoded = map[string][]byte{}
+		}
+		item.Transcoded[format] = data
 	}
 	tm.mu.Unlock()
 
@@ -287,7 +290,7 @@ func (tm *TaskManager) SetAudioMP3(taskID string, data []byte) {
 	if RedisClient != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = RedisClient.Set(ctx, "task:audio:"+taskID+":mp3", data, 1*time.Hour).Err()
+		_ = RedisClient.Set(ctx, "task:audio:"+taskID+":"+format, data, 1*time.Hour).Err()
 	}
 }
 

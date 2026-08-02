@@ -63,7 +63,8 @@ func TestGetTaskAudio_SuccessWAV(t *testing.T) {
 
 	task := state.GlobalTaskManager.GetOrCreate("audio-task-wav")
 	task.Status = "done"
-	task.AudioWAV = []byte("RIFF mock wav audio bytes")
+	task.Audio = []byte("RIFF mock wav audio bytes")
+	task.SourceFormat = "wav"
 
 	r := chi.NewRouter()
 	r.Get("/tasks/{task_id}/audio", h.GetTaskAudio)

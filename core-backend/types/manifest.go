@@ -38,6 +38,9 @@ type EngineModeSpec struct {
 	Name         string             `json:"name"`        // "Standard Neural", "Fast Streaming"
 	Description  string             `json:"description"` // Mô tả ngắn về mode
 	Capabilities EngineCapabilities `json:"capabilities"`
+
+	// Chỉ chứa những trường khác với audio_spec toàn Engine.
+	AudioSpec AudioSpec `json:"audio_spec"`
 }
 
 // RangeConstraint định nghĩa giới hạn tham số số (Min, Max, Default, Step) cho UI Sliders.
@@ -68,11 +71,16 @@ type EngineConstraints struct {
 }
 
 // AudioSpec định nghĩa thông số kỹ thuật âm thanh xuất ra.
+// AudioSpec mô tả định dạng âm thanh Engine sinh ra và ràng buộc âm thanh tham chiếu.
+//
+// Giống EngineCapabilities, khối này xuất hiện hai tầng — toàn Engine và theo từng Mode.
+// Trường rỗng (nil / chuỗi rỗng / 0) nghĩa là kế thừa tầng trên. Dùng ResolveAudioSpec để
+// lấy giá trị đã hoà giải; đọc thẳng sẽ bỏ sót phần Mode ghi đè.
 type AudioSpec struct {
-	SupportedFormats     []string `json:"supported_formats"`
-	SupportedSampleRates []int    `json:"supported_sample_rates"`
-	DefaultFormat        string   `json:"default_format"`
-	DefaultSampleRate    int      `json:"default_sample_rate"`
+	SupportedFormats     []string `json:"supported_formats,omitempty"`
+	SupportedSampleRates []int    `json:"supported_sample_rates,omitempty"`
+	DefaultFormat        string   `json:"default_format,omitempty"`
+	DefaultSampleRate    int      `json:"default_sample_rate,omitempty"`
 
 	// Ràng buộc cho âm thanh tham chiếu người dùng tải lên khi nhân bản giọng. Engine biết
 	// nó nhận tệp lớn tới đâu và cần bao nhiêu giây, nên nó khai — nền tảng không đoán.
@@ -227,4 +235,95 @@ func (m *UniversalManifest) ChunkSize() int {
 		return pref
 	}
 	return ceiling
+}
+
+// PlatformDefaultAudioSpec áp dụng khi cả Mode lẫn Engine đều không khai.
+//
+// Phải khớp các fallback trong frontend/src/lib/audioSpec.ts.
+var PlatformDefaultAudioSpec = AudioSpec{
+	SupportedFormats:      []string{"wav"},
+	SupportedSampleRates:  []int{24000},
+	DefaultFormat:         "wav",
+	DefaultSampleRate:     24000,
+	MaxUploadBytes:        10 * 1024 * 1024,
+	ReferenceAudioSeconds: 5.0,
+}
+
+// ResolveAudioSpec hoà giải AudioSpec của một Mode với AudioSpec toàn Engine.
+//
+// Cùng quy tắc như ResolveCapabilities: Mode khai gì thì theo Mode, không khai thì theo
+// Engine, cuối cùng là mặc định nền tảng. Cần thiết vì các Mode có thể chạy trên backend
+// khác nhau — một Mode dùng Edge TTS trả MP3 trong khi Mode khác dùng mô hình cục bộ trả
+// WAV, và gắn nhầm Content-Type sinh ra tập tin không trình phát nào mở được.
+func (m *UniversalManifest) ResolveAudioSpec(modeID string) AudioSpec {
+	if m == nil {
+		return PlatformDefaultAudioSpec
+	}
+
+	var mode AudioSpec
+	for i := range m.SupportedModes {
+		if m.SupportedModes[i].ID == modeID {
+			mode = m.SupportedModes[i].AudioSpec
+			break
+		}
+	}
+
+	e := m.AudioSpec
+	d := PlatformDefaultAudioSpec
+
+	pickStrings := func(vals ...[]string) []string {
+		for _, v := range vals {
+			if len(v) > 0 {
+				return v
+			}
+		}
+		return nil
+	}
+	pickInts := func(vals ...[]int) []int {
+		for _, v := range vals {
+			if len(v) > 0 {
+				return v
+			}
+		}
+		return nil
+	}
+	pickStr := func(vals ...string) string {
+		for _, v := range vals {
+			if v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	pickInt := func(vals ...int) int {
+		for _, v := range vals {
+			if v > 0 {
+				return v
+			}
+		}
+		return 0
+	}
+
+	return AudioSpec{
+		SupportedFormats:     pickStrings(mode.SupportedFormats, e.SupportedFormats, d.SupportedFormats),
+		SupportedSampleRates: pickInts(mode.SupportedSampleRates, e.SupportedSampleRates, d.SupportedSampleRates),
+		DefaultFormat:        pickStr(mode.DefaultFormat, e.DefaultFormat, d.DefaultFormat),
+		DefaultSampleRate:    pickInt(mode.DefaultSampleRate, e.DefaultSampleRate, d.DefaultSampleRate),
+		MaxUploadBytes: func() int64 {
+			for _, v := range []int64{mode.MaxUploadBytes, e.MaxUploadBytes, d.MaxUploadBytes} {
+				if v > 0 {
+					return v
+				}
+			}
+			return 0
+		}(),
+		ReferenceAudioSeconds: func() float64 {
+			for _, v := range []float64{mode.ReferenceAudioSeconds, e.ReferenceAudioSeconds, d.ReferenceAudioSeconds} {
+				if v > 0 {
+					return v
+				}
+			}
+			return 0
+		}(),
+	}
 }

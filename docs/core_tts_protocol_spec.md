@@ -177,6 +177,26 @@ Declare as many as the engine needs. `gender`, `region` and `style` have dedicat
 because the platform filters and displays them; everything else is stored in a JSONB column
 and returned unchanged. There is no fixed set and no upper bound — the form lays out to fit.
 
+#### `audio_spec` is per-mode too
+
+Like `capabilities`, this block appears engine-wide and again on each mode, with the same
+rule: the mode's value wins, else the engine's, else the platform default. Every field is
+optional, so a mode states only what differs.
+
+This matters when modes run on different backends. In the bundled engine, `fast` is driven
+by Edge TTS and emits MP3 while `standard` uses the local model and emits WAV:
+
+```jsonc
+"audio_spec": { "default_format": "wav", ... },        // engine-wide
+"supported_modes": [
+  { "id": "fast",
+    "audio_spec": { "supported_formats": ["mp3", "wav"], "default_format": "mp3" } }
+]
+```
+
+Declaring one engine-wide format would mislabel one of them — the platform would hand the
+browser an MP3 with `Content-Type: audio/wav`, which many players refuse to open.
+
 #### `audio_spec` reference-audio fields
 
 `max_upload_bytes` and `reference_audio_seconds` describe what the engine accepts for voice

@@ -85,6 +85,8 @@ export interface EngineModeSpec {
   name: string;
   description: string;
   capabilities?: EngineCapabilities;
+  /** Only the fields that differ from the engine-wide audio_spec. */
+  audio_spec?: AudioSpec;
 }
 
 export interface RangeConstraint {
@@ -112,11 +114,15 @@ export interface EngineConstraints {
   chunking?: ChunkingSpec;
 }
 
+/**
+ * Output format and reference-audio limits. Appears twice — engine-wide and per mode —
+ * with the same precedence rule as capabilities, so every field is optional.
+ */
 export interface AudioSpec {
-  supported_formats: string[];
-  supported_sample_rates: number[];
-  default_format: string;
-  default_sample_rate: number;
+  supported_formats?: string[];
+  supported_sample_rates?: number[];
+  default_format?: string;
+  default_sample_rate?: number;
   /** Ceiling for reference-audio uploads, declared by the engine that consumes them. */
   max_upload_bytes?: number;
   /** How many seconds of reference audio the engine wants for voice cloning. */

@@ -91,3 +91,9 @@ func MimeType(format string) string {
 		return "audio/" + format
 	}
 }
+
+// KnownFormats liệt kê các định dạng nền tảng nhận biết, dùng khi phải dò tệp trên đĩa mà
+// không biết trước Task đã sinh ra định dạng nào.
+func KnownFormats() []string {
+	return []string{"wav", "mp3", "flac", "ogg", "opus", "aac", "m4a"}
+}

@@ -180,9 +180,9 @@
 
     // Check here as well as on the server: rejecting a 200 MB file after uploading it
     // wastes the user's bandwidth to reach the same answer.
-    const ceiling = maxUploadBytes(manifest);
+    const ceiling = maxUploadBytes(manifest, activeMode);
     if (file.size > ceiling) {
-      toast.show(`File is ${(file.size / 1048576).toFixed(1)} MB; the engine accepts up to ${maxUploadLabel(manifest)}.`, 'error');
+      toast.show(`File is ${(file.size / 1048576).toFixed(1)} MB; the engine accepts up to ${maxUploadLabel(manifest, activeMode)}.`, 'error');
       target.value = '';
       return;
     }
@@ -340,15 +340,15 @@
           <div style="color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 6px;">
             <i class="fa-solid fa-cloud-arrow-up" style="font-size: 1.8rem; color: var(--primary);"></i>
             <span>Drag & drop audio file here or <strong style="color: var(--primary);">click to browse</strong></span>
-            <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: {supportedFormatsLabel(manifest)}</span>
+            <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: {supportedFormatsLabel(manifest, activeMode)}</span>
           </div>
         {/if}
-        <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" onchange={handleFileUpload} accept={acceptedUploadFormats(manifest)} style="display: none;" />
+        <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" onchange={handleFileUpload} accept={acceptedUploadFormats(manifest, activeMode)} style="display: none;" />
       </label>
 
       {#if selectedFile}
         <div style="margin-top: 10px;">
-          <WaveformTrimmer file={selectedFile} onTrimmed={handleTrimmedAudio} {manifest} />
+          <WaveformTrimmer file={selectedFile} onTrimmed={handleTrimmedAudio} {manifest} mode={activeMode} />
         </div>
       {/if}
     </div>
@@ -451,6 +451,7 @@
     modelId={activeMode.id}
     metadataSchema={modelOption?.voice_metadata_schema}
     {manifest}
+    mode={activeMode}
     onClose={() => isCreateModalOpen = false}
     onSaved={(voiceId, voiceName) => {
       isCreateModalOpen = false;

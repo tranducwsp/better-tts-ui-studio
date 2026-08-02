@@ -55,12 +55,37 @@ class EngineCapabilities(BaseModel):
     supports_emotion: Optional[bool] = None
     supports_ssml: Optional[bool] = None
 
+class AudioSpec(BaseModel):
+    """Định dạng âm thanh Engine sinh ra, và ràng buộc cho âm thanh tham chiếu nhận vào.
+
+    Giống EngineCapabilities, khối này xuất hiện hai tầng — toàn Engine và theo từng Mode —
+    với cùng một quy tắc hoà giải: Mode khai gì thì theo Mode, không khai thì theo Engine.
+    Vì thế mọi trường đều Optional: None nghĩa là kế thừa, khác với việc khai một giá trị.
+
+    Cần hai tầng vì các Mode có thể chạy trên backend khác nhau. Ở Engine này, `fast` dùng
+    Edge TTS và trả MP3, còn `standard` dùng mô hình cục bộ và trả WAV — khai chung một
+    default_format thì một trong hai luôn sai, và nền tảng sẽ gắn nhầm Content-Type.
+    """
+    supported_formats: Optional[List[str]] = None
+    supported_sample_rates: Optional[List[int]] = None
+    default_format: Optional[str] = None
+    default_sample_rate: Optional[int] = None
+
+    # Ràng buộc cho âm thanh tham chiếu mà người dùng tải lên để nhân bản giọng. Engine mới
+    # biết nó nhận tệp lớn tới đâu và cần bao nhiêu giây để trích đặc trưng giọng, nên đây
+    # là chỗ khai chúng — trước đây nền tảng tự đoán 10MB và 5 giây.
+    max_upload_bytes: Optional[int] = None
+    reference_audio_seconds: Optional[float] = None
+
+
 class EngineModeSpec(BaseModel):
     """One processing mode. Capabilities stated here override the engine-wide set."""
     id: str
     name: str
     description: str = ""
     capabilities: EngineCapabilities = Field(default_factory=EngineCapabilities)
+    # Chỉ khai những trường khác với audio_spec toàn Engine.
+    audio_spec: AudioSpec = Field(default_factory=AudioSpec)
 
 class RangeConstraint(BaseModel):
     min: float = 0.5
@@ -90,18 +115,6 @@ class EngineConstraints(BaseModel):
     pitch_range: RangeConstraint = Field(default_factory=lambda: RangeConstraint(min=-10.0, max=10.0, default=0.0, step=0.5))
     supported_emotions: List[str] = Field(default_factory=list)
     chunking: ChunkingSpec = Field(default_factory=ChunkingSpec)
-
-class AudioSpec(BaseModel):
-    supported_formats: List[str] = Field(default_factory=lambda: ["wav", "mp3"])
-    supported_sample_rates: List[int] = Field(default_factory=lambda: [16000, 22050, 24000, 44100])
-    default_format: str = "wav"
-    default_sample_rate: int = 24000
-
-    # Ràng buộc cho âm thanh tham chiếu mà người dùng tải lên để nhân bản giọng. Engine mới
-    # biết nó nhận tệp lớn tới đâu và cần bao nhiêu giây để trích đặc trưng giọng, nên đây
-    # là chỗ khai chúng — trước đây nền tảng tự đoán 10MB và 5 giây.
-    max_upload_bytes: int = 10 * 1024 * 1024
-    reference_audio_seconds: float = 5.0
 
 class AutoFormatRule(BaseModel):
     find: str
@@ -204,7 +217,12 @@ class UniversalManifest(BaseModel):
         ),
         EngineModeSpec(
             id="fast", name="Fast Streaming", description="Low latency streaming TTS",
-            capabilities=EngineCapabilities(supports_cloning=False, supports_voice_saving=False)
+            capabilities=EngineCapabilities(supports_cloning=False, supports_voice_saving=False),
+            # Edge TTS trả thẳng MP3 24kHz; nền tảng không chuyển mã lại làm gì.
+            audio_spec=AudioSpec(
+                supported_formats=["mp3", "wav"], default_format="mp3",
+                supported_sample_rates=[24000], default_sample_rate=24000
+            )
         ),
         EngineModeSpec(
             id="clone", name="Voice Cloning", description="Reference audio speaker cloning",
@@ -227,6 +245,14 @@ class UniversalManifest(BaseModel):
         supports_ssml=False
     ))
     constraints: EngineConstraints = Field(default_factory=EngineConstraints)
-    audio_spec: AudioSpec = Field(default_factory=AudioSpec)
+    # Mặc định toàn Engine: mô hình neural cục bộ sinh WAV. Mode nào khác thì tự khai.
+    audio_spec: AudioSpec = Field(default_factory=lambda: AudioSpec(
+        supported_formats=["wav", "mp3"],
+        supported_sample_rates=[16000, 22050, 24000, 44100],
+        default_format="wav",
+        default_sample_rate=24000,
+        max_upload_bytes=10 * 1024 * 1024,
+        reference_audio_seconds=5.0,
+    ))
     ui_schema: Optional[UISchemaSpec] = Field(default_factory=UISchemaSpec)
 

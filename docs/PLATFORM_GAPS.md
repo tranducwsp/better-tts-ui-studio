@@ -57,6 +57,24 @@ that choice. Add one to the synthesize payload first if this should be selectabl
 
 ---
 
+## Resolved: one audio format declared for modes that emit different ones
+
+`audio_spec` was engine-wide only, so `default_format: "wav"` applied to every mode. The
+bundled engine drives `fast` through Edge TTS, which returns MP3 — the file was served as
+`Content-Type: audio/wav` with a `.wav` name while containing MP3 frames, confirmed by the
+`0xFF 0xF3` header on a real download. Many players refuse that.
+
+`audio_spec` now resolves per mode, same two-tier rule as capabilities, through
+`types.ResolveAudioSpec` and `resolveAudioSpec` in `lib/audioSpec.ts`.
+
+`TaskItem.AudioWAV` was renamed to `Audio` with a `SourceFormat` beside it: the old name
+asserted a format the task could not guarantee, and every reader inherited that assumption.
+Transcoded copies moved from a single `AudioMP3` field to a map keyed by format, so caching
+works for whatever the engine actually produces.
+
+Measured after: `fast` returns `audio/mpeg` with MP3 magic bytes, `?format=wav` transcodes
+to real RIFF, and `standard` is unaffected.
+
 ## Resolved: /voices ignored which mode was asking
 
 `GET /voices` took no parameters, so every mode received the same list. On the bundled

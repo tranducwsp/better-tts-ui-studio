@@ -75,7 +75,7 @@ func TestAuth_Me_Authenticated(t *testing.T) {
 	h := handlers.NewAuthHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
-	
+
 	// Inject current user into request context
 	user := &sqlc.User{
 		ID:         "test-user-id-123",

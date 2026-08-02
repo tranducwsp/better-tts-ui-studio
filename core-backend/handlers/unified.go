@@ -234,14 +234,15 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		taskItem.AudioWAV = audioBytes
-		// Không gán AudioMP3 = audioBytes ở đây. Trước đây dòng đó khiến /audio?format=mp3
-		// trả về đúng bytes WAV kèm Content-Type audio/mpeg — tập tin sai định dạng mà
-		// người dùng không thể biết. Việc chuyển mã giờ do GetTaskAudio thực hiện theo yêu
-		// cầu, chỉ khi client hỏi định dạng khác.
+		// Định dạng do Mode quyết định: Edge TTS trả MP3, mô hình cục bộ trả WAV. Ghi lại
+		// để GetTaskAudio biết mình đang giữ gì thay vì đoán, và chỉ chuyển mã khi client
+		// hỏi định dạng khác.
+		sourceFormat := state.GlobalManifestState.Get().ResolveAudioSpec(req.Engine).DefaultFormat
+		taskItem.Audio = audioBytes
+		taskItem.SourceFormat = sourceFormat
 
 		_ = os.MkdirAll(storage.TempDir(), 0755)
-		filePath := filepath.Join(storage.TempDir(), fmt.Sprintf("%s.wav", taskID))
+		filePath := filepath.Join(storage.TempDir(), fmt.Sprintf("%s.%s", taskID, sourceFormat))
 		_ = os.WriteFile(filePath, audioBytes, 0644)
 
 		_ = db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil)

@@ -53,39 +53,43 @@ func (h *TasksHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 
 // GetTaskAudio trả về dữ liệu âm thanh của Task sau khi hoàn tất, chuyển mã theo yêu cầu.
 //
-// Nguồn âm thanh gốc là WAV do Engine sinh ra. Nếu client hỏi định dạng khác, ffmpeg sẽ
-// chuyển mã tại thời điểm gọi và kết quả được ghi nhớ (cache) trong Task để lần sau không
-// phải chuyển lại.
+// Định dạng gốc do Mode quyết định — Edge TTS trả MP3, mô hình cục bộ trả WAV — nên Task
+// ghi lại mình đang giữ gì. Hỏi đúng định dạng đó thì trả thẳng; hỏi khác thì ffmpeg
+// chuyển mã tại chỗ và kết quả được ghi nhớ để lần sau khỏi chạy lại.
 func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "task_id")
 	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
-	if format == "" {
-		format = "wav"
-	}
 
-	// 1. Lấy dữ liệu WAV gốc, từ RAM hoặc từ đĩa.
 	var source []byte
+	sourceFormat := ""
+
 	if task, ok := state.GlobalTaskManager.Get(taskID); ok && task.Status == "done" {
-		if format == "mp3" && len(task.AudioMP3) > 0 {
-			writeAudio(w, task.AudioMP3, "mp3")
+		sourceFormat = task.SourceFormat
+		if format == "" {
+			format = sourceFormat
+		}
+		// Đã có sẵn bản đúng định dạng thì khỏi làm gì thêm.
+		if b, cached := task.Transcoded[format]; cached && len(b) > 0 {
+			writeAudio(w, b, format)
 			return
 		}
-		if len(task.AudioWAV) > 0 {
-			source = task.AudioWAV
+		if len(task.Audio) > 0 {
+			source = task.Audio
 		}
 	}
 
+	// Task có thể đã bị dọn khỏi RAM; tệp trên đĩa mang phần mở rộng là định dạng gốc.
 	if source == nil {
-		for _, ext := range []string{"wav", "mp3"} {
-			if b, err := os.ReadFile(filepath.Join(storage.TempDir(), taskID+"."+ext)); err == nil && len(b) > 0 {
-				// Tập tin trên đĩa đã đúng định dạng được hỏi thì trả về trực tiếp.
-				if ext == format {
-					writeAudio(w, b, format)
-					return
-				}
-				source = b
-				break
+		for _, ext := range audio.KnownFormats() {
+			b, err := os.ReadFile(filepath.Join(storage.TempDir(), taskID+"."+ext))
+			if err != nil || len(b) == 0 {
+				continue
 			}
+			source, sourceFormat = b, ext
+			if format == "" {
+				format = ext
+			}
+			break
 		}
 	}
 
@@ -96,9 +100,8 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Định dạng gốc là WAV, nên hỏi WAV thì trả luôn.
-	if format == "wav" {
-		writeAudio(w, source, "wav")
+	if format == "" || format == sourceFormat {
+		writeAudio(w, source, sourceFormat)
 		return
 	}
 
@@ -113,7 +116,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 
 	converted, err := audio.Transcode(r.Context(), source, format)
 	if err != nil {
-		log.Printf("Transcode task %s to %s failed: %v", taskID, format, err)
+		log.Printf("Transcode task %s from %s to %s failed: %v", taskID, sourceFormat, format, err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
@@ -122,11 +125,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Ghi nhớ MP3 vì đây là định dạng được tải nhiều nhất.
-	if format == "mp3" {
-		state.GlobalTaskManager.SetAudioMP3(taskID, converted)
-	}
-
+	state.GlobalTaskManager.CacheTranscoded(taskID, format, converted)
 	writeAudio(w, converted, format)
 }
 

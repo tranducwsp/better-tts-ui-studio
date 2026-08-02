@@ -76,7 +76,7 @@
           if (c.audio_path) {
             url = c.audio_path.startsWith('/') ? c.audio_path : `/${c.audio_path}`;
           } else if (c.task_id) {
-            url = `/api/tasks/${c.task_id}/audio?format=${defaultFormat(manifest)}`;
+            url = `/api/tasks/${c.task_id}/audio?format=${defaultFormat(manifest, engine)}`;
           }
         }
 
@@ -263,9 +263,9 @@
   }
 
   // Download buttons follow what the engine declares, not a hardcoded WAV assumption.
-  let defaultFmt = $derived(defaultFormat(manifest));
-  let chunkFormats = $derived(downloadFormats(manifest));
-  let combinedFormat = $derived(combinedDownloadFormat(manifest));
+  let defaultFmt = $derived(defaultFormat(manifest, engine));
+  let chunkFormats = $derived(downloadFormats(manifest, engine));
+  let combinedFormat = $derived(combinedDownloadFormat(manifest, engine));
   let selectedFormat = $state('');
   let isCombining = $state(false);
 
@@ -311,7 +311,7 @@
         })
       );
 
-      const finalBlob = new Blob(parts, { type: defaultMimeType(manifest) });
+      const finalBlob = new Blob(parts, { type: defaultMimeType(manifest, engine) });
       const url = URL.createObjectURL(finalBlob);
       const a = document.createElement('a');
       a.href = url;
@@ -334,7 +334,7 @@
       <i class="fa-solid fa-compact-disc fa-spin"></i> Audio Generation & Streaming Progress
     </h3>
     <div style="display: flex; align-items: center; gap: 10px;">
-      <span style="font-size: 0.8rem; opacity: 0.7; color: var(--text-muted);">{audioSpecLabel(manifest)}</span>
+      <span style="font-size: 0.8rem; opacity: 0.7; color: var(--text-muted);">{audioSpecLabel(manifest, engine)}</span>
       <span style="font-size: 0.85rem; padding: 4px 12px; border-radius: 12px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 500;">
         {statusBadge}
       </span>
