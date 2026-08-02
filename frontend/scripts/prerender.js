@@ -98,11 +98,9 @@ async function prerender() {
       finalHtml = finalHtml.replace(/<link [^>]*rel="stylesheet"[^>]*>/g, '');
       finalHtml = finalHtml.replace(/<noscript>[\s\S]*?<\/noscript>/g, '');
 
-      // UI mode is an engine decision: the engine publishes it in the manifest, the
-      // backend forwards it through the rebuild webhook, and the frontend applies it
-      // when the bundle is rebuilt. VITE_UI_MODE is *not* read here — the spec lives
-      // in one place, and silently falling back to a build-time override is the same
-      // two-sources problem the rest of the config refactor was meant to remove.
+      // UI mode is an engine decision: it is published in the manifest, the backend
+      // forwards a rebuild webhook when the manifest changes, and the bundle is rebuilt
+      // against the new value.
       const activeUiMode = manifest?.ui_schema?.ui_mode ?? 'beauty';
       console.log(`🎯 Active Build UI Mode: "${activeUiMode.toUpperCase()}"`);
 

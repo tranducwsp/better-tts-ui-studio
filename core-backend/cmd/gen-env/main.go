@@ -56,9 +56,6 @@ func main() {
 		if s.Kind == config.KindInt {
 			fmt.Fprintf(&b, "# Số nguyên trong khoảng %d đến %d.\n", s.Min, s.Max)
 		}
-		if len(s.Aliases) > 0 {
-			fmt.Fprintf(&b, "# Tên cũ vẫn dùng được: %s\n", strings.Join(s.Aliases, ", "))
-		}
 
 		// Bí mật không bao giờ được ghi giá trị vào tệp mẫu, kể cả khi mặc định là rỗng —
 		// để không ai vô tình commit một giá trị thật vào đúng chỗ này.

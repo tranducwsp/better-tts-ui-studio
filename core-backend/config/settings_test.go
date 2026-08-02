@@ -129,12 +129,6 @@ func TestNoDuplicateKeys(t *testing.T) {
 			t.Errorf("khoá %s được khai nhiều lần trong Settings", s.Key)
 		}
 		seen[s.Key] = true
-		for _, a := range s.Aliases {
-			if seen[a] {
-				t.Errorf("tên cũ %s trùng với một khoá khác", a)
-			}
-			seen[a] = true
-		}
 	}
 }
 

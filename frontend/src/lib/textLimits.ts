@@ -17,8 +17,9 @@ import type { UniversalManifest } from './types';
 /** Used only when no manifest has loaded yet. */
 export const DEFAULT_TEXT_LIMIT = 3000;
 
-/** Hard per-request ceiling enforced by the backend. */
-export function resolveMaxTextLength(manifest: UniversalManifest | null | undefined): number {
+/** Hard per-request ceiling enforced by the backend. Internal: callers want one of the
+ * three resolvers below, which apply the clamping this does not. */
+function resolveMaxTextLength(manifest: UniversalManifest | null | undefined): number {
   const v = manifest?.constraints?.max_text_length;
   return typeof v === 'number' && v > 0 ? v : DEFAULT_TEXT_LIMIT;
 }

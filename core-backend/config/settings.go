@@ -33,9 +33,6 @@ type Setting struct {
 	Group   string
 	Doc     string
 
-	// Aliases là các tên cũ vẫn được chấp nhận, thử theo thứ tự sau Key.
-	Aliases []string
-
 	// Required đánh dấu biến mà việc bỏ trống là rủi ro thật sự chứ không phải tiện lợi.
 	// Không làm dừng tiến trình — LoadConfig tự xử lý — nhưng .env.example sẽ nêu bật.
 	Required bool
@@ -100,12 +97,12 @@ var Settings = []Setting{
 
 	{
 		Key: "CORE_ENGINE_URL", Kind: KindString, Default: "http://localhost:8001",
-		Aliases: []string{"CORE_TTS_URL"}, Group: "Core TTS engine",
-		Doc: "Nơi backend lấy manifest và gửi yêu cầu tổng hợp.",
+		Group: "Core TTS engine",
+		Doc:   "Nơi backend lấy manifest và gửi yêu cầu tổng hợp.",
 	},
 	{
 		Key: "CORE_ENGINE_GRPC_URL", Kind: KindString, Default: "localhost:50051",
-		Aliases: []string{"CORE_TTS_GRPC_URL"}, Group: "Core TTS engine",
+		Group: "Core TTS engine",
 	},
 	{
 		Key: "TTS_CLIENT_TIMEOUT_SECONDS", Kind: KindInt, Default: "60", Min: 1, Max: 3600,

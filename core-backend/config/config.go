@@ -155,10 +155,10 @@ func (c *Config) logSummary() {
 	log.Printf("  cors          %s", strings.Join(c.CORSOrigins, ", "))
 }
 
-// str đọc một biến chuỗi theo đặc tả, thử các tên cũ (Aliases) trước khi dùng mặc định.
+// str đọc một biến chuỗi theo đặc tả.
 func str(key string) string {
 	s := lookup(key)
-	if v, ok := firstSet(append([]string{s.Key}, s.Aliases...)); ok {
+	if v, exists := os.LookupEnv(s.Key); exists && strings.TrimSpace(v) != "" {
 		return v
 	}
 	return s.Default
@@ -173,8 +173,8 @@ func str(key string) string {
 func num(key string) int {
 	s := lookup(key)
 
-	raw, ok := firstSet(append([]string{s.Key}, s.Aliases...))
-	if !ok {
+	raw, exists := os.LookupEnv(s.Key)
+	if !exists || strings.TrimSpace(raw) == "" {
 		raw = s.Default
 	}
 
@@ -186,14 +186,4 @@ func num(key string) int {
 		log.Fatalf("Biến môi trường %s = %d nằm ngoài khoảng cho phép (%d đến %d).", s.Key, val, s.Min, s.Max)
 	}
 	return val
-}
-
-// firstSet trả về giá trị không rỗng đầu tiên trong danh sách tên.
-func firstSet(keys []string) (string, bool) {
-	for _, k := range keys {
-		if v, exists := os.LookupEnv(k); exists && strings.TrimSpace(v) != "" {
-			return v, true
-		}
-	}
-	return "", false
 }

@@ -230,5 +230,3 @@ class UniversalManifest(BaseModel):
     audio_spec: AudioSpec = Field(default_factory=AudioSpec)
     ui_schema: Optional[UISchemaSpec] = Field(default_factory=UISchemaSpec)
 
-# Legacy compatibility alias
-CoreInfoResponse = UniversalManifest
