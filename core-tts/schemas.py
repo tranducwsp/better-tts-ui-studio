@@ -21,9 +21,18 @@ class TaskStatusResponse(BaseModel):
     error: Optional[str] = None
 
 class VoiceInfo(BaseModel):
+    """A preset voice the engine ships with.
+
+    `modes` names the modes this voice actually works in. An empty list means "every mode",
+    which is what an engine that never thought about the distinction implicitly meant — so
+    older engines keep working unchanged. Declaring it matters when modes use different
+    backends: a voice that only exists in the streaming provider is not selectable in the
+    neural one, and offering it there gives the user a choice that fails at synthesis time.
+    """
     id: str
     name: str
     descriptions: List[str] = Field(default_factory=list)
+    modes: List[str] = Field(default_factory=list)
 
 class EngineCapabilities(BaseModel):
     """What an engine can do.

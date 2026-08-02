@@ -57,6 +57,22 @@ that choice. Add one to the synthesize payload first if this should be selectabl
 
 ---
 
+## Resolved: /voices ignored which mode was asking
+
+`GET /voices` took no parameters, so every mode received the same list. On the bundled
+engine that meant 16 voices everywhere, when `fast` is driven by Edge TTS and can only use
+2 of them — the other 14 were selectable and would have failed at synthesis time. The engine
+already knew the split; it just had no way to express it.
+
+`GET /voices?model_id=` filters now, and `VoiceInfo` carries a `modes` list. Both are
+optional: an engine that ignores the parameter and omits `modes` returns everything, exactly
+as before. The backend filters on `modes` as well as passing the parameter, so an engine
+that declares the field but ignores the query still produces a correct list.
+
+Measured after the change: `fast` returns 2, `standard` 14, `clone` 17 (14 presets plus 3
+saved user voices). A legacy engine stub that ignores the parameter was confirmed to still
+work.
+
 ## Resolved: settings that were read but never enforced
 
 Three values looked configurable and were not.

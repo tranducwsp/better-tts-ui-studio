@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"time"
 
 	"core-backend/types"
@@ -35,6 +36,27 @@ type CoreVoice struct {
 	ID           string   `json:"id,omitempty"`
 	Name         string   `json:"name"`
 	Descriptions []string `json:"descriptions,omitempty"`
+
+	// Modes liệt kê những Mode giọng này dùng được. Rỗng nghĩa là mọi Mode — hành vi của
+	// Engine chưa khai trường này.
+	Modes []string `json:"modes,omitempty"`
+}
+
+// UsableIn cho biết giọng có dùng được ở Mode chỉ định không.
+//
+// Engine đã lọc theo model_id thì hàm này không cắt thêm gì. Nó tồn tại cho trường hợp
+// Engine khai Modes nhưng bỏ qua tham số truy vấn — lúc đó nền tảng vẫn không hiển thị một
+// giọng mà tổng hợp sẽ thất bại.
+func (v CoreVoice) UsableIn(modeID string) bool {
+	if len(v.Modes) == 0 || modeID == "" || modeID == "all" {
+		return true
+	}
+	for _, m := range v.Modes {
+		if m == modeID {
+			return true
+		}
+	}
+	return false
 }
 
 type SynthesizeRequest struct {
@@ -60,8 +82,18 @@ func (c *CoreTTSClient) GetInfo() (*types.UniversalManifest, error) {
 	return &result, nil
 }
 
-func (c *CoreTTSClient) GetVoices() ([]CoreVoice, error) {
-	resp, err := c.HTTPClient.Get(c.BaseURL + "/voices")
+// GetVoices lấy danh sách giọng có sẵn, giới hạn theo Mode nếu modelID khác rỗng.
+//
+// Engine mới biết giọng nào chạy được ở Mode nào — chúng có thể đến từ những backend khác
+// nhau — nên việc lọc thuộc về Engine, không phải nền tảng đoán. Engine chưa hỗ trợ tham số
+// này sẽ bỏ qua nó và trả về toàn bộ, đúng như hành vi trước đây.
+func (c *CoreTTSClient) GetVoices(modelID string) ([]CoreVoice, error) {
+	endpoint := c.BaseURL + "/voices"
+	if modelID != "" && modelID != "all" {
+		endpoint += "?model_id=" + url.QueryEscape(modelID)
+	}
+
+	resp, err := c.HTTPClient.Get(endpoint)
 	if err != nil {
 		return nil, err
 	}

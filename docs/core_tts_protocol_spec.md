@@ -201,8 +201,19 @@ control**, never whether the control exists — that is decided by capabilities 
 ---
 
 ### 2.2 Voices Metadata API
-* **Endpoint**: `GET /voices`
-* **Description**: Returns the list of pre-loaded AI voices available in the Core Engine.
+* **Endpoint**: `GET /voices?model_id={mode}`
+* **Description**: Returns the pre-loaded voices available in the Core Engine.
+
+`model_id` is optional and narrows the list to voices usable in that mode. Omitting it
+returns everything, so an engine may ignore the parameter entirely and keep working.
+
+Filter it if your modes are backed by different providers. A voice that only exists in the
+streaming backend cannot be used by the neural one, and offering it there hands the user a
+choice that fails at synthesis time — the platform cannot know which is which.
+
+Each voice may also declare `modes`, listing where it applies. An empty or absent list means
+every mode. The platform filters on this as well, so an engine that declares `modes` but
+ignores `model_id` still gets the right list in the UI.
 
 #### Response Example (`application/json`):
 ```json
@@ -210,6 +221,7 @@ control**, never whether the control exists — that is decided by capabilities 
   {
     "id": "james_doc",
     "name": "James Narrator",
+    "modes": ["standard", "clone"],
     "gender": "male",
     "region": "North America",
     "style": "News",

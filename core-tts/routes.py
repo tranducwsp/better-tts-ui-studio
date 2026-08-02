@@ -31,9 +31,13 @@ def get_core_info():
     return UniversalManifest()
 
 @router.get("/voices", response_model=list[VoiceInfo])
-def get_voices():
-    """2.2 Voices Metadata API"""
-    voices = get_preset_voices()
+def get_voices(model_id: str | None = None):
+    """2.2 Voices Metadata API
+
+    `model_id` narrows the list to voices usable in that mode. Omitting it returns every
+    voice, which is what callers predating the parameter expect.
+    """
+    voices = get_preset_voices(model_id)
     return [VoiceInfo(**v) for v in voices]
 
 @router.get("/health")
