@@ -104,6 +104,13 @@ moment before the first `/api/info` response arrives.
 |---|---|---|
 | Capability defaults | `types.PlatformDefaultCapabilities` (Go) and `PLATFORM_DEFAULTS` (TS) | preset_voices / streaming / speed `true`, rest `false` |
 | Text length | `types.DefaultMaxTextLength` (Go) and `DEFAULT_TEXT_LIMIT` (TS) | 3000 |
+| Speed range | `DEFAULT_SPEED_RANGE` (`lib/ranges.ts`) | 0.5 … 2.0, step 0.1 |
+| Pitch range | `DEFAULT_PITCH_RANGE` (`lib/ranges.ts`) | -10 … 10, step 0.5 |
+| Audio spec | `lib/audioSpec.ts` | WAV, 10 MB upload, 5 s reference clip |
+
+Every one of these is reached through a resolver rather than read from the manifest at the
+point of use. Reading `manifest?.constraints?...` directly in a component is how the same
+fallback ends up written twice with different values.
 
 These exist twice because the two runtimes cannot share code. They are pinned together by
 `docs/capability-resolution-cases.json`, which both `core-backend/tests/parity_test.go` and

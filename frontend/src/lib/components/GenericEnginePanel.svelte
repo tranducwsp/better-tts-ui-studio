@@ -6,6 +6,7 @@
   import { fetchVoices, fetchPresets, cloneVoiceTemp } from '../api';
   import { acceptedUploadFormats, maxUploadBytes, maxUploadLabel, supportedFormatsLabel } from '../audioSpec';
   import { resolveCapabilities } from '../capabilities';
+  import { pitchRange, speedRange } from '../ranges';
   import { resolveStreamingThreshold } from '../textLimits';
   import { toast } from '../toast.svelte';
 
@@ -49,6 +50,11 @@
   );
 
   let availableEmotions = $derived(manifest?.constraints?.supported_emotions ?? []);
+
+  // Slider bounds resolved once, so the slider and number variants of each control can
+  // never disagree about min/max/step.
+  let speedBounds = $derived(speedRange(manifest));
+  let pitchBounds = $derived(pitchRange(manifest));
 
   let modeVoices = $state<VoiceOption[]>([]);
 
@@ -142,8 +148,8 @@
   $effect(() => {
     if (activeMode && activeMode.id && activeMode.id !== lastModeId) {
       lastModeId = activeMode.id;
-      speed = manifest?.constraints?.speed_range?.default ?? 1.0;
-      pitch = manifest?.constraints?.pitch_range?.default ?? 0.0;
+      speed = speedBounds.default;
+      pitch = pitchBounds.default;
       // Emotion vocabularies are per-engine; a value carried over from another mode
       // may not exist in this one, so always reset it.
       selectedEmotion = '';
@@ -356,9 +362,9 @@
         <input
           type="number"
           id="generic-speed"
-          min={manifest?.constraints?.speed_range?.min || 0.5}
-          max={manifest?.constraints?.speed_range?.max || 2.0}
-          step={manifest?.constraints?.speed_range?.step || 0.1}
+          min={speedBounds.min}
+          max={speedBounds.max}
+          step={speedBounds.step}
           bind:value={speed}
           style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
         />
@@ -366,9 +372,9 @@
         <input
           type="range"
           id="generic-speed"
-          min={manifest?.constraints?.speed_range?.min || 0.5}
-          max={manifest?.constraints?.speed_range?.max || 2.0}
-          step={manifest?.constraints?.speed_range?.step || 0.1}
+          min={speedBounds.min}
+          max={speedBounds.max}
+          step={speedBounds.step}
           bind:value={speed}
         />
       {/if}
@@ -383,9 +389,9 @@
         <input
           type="number"
           id="generic-pitch"
-          min={manifest?.constraints?.pitch_range?.min ?? -10}
-          max={manifest?.constraints?.pitch_range?.max ?? 10}
-          step={manifest?.constraints?.pitch_range?.step ?? 0.5}
+          min={pitchBounds.min}
+          max={pitchBounds.max}
+          step={pitchBounds.step}
           bind:value={pitch}
           style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
         />
@@ -393,9 +399,9 @@
         <input
           type="range"
           id="generic-pitch"
-          min={manifest?.constraints?.pitch_range?.min ?? -10}
-          max={manifest?.constraints?.pitch_range?.max ?? 10}
-          step={manifest?.constraints?.pitch_range?.step ?? 0.5}
+          min={pitchBounds.min}
+          max={pitchBounds.max}
+          step={pitchBounds.step}
           bind:value={pitch}
         />
       {/if}
