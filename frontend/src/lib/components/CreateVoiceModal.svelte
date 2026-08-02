@@ -14,30 +14,36 @@
     manifest?: UniversalManifest | null;
   }
 
-  let { isOpen, onClose, onSaved, modelId = 'clone', metadataSchema, manifest = null }: Props = $props();
+  let { isOpen, onClose, onSaved, modelId = '', metadataSchema, manifest = null }: Props = $props();
 
   let fileInput = $state<HTMLInputElement | null>(null);
   let selectedFile = $state<File | null>(null);
   let trimmedFile = $state<File | null>(null);
   let isSaving = $state(false);
 
-  let formData = $state<Record<string, string>>({
-    name: '',
-    gender: 'Male',
-    region: 'Northern',
-    style: 'Expressive'
-  });
-
+  // Fields the engine declares. The fallback exists only for an engine that ships no
+  // voice_metadata_schema at all; anything it contains is a guess, so it stays minimal
+  // rather than assuming a language or a set of regional accents.
   let fields = $derived.by(() => {
     if (metadataSchema && metadataSchema.length > 0) {
       return metadataSchema;
     }
     return [
-      { key: 'name', label: 'Voice Name', type: 'text', required: true, placeholder: 'e.g. Male MC Voice...' },
-      { key: 'gender', label: 'Gender', type: 'select', options: ['Male', 'Female', 'Other'] },
-      { key: 'region', label: 'Region', type: 'select', options: ['Northern', 'Southern', 'Central', 'Other'] },
-      { key: 'style', label: 'Style', type: 'select', options: ['Expressive', 'News / Broadcast', 'Audiobook / Storytelling', 'Dramatic / Emotional', 'Natural / Conversational', 'Commercial / Review', 'Other'] }
+      { key: 'name', label: 'Voice Name', type: 'text', required: true, placeholder: 'e.g. Narrator...' }
     ];
+  });
+
+  // Seed each field from its own schema: a select starts on its first option, a text field
+  // empty. Hardcoding "Male"/"Northern" here sent Vietnamese regional accents to engines
+  // that had never heard of them, and overwrote whatever the engine did declare.
+  let formData = $state<Record<string, string>>({});
+  $effect(() => {
+    const seeded: Record<string, string> = {};
+    for (const f of fields) {
+      const existing = formData[f.key];
+      seeded[f.key] = existing ?? (f.type === 'select' ? (f.options?.[0] ?? '') : '');
+    }
+    formData = seeded;
   });
 
   function handleFileSelect(e: Event) {
@@ -66,9 +72,12 @@
     isSaving = true;
     toast.show('Uploading & extracting voice embeddings...', 'info');
 
-    const genderVal = formData['gender'] || 'Male';
-    const regionVal = formData['region'] || 'Northern';
-    const styleVal = formData['style'] || 'Expressive';
+    // Send whatever the engine's own schema produced. Empty is honest here: the backend
+    // stores these as nullable metadata, and inventing "Male"/"Northern" would attach a
+    // Vietnamese regional accent to a voice from an engine that never offered one.
+    const genderVal = formData['gender'] || '';
+    const regionVal = formData['region'] || '';
+    const styleVal = formData['style'] || '';
 
     try {
       const voiceId = await cloneVoice(fileToUpload, nameVal, genderVal, regionVal, styleVal, modelId);

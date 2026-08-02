@@ -175,7 +175,7 @@
     isCloningTemp = true;
     toast.show('Processing reference audio file...', 'info');
     try {
-      const tempPath = await cloneVoiceTemp(file);
+      const tempPath = await cloneVoiceTemp(file, activeMode.id);
       referenceAudioPath = tempPath;
       toast.show('Reference audio file loaded successfully!', 'success');
     } catch (err: unknown) {
@@ -191,7 +191,7 @@
     const file = new File([blob], 'trimmed_reference.wav', { type: 'audio/wav' });
     isCloningTemp = true;
     toast.show('Uploading trimmed audio sample...', 'info');
-    cloneVoiceTemp(file)
+    cloneVoiceTemp(file, activeMode.id)
       .then((path) => {
         referenceAudioPath = path;
         toast.show('Reference audio updated from trimmer!', 'success');

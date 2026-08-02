@@ -12,12 +12,29 @@ import (
 	"core-backend/db"
 	"core-backend/db/sqlc"
 	"core-backend/middleware"
+	"core-backend/state"
 
 	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+// firstCloningMode trả về Mode đầu tiên mà Manifest khai là hỗ trợ cloning, dùng khi client
+// không gửi model_id. Trả về chuỗi rỗng nếu Manifest chưa nạp hoặc không Mode nào hỗ trợ —
+// tốt hơn là gán một tên bịa mà về sau không truy vấn lại được.
+func firstCloningMode() string {
+	m := state.GlobalManifestState.Get()
+	if m == nil {
+		return ""
+	}
+	for _, mode := range m.SupportedModes {
+		if m.ResolveCapabilities(mode.ID).SupportsCloning {
+			return mode.ID
+		}
+	}
+	return ""
+}
 
 // TTSCloneHandler xử lý các API liên quan đến Voice Cloning (Tải mẫu giọng mẫu, quản lý giọng và tổng hợp tiếng nói theo mẫu giọng).
 type TTSCloneHandler struct {
@@ -53,9 +70,12 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Không đoán tên mode: hỏi Manifest xem Mode nào thực sự hỗ trợ cloning. Chuỗi "clone"
+	// cứng trước đây khiến giọng của một Engine đặt tên mode là zero_shot_clone bị lưu dưới
+	// một model_id không tồn tại, nên sau đó không mode nào liệt kê được nó.
 	modelID := r.FormValue("model_id")
 	if modelID == "" {
-		modelID = "clone"
+		modelID = firstCloningMode()
 	}
 
 	gender := r.FormValue("gender")
@@ -283,5 +303,3 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 	})
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã xóa giọng"})
 }
-
-

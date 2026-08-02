@@ -67,6 +67,36 @@ that choice. Add one to the synthesize payload first if this should be selectabl
 
 ---
 
+## Resolved: mode names were guessed in six places
+
+The platform assumed an engine would name its modes `standard`, `fast` and `clone`.
+
+The one that actually broke: `cloneVoiceTemp()` and `POST /api/clone/upload` both fell back
+to the literal `"clone"` when no `model_id` arrived. An engine calling its cloning mode
+`zero_shot_clone` — as the bundled test engine does — had reference audio filed under a
+`model_id` no mode owned, so `/api/clone/voices?model_id=zero_shot_clone` returned nothing
+and the voice was unreachable from the UI that created it. The frontend never passed
+`model_id` on the temp-upload path at all, so the fallback ran every time.
+
+`handlers/tts_clone.go` now asks the manifest which mode declares `supports_cloning`, and
+the frontend passes `activeMode.id`. Verified against an engine with no mode named `clone`:
+a voice uploaded without `model_id` lands under `zero_shot_clone`.
+
+Also removed, all of the same shape:
+
+- `activeTab` started at `"fast"`, rendering a tab for a mode that may not exist until an
+  effect corrected it. It starts empty; the panel waits for the engine to report modes.
+- `fetchVoices()`, `synthesize()` and `cloneVoice()` defaulted their mode parameter. Every
+  caller already passes one, so the defaults only hid a missing argument — they are now
+  required.
+- `CreateVoiceModal` seeded its form with `Male` / `Northern` / `Expressive` and offered
+  Vietnamese regional accents as fallback options. An engine that declares no
+  `voice_metadata_schema` now gets a name field only, and each field seeds from its own
+  schema rather than from a guess about language.
+
+What remains is deliberate: `unified.go` falls back to `"standard"` only when the manifest
+has not loaded and there is no mode list to read.
+
 ## Resolved: shared secret default and unbounded temp storage
 
 Two things that made the stack unsafe to expose, both fixed.

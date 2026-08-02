@@ -19,7 +19,10 @@
   let { initialManifest = null }: Props = $props();
 
   // Svelte 5 states using runes
-  let activeTab = $state<string>('fast');
+  // Empty until the manifest names a mode. The effect below picks the first one the engine
+  // declares; seeding this with a guess like "fast" would render a tab for a mode the
+  // engine may not have, for the frame before the correction lands.
+  let activeTab = $state<string>('');
   let mainText = $state(
     'Hello! Welcome to AI Voice Studio. Experience high-quality neural voice synthesis!'
   );
@@ -251,13 +254,19 @@
 
       {#if !isSettingsCollapsed}
         <div style="margin-top: 0.5rem;">
-          <GenericEnginePanel
-            text={mainText}
-            activeMode={currentModeSpec}
-            {manifest}
-            {reloadedJob}
-            onStartStreaming={handleStartStreaming}
-          />
+          {#if activeTab}
+            <GenericEnginePanel
+              text={mainText}
+              activeMode={currentModeSpec}
+              {manifest}
+              {reloadedJob}
+              onStartStreaming={handleStartStreaming}
+            />
+          {:else}
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0;">
+              Waiting for the engine to report its available modes…
+            </p>
+          {/if}
         </div>
       {/if}
     </div>

@@ -100,7 +100,7 @@ export function parseVoiceItem(v: Record<string, unknown> | string): VoiceOption
   };
 }
 
-export async function fetchVoices(modelId: string = 'standard'): Promise<VoiceOption[]> {
+export async function fetchVoices(modelId: string): Promise<VoiceOption[]> {
   try {
     const res = await fetch(`/api/voices/${modelId}`, { credentials: 'include' });
     if (!res.ok) throw new Error('Failed to load voices');
@@ -176,7 +176,7 @@ export async function synthesize(
   text: string,
   voice: string,
   speed: number,
-  engine: string = 'standard',
+  engine: string,
   options: SynthesizeOptions = {}
 ): Promise<string> {
   const { jobId, chunkIndex = 0, totalChunks = 1, pitch, emotion } = options;
@@ -204,7 +204,19 @@ export async function synthesize(
 
 
 
-export async function cloneVoice(file: File, name: string, gender = 'Male', region = 'Northern', style = 'Expressive', modelId = 'clone'): Promise<string> {
+/**
+ * Metadata fields are whatever the engine's voice_metadata_schema declared, so they carry
+ * no defaults here — an empty string means "the engine did not ask for this", which the
+ * backend stores as null. Callers pass modelId explicitly; there is no sensible guess.
+ */
+export async function cloneVoice(
+  file: File,
+  name: string,
+  gender = '',
+  region = '',
+  style = '',
+  modelId = ''
+): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('name', name);
@@ -222,7 +234,8 @@ export async function cloneVoice(file: File, name: string, gender = 'Male', regi
   return data.id || data.clone_id || '';
 }
 
-export async function cloneVoiceTemp(file: File, modelId = 'clone'): Promise<string> {
+/** modelId identifies which mode the reference audio belongs to; callers pass activeMode.id. */
+export async function cloneVoiceTemp(file: File, modelId = ''): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('model_id', modelId);
