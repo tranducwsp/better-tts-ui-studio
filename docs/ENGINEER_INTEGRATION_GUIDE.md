@@ -40,6 +40,10 @@ The Frontend & Go Backend dynamically request `/info` from your Python Core TTS 
 
 ---
 
+> A captured `GET /api/info` from the bundled engine lives in
+> [`examples/manifest-core-tts.json`](./examples/manifest-core-tts.json) — quicker to adapt
+> than building one from the schema.
+
 ## 2. Step-by-Step Engine Integration
 
 ### Step 1: Clone & Navigate to Core Engine
