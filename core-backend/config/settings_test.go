@@ -137,3 +137,25 @@ func TestNoDuplicateKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestReadByVarsAreNotLoaded giữ ranh giới: một biến đánh dấu ReadBy thuộc về dịch vụ
+// khác, nên LoadConfig không được đọc nó. Nếu sau này backend cần dùng thật, hãy bỏ ReadBy
+// thay vì để bảng nói một đằng còn mã nguồn làm một nẻo.
+func TestReadByVarsAreNotLoaded(t *testing.T) {
+	raw, err := os.ReadFile("config.go")
+	if err != nil {
+		t.Fatalf("đọc config.go: %v", err)
+	}
+	src := string(raw)
+
+	for _, s := range Settings {
+		if s.ReadBy == "" {
+			continue
+		}
+		for _, call := range []string{`str("` + s.Key + `")`, `num("` + s.Key + `")`} {
+			if strings.Contains(src, call) {
+				t.Errorf("%s được đánh dấu ReadBy=%q nhưng LoadConfig vẫn gọi %s", s.Key, s.ReadBy, call)
+			}
+		}
+	}
+}

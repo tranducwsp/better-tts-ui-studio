@@ -87,7 +87,8 @@ The table below is a summary; `settings.go` and `.env.example` are authoritative
 | `REDIS_URL` / `REDIS_PASSWORD` | `localhost:6379` / empty | Absent ⇒ in-memory mode |
 | `CORE_ENGINE_URL` | `http://localhost:8001` | Where the manifest is fetched from. Legacy alias: `CORE_TTS_URL`. |
 | `CORE_ENGINE_GRPC_URL` | `localhost:50051` | gRPC endpoint. Legacy alias: `CORE_TTS_GRPC_URL`. |
-| `FE_BUILDER_URL` | `http://frontend-builder:3001` | Notified to rebuild the SSG bundle when the manifest changes. |
+| `FE_BUILDER_URL` | `http://frontend-builder:3001` | Backend → builder: signals a rebuild when the manifest changes. Carries no payload. |
+| `VITE_BACKEND_URL` | `http://core-backend:8000` | Builder → backend: where it fetches the manifest. Read by the frontend, not the backend. |
 | `TTS_CLIENT_TIMEOUT_SECONDS` | `60` | |
 | `STORAGE_DIR` | `storage` | |
 | `TEMP_AUDIO_RETENTION_HOURS` | `24` | Sweeper deletes older temp audio hourly |
@@ -127,6 +128,11 @@ inconsistent:
 *(`MAX_UPLOAD_SIZE_MB` used to be listed here as belonging in the manifest. The engine now
 declares `audio_spec.max_upload_bytes` and the stricter of the two wins — the env var is the
 infrastructure ceiling, the manifest value is what the engine can actually process.)*
+
+*(`VITE_BACKEND_URL` is listed in `settings.go` despite the backend never reading it. It is
+the other half of the FE_BUILDER_URL link, and splitting the two across separate files would
+mean remembering two places to change one connection. `config.TestReadByVarsAreNotLoaded`
+keeps the boundary honest: a variable marked `ReadBy` must not be read by `LoadConfig`.)*
 
 *(`UI_MODE` used to be one of these — the engine published it as `ui_schema.ui_mode` while
 the frontend build separately honoured `VITE_UI_MODE`. The build variable is gone; the

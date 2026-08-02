@@ -39,6 +39,11 @@ type Setting struct {
 	// Required đánh dấu biến mà việc bỏ trống là rủi ro thật sự chứ không phải tiện lợi.
 	// Không làm dừng tiến trình — LoadConfig tự xử lý — nhưng .env.example sẽ nêu bật.
 	Required bool
+
+	// ReadBy ghi tên dịch vụ đọc biến này, nếu không phải backend. Một vài biến sống trong
+	// bảng vì chúng thuộc cùng một liên kết với biến kề bên — người vận hành cần thấy cả
+	// hai chiều ở một chỗ — nhưng LoadConfig không đụng tới chúng.
+	ReadBy string
 }
 
 const (
@@ -108,8 +113,18 @@ var Settings = []Setting{
 	},
 	{
 		Key: "FE_BUILDER_URL", Kind: KindString, Default: "http://frontend-builder:3001",
-		Group: "Core TTS engine",
-		Doc:   "Được gọi để dựng lại bundle prerender khi manifest của engine thay đổi.",
+		Group: "Frontend builder",
+		Doc: "Backend gọi URL này khi manifest đổi, để builder dựng lại bundle prerender.\n" +
+			"Tín hiệu không mang dữ liệu — builder tự lấy manifest qua VITE_BACKEND_URL.",
+	},
+	{
+		Key: "VITE_BACKEND_URL", Kind: KindString, Default: "http://core-backend:8000",
+		Group:  "Frontend builder",
+		ReadBy: "frontend",
+		Doc: "Chiều ngược lại: nơi builder và dev server tìm backend để lấy manifest.\n" +
+			"Backend không đọc biến này — nó nằm đây vì là nửa còn lại của cùng một liên kết,\n" +
+			"và tách riêng ra một chỗ khác thì người vận hành phải nhớ hai nơi.\n" +
+			"Đây là biến khởi động: không thể lấy từ manifest, vì cần nó mới lấy được manifest.",
 	},
 
 	{Key: "STORAGE_DIR", Kind: KindString, Default: "storage", Group: "Storage"},

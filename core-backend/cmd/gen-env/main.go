@@ -47,6 +47,9 @@ func main() {
 		if s.Required {
 			b.WriteString("# BẮT BUỘC cho môi trường thật.\n")
 		}
+		if s.ReadBy != "" {
+			fmt.Fprintf(&b, "# Đọc bởi %s, không phải backend.\n", s.ReadBy)
+		}
 		for _, line := range docLines(s.Doc) {
 			b.WriteString("# " + line + "\n")
 		}
