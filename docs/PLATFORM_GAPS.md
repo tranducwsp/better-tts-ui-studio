@@ -28,17 +28,7 @@ Not implemented because it needs real design decisions rather than a mechanical 
 
 Wire it only after those are settled.
 
-## 2. Reference-audio upload size limit is hardcoded
-
-`GenericEnginePanel.svelte` tells the user "Max 10MB". The manifest has no field
-describing an upload ceiling, so this number is a frontend invention and is not enforced
-anywhere in the backend either.
-
-To make it engine-driven, add something like `audio_spec.max_upload_bytes` to
-`types/manifest.go` and the core protocol spec, then read it in the dropzone label and
-enforce it in `handlers/tts_clone.go`.
-
-## 3. Pitch / emotion depend on the engine actually reading them
+## 2. Pitch / emotion depend on the engine actually reading them
 
 The platform side is complete: UI gated by manifest, validated against
 `pitch_range` / `supported_emotions`, persisted to `tts_jobs`, restored from history, and
@@ -50,7 +40,7 @@ the slider and hear no difference — the gap is then in the engine, not here.
 Fields are omitted entirely (not sent as null) when the engine does not declare support,
 so engines that predate this feature are unaffected.
 
-## 4. History does not restore reference audio for cloning jobs
+## 3. History does not restore reference audio for cloning jobs
 
 `JobDetailResponse` returns voice, speed, pitch, emotion and chunks. For a cloning job the
 `voice` field holds a temp reference-audio path that has usually been cleaned off disk by
@@ -58,7 +48,7 @@ the time the job is reloaded, so replaying such a job may fail.
 
 Fixing this means deciding a retention policy for reference audio — out of scope so far.
 
-## 5. `supported_sample_rates` is informational only
+## 4. `supported_sample_rates` is informational only
 
 `audio_spec.default_format` and `default_sample_rate` drive the result-card label, and
 `supported_formats` drives the upload filter. The `supported_sample_rates` array is not
@@ -66,6 +56,35 @@ used — there is no UI for choosing an output sample rate, and no request field
 that choice. Add one to the synthesize payload first if this should be selectable.
 
 ---
+
+## Resolved: settings that were read but never enforced
+
+Three values looked configurable and were not.
+
+**`MAX_UPLOAD_SIZE_MB` was parsed, range-checked, logged at boot — and ignored.** All three
+multipart handlers hardcoded `32 << 20`, so setting it to 8 or 512 changed nothing. Uploads
+now go through `parseUpload`, which also wraps the body in `http.MaxBytesReader` so an
+oversized file is cut off mid-transfer instead of being buffered into memory and then
+refused. The error names the limit, because "request too large" without a number leaves the
+user guessing how much to trim.
+
+The engine can tighten it further through the new `audio_spec.max_upload_bytes`: whichever
+of the two is stricter wins. The engine knows what it can process; the env var is the
+infrastructure ceiling.
+
+**`STORAGE_DIR` was honoured at startup and nowhere else.** `main.go` created the directory
+and pointed the sweeper at it, but the handlers wrote to a literal `"storage/temp"`. Setting
+`STORAGE_DIR=/data` therefore had the sweeper cleaning `/data/temp` while synthesis kept
+filling `./storage/temp`, which nothing would ever delete. Paths now come from
+`storage.TempDir()` and `storage.ModeDir()`, set once from config at boot.
+
+**The waveform trimmer always cut exactly 5 seconds.** Reference-clip length is an engine
+property — some want three seconds, some ten — so it is now
+`audio_spec.reference_audio_seconds`, and the surrounding labels read from the same value
+instead of saying "5s" in four places.
+
+Verified against the running deployment: a 15 MB upload is refused with "tệp vượt quá giới
+hạn 10 MB" from the engine's declared ceiling, while 1 MB passes through to the engine.
 
 ## Resolved: mode names were guessed in six places
 

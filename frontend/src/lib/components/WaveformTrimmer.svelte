@@ -1,23 +1,28 @@
 <script lang="ts">
   import { audioBufferToWav } from '../audioWav';
   import { toast } from '../toast.svelte';
+  import { referenceAudioSeconds } from '../audioSpec';
+  import type { UniversalManifest } from '../types';
 
   interface Props {
     file: File;
+    manifest?: UniversalManifest | null;
     onTrimmed: (trimmedBlob: Blob, trimmedFile: File) => void;
   }
 
-  let { file, onTrimmed }: Props = $props();
+  let { file, onTrimmed, manifest = null }: Props = $props();
 
   let canvasElement = $state<HTMLCanvasElement | null>(null);
   let audioBuffer = $state<AudioBuffer | null>(null);
   let duration = $state(0);
   let trimStart = $state(0);
-  let trimEnd = $state(5.0);
+  let trimEnd = $state(0);
   let isDragging = $state(false);
   let previewAudioUrl = $state<string | null>(null);
 
-  const TRIM_LENGTH = 5.0;
+  // How long a reference clip the engine wants. Engines differ — some need three seconds,
+  // some ten — so this comes from audio_spec rather than a constant here.
+  let TRIM_LENGTH = $derived(referenceAudioSeconds(manifest));
 
   let wavePeaks: { min: number; max: number }[] = [];
   let rafPending = false;
@@ -169,13 +174,13 @@
     const trimmedFile = new File([blob], newFileName, { type: 'audio/wav' });
     previewAudioUrl = URL.createObjectURL(blob);
     onTrimmed(blob, trimmedFile);
-    toast.show('5s audio segment trimmed!', 'success');
+    toast.show(`${TRIM_LENGTH}s audio segment trimmed!`, 'success');
   }
 </script>
 
 <div style="background: rgba(15, 23, 42, 0.4); padding: 1rem; border-radius: 12px; margin-top: 1rem; border: 1px dashed var(--primary);">
   <h4 style="margin-bottom: 0.5rem; color: #fff; font-size: 0.95rem;">
-    <i class="fa-solid fa-scissors" style="color: var(--primary);"></i> Select optimal 5s audio segment
+    <i class="fa-solid fa-scissors" style="color: var(--primary);"></i> Select optimal {TRIM_LENGTH}s audio segment
   </h4>
 
   <div style="margin-bottom: 0.5rem; position: relative;">
@@ -193,7 +198,7 @@
       style="width: 100%; height: 100px; background: #0f172a; border-radius: 8px; cursor: pointer; user-select: none; touch-action: none;"
     ></canvas>
     <p style="font-size: 0.8rem; color: #94a3b8; text-align: center; margin-top: 5px;">
-      Click or drag on the waveform to select the best 5-second range.
+      Click or drag on the waveform to select the best {TRIM_LENGTH}-second range.
     </p>
   </div>
 
@@ -211,7 +216,7 @@
 
   <div style="display: flex; gap: 10px;">
     <button onclick={handleTrimOnly} class="btn secondary-btn" type="button" style="font-size: 0.9rem; padding: 8px 14px;">
-      <i class="fa-solid fa-scissors"></i> Trim & Preview 5s
+      <i class="fa-solid fa-scissors"></i> Trim &amp; Preview {TRIM_LENGTH}s
     </button>
   </div>
 </div>

@@ -117,6 +117,10 @@ export interface AudioSpec {
   supported_sample_rates: number[];
   default_format: string;
   default_sample_rate: number;
+  /** Ceiling for reference-audio uploads, declared by the engine that consumes them. */
+  max_upload_bytes?: number;
+  /** How many seconds of reference audio the engine wants for voice cloning. */
+  reference_audio_seconds?: number;
 }
 
 export interface AutoFormatRule {

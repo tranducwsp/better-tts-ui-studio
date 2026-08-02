@@ -80,6 +80,12 @@ class AudioSpec(BaseModel):
     default_format: str = "wav"
     default_sample_rate: int = 24000
 
+    # Ràng buộc cho âm thanh tham chiếu mà người dùng tải lên để nhân bản giọng. Engine mới
+    # biết nó nhận tệp lớn tới đâu và cần bao nhiêu giây để trích đặc trưng giọng, nên đây
+    # là chỗ khai chúng — trước đây nền tảng tự đoán 10MB và 5 giây.
+    max_upload_bytes: int = 10 * 1024 * 1024
+    reference_audio_seconds: float = 5.0
+
 class AutoFormatRule(BaseModel):
     find: str
     replace: str

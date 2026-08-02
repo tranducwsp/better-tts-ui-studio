@@ -13,6 +13,7 @@ import (
 	"core-backend/db/sqlc"
 	"core-backend/middleware"
 	"core-backend/state"
+	"core-backend/storage"
 
 	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
@@ -239,8 +240,8 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		// người dùng không thể biết. Việc chuyển mã giờ do GetTaskAudio thực hiện theo yêu
 		// cầu, chỉ khi client hỏi định dạng khác.
 
-		_ = os.MkdirAll("storage/temp", 0755)
-		filePath := filepath.Join("storage/temp", fmt.Sprintf("%s.wav", taskID))
+		_ = os.MkdirAll(storage.TempDir(), 0755)
+		filePath := filepath.Join(storage.TempDir(), fmt.Sprintf("%s.wav", taskID))
 		_ = os.WriteFile(filePath, audioBytes, 0644)
 
 		_ = db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil)

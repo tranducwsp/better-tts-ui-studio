@@ -10,6 +10,7 @@ import (
 
 	"core-backend/audio"
 	"core-backend/state"
+	"core-backend/storage"
 
 	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
@@ -76,7 +77,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 
 	if source == nil {
 		for _, ext := range []string{"wav", "mp3"} {
-			if b, err := os.ReadFile(filepath.Join("storage/temp", taskID+"."+ext)); err == nil && len(b) > 0 {
+			if b, err := os.ReadFile(filepath.Join(storage.TempDir(), taskID+"."+ext)); err == nil && len(b) > 0 {
 				// Tập tin trên đĩa đã đúng định dạng được hỏi thì trả về trực tiếp.
 				if ext == format {
 					writeAudio(w, b, format)

@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
 	"core-backend/client"
 	"core-backend/config"
 	"core-backend/db"
+	"core-backend/handlers"
 	"core-backend/router"
 	"core-backend/state"
 	"core-backend/storage"
@@ -27,10 +27,18 @@ func main() {
 		log.Fatalf("Failed to create storage directory '%s': %v", cfg.StorageDir, err)
 	}
 
+	// Gốc lưu trữ phải được đặt trước khi bất kỳ handler nào ghi tệp, nếu không chúng sẽ
+	// dùng mặc định "storage" và bỏ qua STORAGE_DIR.
+	storage.InitStorage(cfg.StorageDir)
+
+	// Trần upload cho mọi handler multipart. Không có dòng này, MAX_UPLOAD_SIZE_MB chỉ là
+	// một con số trong log khởi động.
+	handlers.SetMaxUploadMB(cfg.MaxUploadMB)
+
 	// Xoá định kỳ các tập tin âm thanh tạm. Mỗi lần tổng hợp ghi một tập tin vào
 	// storage/temp và trước đây không có gì dọn chúng, nên đĩa chỉ có thể phình lên.
 	storage.StartTempSweeper(
-		filepath.Join(cfg.StorageDir, "temp"),
+		storage.TempDir(),
 		time.Duration(cfg.TempRetentionHours)*time.Hour,
 		storage.DefaultSweepInterval,
 	)

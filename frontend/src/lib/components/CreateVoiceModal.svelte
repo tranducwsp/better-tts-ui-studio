@@ -3,7 +3,7 @@
   import { cloneVoice } from '../api';
   import { toast } from '../toast.svelte';
   import type { VoiceMetadataFieldSpec, UniversalManifest } from '../types';
-  import { acceptedUploadFormats } from '../audioSpec';
+  import { acceptedUploadFormats, maxUploadBytes, maxUploadLabel, supportedFormatsLabel } from '../audioSpec';
 
   interface Props {
     isOpen: boolean;
@@ -49,7 +49,14 @@
   function handleFileSelect(e: Event) {
     const target = e.target as HTMLInputElement;
     if (target.files && target.files.length > 0) {
-      selectedFile = target.files[0];
+      const picked = target.files[0];
+      const ceiling = maxUploadBytes(manifest);
+      if (picked.size > ceiling) {
+        toast.show(`File is ${(picked.size / 1048576).toFixed(1)} MB; the engine accepts up to ${maxUploadLabel(manifest)}.`, 'error');
+        target.value = '';
+        return;
+      }
+      selectedFile = picked;
       trimmedFile = selectedFile;
       if (!formData['name']) {
         formData['name'] = selectedFile.name.replace(/\.[^/.]+$/, '');
@@ -112,14 +119,14 @@
           <p style="color: var(--success); font-weight: 600; margin: 0;">{selectedFile.name}</p>
         {:else}
           <p style="color: #cbd5e1; margin: 0;">Drag & drop audio file here or <strong style="color: var(--primary);">click to browse</strong></p>
-          <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: WAV (Max 10MB)</span>
+          <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: {supportedFormatsLabel(manifest)} (max {maxUploadLabel(manifest)})</span>
         {/if}
         <input id="create-voice-file-input" type="file" bind:this={fileInput} onchange={handleFileSelect} accept={acceptedUploadFormats(manifest)} style="display: none;" />
       </label>
 
       <!-- Trimmer if file loaded -->
       {#if selectedFile}
-        <WaveformTrimmer file={selectedFile} onTrimmed={(_, file) => trimmedFile = file} />
+        <WaveformTrimmer file={selectedFile} onTrimmed={(_, file) => trimmedFile = file} {manifest} />
       {/if}
 
       <!-- Metadata fields form -->

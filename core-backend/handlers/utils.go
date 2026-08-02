@@ -26,10 +26,9 @@ func NewUtilsHandler() *UtilsHandler {
 func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	err := r.ParseMultipartForm(32 << 20) // Read 32MB max
-	if err != nil {
+	if err := parseUpload(w, r); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to parse upload form"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
 	}
 

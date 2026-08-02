@@ -30,6 +30,8 @@ defaults of its own beyond the platform fallbacks listed in §3.
 | Speed / pitch slider range | `constraints.speed_range`, `constraints.pitch_range` |
 | Which emotions exist | `constraints.supported_emotions` |
 | Output format, sample rate, downloadable formats | `audio_spec` |
+| Max reference-audio upload size | `audio_spec.max_upload_bytes` |
+| Seconds of reference audio the trimmer selects | `audio_spec.reference_audio_seconds` |
 | Which widget draws a control | `ui_schema.option_panel[mode].*_type` |
 | Preset voices shipped with the engine | `ui_schema.option_panel[mode].preset_voices` |
 | Text cleaning rules | `ui_schema.input_panel.auto_format` |
@@ -89,7 +91,7 @@ The table below is a summary; `settings.go` and `.env.example` are authoritative
 | `TTS_CLIENT_TIMEOUT_SECONDS` | `60` | |
 | `STORAGE_DIR` | `storage` | |
 | `TEMP_AUDIO_RETENTION_HOURS` | `24` | Sweeper deletes older temp audio hourly |
-| `MAX_UPLOAD_SIZE_MB` | `32` | See "known wrinkles" below |
+| `MAX_UPLOAD_SIZE_MB` | `32` | Infrastructure ceiling; `audio_spec.max_upload_bytes` can lower it |
 | `CORS_ALLOWED_ORIGINS` | localhost dev ports | Comma-separated |
 | `UI_MODE` | `beauty` | Read by the *engine*, surfaced as `ui_schema.ui_mode` |
 
@@ -112,13 +114,12 @@ side's test fails. Add cases to that file rather than to either test.
 
 ## Known wrinkles
 
-Two settings currently sit on the wrong side of the line. Documented rather than silently
+One setting sits on the wrong side of the line. Documented rather than silently
 inconsistent:
 
-**`MAX_UPLOAD_SIZE_MB` is an env var but should be manifest.** How large a reference audio
-clip may be is a property of the engine that consumes it, not of the deployment. The UI
-separately hardcodes "Max 10MB" in its dropzone label, which agrees with neither. Fixing it
-means adding `audio_spec.max_upload_bytes` — see `PLATFORM_GAPS.md` §2.
+*(`MAX_UPLOAD_SIZE_MB` used to be listed here as belonging in the manifest. The engine now
+declares `audio_spec.max_upload_bytes` and the stricter of the two wins — the env var is the
+infrastructure ceiling, the manifest value is what the engine can actually process.)*
 
 *(`UI_MODE` used to be one of these — the engine published it as `ui_schema.ui_mode` while
 the frontend build separately honoured `VITE_UI_MODE`. The build variable is gone; the

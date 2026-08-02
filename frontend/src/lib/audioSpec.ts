@@ -79,3 +79,24 @@ export function combinedDownloadFormat(
   const safe = ['mp3', 'aac'];
   return safe.find((f) => declared.includes(f)) ?? null;
 }
+
+/** Ceiling for reference-audio uploads, in bytes. Falls back to 10 MB when unstated. */
+export function maxUploadBytes(manifest: UniversalManifest | null | undefined): number {
+  const v = manifest?.audio_spec?.max_upload_bytes;
+  return typeof v === 'number' && v > 0 ? v : 10 * 1024 * 1024;
+}
+
+/** Same ceiling rendered for a label, e.g. "10 MB". */
+export function maxUploadLabel(manifest: UniversalManifest | null | undefined): string {
+  const mb = maxUploadBytes(manifest) / (1024 * 1024);
+  return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`;
+}
+
+/**
+ * Seconds of reference audio the engine wants for cloning — the window the waveform
+ * trimmer selects. Engines differ: some need three seconds, some ten.
+ */
+export function referenceAudioSeconds(manifest: UniversalManifest | null | undefined): number {
+  const v = manifest?.audio_spec?.reference_audio_seconds;
+  return typeof v === 'number' && v > 0 ? v : 5.0;
+}

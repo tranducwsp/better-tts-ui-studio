@@ -73,6 +73,11 @@ type AudioSpec struct {
 	SupportedSampleRates []int    `json:"supported_sample_rates"`
 	DefaultFormat        string   `json:"default_format"`
 	DefaultSampleRate    int      `json:"default_sample_rate"`
+
+	// Ràng buộc cho âm thanh tham chiếu người dùng tải lên khi nhân bản giọng. Engine biết
+	// nó nhận tệp lớn tới đâu và cần bao nhiêu giây, nên nó khai — nền tảng không đoán.
+	MaxUploadBytes        int64   `json:"max_upload_bytes,omitempty"`
+	ReferenceAudioSeconds float64 `json:"reference_audio_seconds,omitempty"`
 }
 
 // AutoFormatRule định nghĩa quy tắc thay thế văn bản Regex tự động.

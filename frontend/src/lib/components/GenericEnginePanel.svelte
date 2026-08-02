@@ -4,7 +4,7 @@
   import WaveformTrimmer from './WaveformTrimmer.svelte';
   import CreateVoiceModal from './CreateVoiceModal.svelte';
   import { fetchVoices, fetchPresets, cloneVoiceTemp } from '../api';
-  import { acceptedUploadFormats, supportedFormatsLabel } from '../audioSpec';
+  import { acceptedUploadFormats, maxUploadBytes, maxUploadLabel, supportedFormatsLabel } from '../audioSpec';
   import { resolveCapabilities } from '../capabilities';
   import { resolveStreamingThreshold } from '../textLimits';
   import { toast } from '../toast.svelte';
@@ -171,6 +171,16 @@
     const target = e.target as HTMLInputElement;
     if (!target.files?.length) return;
     const file = target.files[0];
+
+    // Check here as well as on the server: rejecting a 200 MB file after uploading it
+    // wastes the user's bandwidth to reach the same answer.
+    const ceiling = maxUploadBytes(manifest);
+    if (file.size > ceiling) {
+      toast.show(`File is ${(file.size / 1048576).toFixed(1)} MB; the engine accepts up to ${maxUploadLabel(manifest)}.`, 'error');
+      target.value = '';
+      return;
+    }
+
     selectedFile = file;
     isCloningTemp = true;
     toast.show('Processing reference audio file...', 'info');
@@ -332,7 +342,7 @@
 
       {#if selectedFile}
         <div style="margin-top: 10px;">
-          <WaveformTrimmer file={selectedFile} onTrimmed={handleTrimmedAudio} />
+          <WaveformTrimmer file={selectedFile} onTrimmed={handleTrimmedAudio} {manifest} />
         </div>
       {/if}
     </div>

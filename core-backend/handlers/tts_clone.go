@@ -13,6 +13,7 @@ import (
 	"core-backend/db/sqlc"
 	"core-backend/middleware"
 	"core-backend/state"
+	"core-backend/storage"
 
 	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
@@ -56,10 +57,9 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := r.ParseMultipartForm(32 << 20) // Read 32MB form
-	if err != nil {
+	if err := parseUpload(w, r); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to parse upload form"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
 	}
 
@@ -98,7 +98,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Save reference audio file under storage tier
-	userDir := filepath.Join("storage", modelID, user.ID, "voice")
+	userDir := storage.ModeDir(modelID, user.ID)
 	_ = os.MkdirAll(userDir, 0755)
 
 	cloneID := uuid.NewString()
@@ -163,10 +163,9 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	err := r.ParseMultipartForm(32 << 20)
-	if err != nil {
+	if err := parseUpload(w, r); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc form upload"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
 	}
 

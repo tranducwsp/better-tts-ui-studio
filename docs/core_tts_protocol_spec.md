@@ -92,7 +92,9 @@ Every Core TTS Microservice MUST implement the following RESTful endpoints:
     "supported_formats": ["wav", "mp3"],
     "supported_sample_rates": [16000, 22050, 24000, 44100],
     "default_format": "wav",
-    "default_sample_rate": 24000
+    "default_sample_rate": 24000,
+    "max_upload_bytes": 10485760,
+    "reference_audio_seconds": 5.0
   },
   "ui_schema": {
     "input_panel": {
@@ -168,6 +170,19 @@ consuming characters. A pattern that matches content instead (e.g. `[^.!?]+[.!?]
 works, but a split discards the matched delimiter itself, so lookbehind is preferred.
 
 Invalid regex is ignored in favour of the platform default rather than failing the request.
+
+#### `audio_spec` reference-audio fields
+
+`max_upload_bytes` and `reference_audio_seconds` describe what the engine accepts for voice
+cloning, not what it produces.
+
+* `max_upload_bytes` — largest reference clip the engine can process. The platform enforces
+  whichever is stricter, this or the deployment's own `MAX_UPLOAD_SIZE_MB`, and rejects
+  oversized uploads mid-transfer rather than buffering them first.
+* `reference_audio_seconds` — how long a clip the engine wants. The waveform trimmer selects
+  a window of exactly this length, and its labels read from the same number.
+
+Both are optional; omit them and the platform assumes 10 MB and 5 seconds.
 
 #### `ui_schema.option_panel` is presentation only
 
