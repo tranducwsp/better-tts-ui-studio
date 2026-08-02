@@ -42,6 +42,11 @@ services:
     environment:
       - CORE_PORT=8001
       - CORE_HOST=0.0.0.0
+      # The engine owns the UI mode: it publishes this as ui_schema.ui_mode, the backend
+      # forwards a rebuild webhook on manifest reload, and the frontend rebuilds against
+      # the new value. "beauty" (default) or "fast" — the latter strips icons, webfonts
+      # and GPU filters from the prerendered bundle.
+      - UI_MODE=${UI_MODE:-beauty}
     volumes:
       - ./core-tts:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload

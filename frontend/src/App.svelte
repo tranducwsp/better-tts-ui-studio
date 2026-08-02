@@ -32,6 +32,14 @@
   let fetchedManifest = $state<UniversalManifest | null>(null);
   let manifest = $derived(fetchedManifest ?? initialManifest);
 
+  // UI mode is decided by the engine and published in the manifest. Whatever the
+  // current value is, push it onto <body> via `data-mode` so CSS can conditionally strip
+  // icons and fonts (the fast mode drops them entirely during prerender too).
+  let uiMode = $derived(manifest?.ui_schema?.ui_mode ?? 'beauty');
+  $effect(() => {
+    document.body.setAttribute('data-mode', uiMode);
+  });
+
   // Keep the active tab valid whenever the manifest's mode list changes.
   $effect(() => {
     if (activeModes.length > 0 && !activeModes.some((m) => m.id === activeTab)) {

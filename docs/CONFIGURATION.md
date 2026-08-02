@@ -120,7 +120,28 @@ clip may be is a property of the engine that consumes it, not of the deployment.
 separately hardcodes "Max 10MB" in its dropzone label, which agrees with neither. Fixing it
 means adding `audio_spec.max_upload_bytes` — see `PLATFORM_GAPS.md` §2.
 
-**`UI_MODE` is reachable by two routes.** The engine reads it from its own environment and
-publishes it as `ui_schema.ui_mode`; the frontend build also honours `VITE_UI_MODE`. The
-manifest value wins when present, so set it on the engine and leave the build variable
-alone.
+*(`UI_MODE` used to be one of these — the engine published it as `ui_schema.ui_mode` while
+the frontend build separately honoured `VITE_UI_MODE`. The build variable is gone; the
+engine is the only source now. See below.)*
+
+---
+
+## How `UI_MODE` reaches the browser
+
+Worth spelling out because it is the one setting that travels the whole way round, and it
+shows what "the engine decides" means in practice:
+
+```
+UI_MODE=fast on the engine
+  → engine publishes ui_schema.ui_mode = "fast" in its manifest
+  → POST /api/internal/engine/reload refreshes the backend cache
+  → backend fires FE_BUILDER_URL/rebuild
+  → frontend-builder runs `npm run build`
+  → prerender.js reads manifest.ui_schema.ui_mode and strips icons, webfonts
+    and GPU filters from the bundle
+  → App.svelte sets data-mode on <body> at runtime from the same field
+```
+
+Measured end to end: switching the engine to `fast` and calling the reload webhook took the
+prerendered page from 50007 to 30327 bytes with FontAwesome markup and woff2 preloads gone;
+switching back restored both.
