@@ -171,6 +171,12 @@ works, but a split discards the matched delimiter itself, so lookbehind is prefe
 
 Invalid regex is ignored in favour of the platform default rather than failing the request.
 
+#### `voice_metadata_schema` accepts any fields
+
+Declare as many as the engine needs. `gender`, `region` and `style` have dedicated columns
+because the platform filters and displays them; everything else is stored in a JSONB column
+and returned unchanged. There is no fixed set and no upper bound — the form lays out to fit.
+
 #### `audio_spec` reference-audio fields
 
 `max_upload_bytes` and `reference_audio_seconds` describe what the engine accepts for voice

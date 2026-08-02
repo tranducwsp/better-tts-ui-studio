@@ -1,6 +1,6 @@
 -- name: CreateUserVoice :one
-INSERT INTO user_voices (id, user_id, model_id, name, gender, region, style, file_path)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO user_voices (id, user_id, model_id, name, gender, region, style, file_path, metadata)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: ListUserVoices :many

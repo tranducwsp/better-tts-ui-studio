@@ -205,25 +205,28 @@ export async function synthesize(
 
 
 /**
- * Metadata fields are whatever the engine's voice_metadata_schema declared, so they carry
- * no defaults here — an empty string means "the engine did not ask for this", which the
- * backend stores as null. Callers pass modelId explicitly; there is no sensible guess.
+ * Upload a reference clip and save it as a named voice.
+ *
+ * `fields` is whatever the engine's voice_metadata_schema asked for, passed through as-is.
+ * gender/region/style land in dedicated columns because the platform filters and displays
+ * them; anything else the engine declares goes into a JSONB column. Sending a fixed three
+ * would silently drop the rest — an engine declaring five fields would see two vanish.
  */
 export async function cloneVoice(
   file: File,
   name: string,
-  gender = '',
-  region = '',
-  style = '',
-  modelId = ''
+  fields: Record<string, string>,
+  modelId: string
 ): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('name', name);
-  formData.append('gender', gender);
-  formData.append('region', region);
-  formData.append('style', style);
   formData.append('model_id', modelId);
+  for (const [key, value] of Object.entries(fields)) {
+    if (key === 'name' || value === '') continue;
+    formData.append(key, value);
+  }
+
   const res = await fetch('/api/clone/upload', {
     method: 'POST',
     body: formData,

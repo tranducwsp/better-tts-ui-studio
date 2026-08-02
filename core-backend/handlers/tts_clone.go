@@ -37,6 +37,41 @@ func firstCloningMode() string {
 	return ""
 }
 
+// reservedVoiceFields là các trường đã có cột riêng trong bảng user_voices, nên không lặp
+// lại chúng trong metadata JSONB.
+var reservedVoiceFields = map[string]bool{
+	"name": true, "gender": true, "region": true, "style": true,
+	"model_id": true, "file": true,
+}
+
+// extraMetadata gom mọi trường form ngoài các trường đã có cột riêng thành JSON.
+//
+// voice_metadata_schema cho phép Engine khai bất kỳ trường nào; nền tảng không thể biết
+// trước tên chúng, nên chỗ lưu phải là schema-less. Trả về "{}" khi không có gì thêm, vì
+// cột được khai NOT NULL DEFAULT '{}'.
+func extraMetadata(r *http.Request) []byte {
+	if r.MultipartForm == nil {
+		return []byte("{}")
+	}
+
+	extra := map[string]string{}
+	for key, vals := range r.MultipartForm.Value {
+		if reservedVoiceFields[key] || len(vals) == 0 || vals[0] == "" {
+			continue
+		}
+		extra[key] = vals[0]
+	}
+	if len(extra) == 0 {
+		return []byte("{}")
+	}
+
+	raw, err := sonic.Marshal(extra)
+	if err != nil {
+		return []byte("{}")
+	}
+	return raw
+}
+
 // TTSCloneHandler xử lý các API liên quan đến Voice Cloning (Tải mẫu giọng mẫu, quản lý giọng và tổng hợp tiếng nói theo mẫu giọng).
 type TTSCloneHandler struct {
 	TTSClient *client.CoreTTSClient
@@ -78,9 +113,13 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		modelID = firstCloningMode()
 	}
 
+	// gender/region/style có cột riêng vì chúng được lọc và hiển thị. Mọi trường khác mà
+	// Engine khai trong voice_metadata_schema đi vào cột metadata JSONB — nếu không, một
+	// Engine khai năm trường sẽ thấy hai trường biến mất mà người dùng không hay biết.
 	gender := r.FormValue("gender")
 	region := r.FormValue("region")
 	style := r.FormValue("style")
+	extra := extraMetadata(r)
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -139,6 +178,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	if style != "" {
 		params.Style = pgtype.Text{String: style, Valid: true}
 	}
+	params.Metadata = extra
 
 	_, err = db.Queries.CreateUserVoice(r.Context(), params)
 	if err != nil {

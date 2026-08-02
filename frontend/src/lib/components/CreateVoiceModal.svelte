@@ -79,15 +79,10 @@
     isSaving = true;
     toast.show('Uploading & extracting voice embeddings...', 'info');
 
-    // Send whatever the engine's own schema produced. Empty is honest here: the backend
-    // stores these as nullable metadata, and inventing "Male"/"Northern" would attach a
-    // Vietnamese regional accent to a voice from an engine that never offered one.
-    const genderVal = formData['gender'] || '';
-    const regionVal = formData['region'] || '';
-    const styleVal = formData['style'] || '';
-
     try {
-      const voiceId = await cloneVoice(fileToUpload, nameVal, genderVal, regionVal, styleVal, modelId);
+      // Pass the whole form through: the engine decided which fields exist, so picking a
+      // fixed subset here would discard anything it declared beyond gender/region/style.
+      const voiceId = await cloneVoice(fileToUpload, nameVal, formData, modelId);
       toast.show('New voice saved successfully!', 'success');
       onSaved(voiceId, nameVal);
       onClose();
@@ -135,8 +130,12 @@
           <i class="fa-solid fa-bookmark"></i> Voice Metadata & Attributes
         </h4>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-          {#each fields as field}
+        <!--
+          auto-fit rather than a fixed two columns: the engine decides how many fields
+          exist, and an odd count left the last one stretched across a half-width cell.
+        -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+          {#each fields as field (field.key)}
             <div>
               <label for="field-{field.key}" style="font-size: 0.85rem; color: #94a3b8; display: block; margin-bottom: 4px;">
                 {field.label} {field.required ? '*' : ''}
