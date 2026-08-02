@@ -36,14 +36,32 @@
   // Seed each field from its own schema: a select starts on its first option, a text field
   // empty. Hardcoding "Male"/"Northern" here sent Vietnamese regional accents to engines
   // that had never heard of them, and overwrote whatever the engine did declare.
-  let formData = $state<Record<string, string>>({});
-  $effect(() => {
+  //
+  // $derived rather than an $effect that reads formData and writes it back — that version
+  // re-ran on its own write, and the resulting loop wedged the modal so its close button
+  // never got a chance to respond.
+  let defaults = $derived.by(() => {
     const seeded: Record<string, string> = {};
     for (const f of fields) {
-      const existing = formData[f.key];
-      seeded[f.key] = existing ?? (f.type === 'select' ? (f.options?.[0] ?? '') : '');
+      seeded[f.key] = f.type === 'select' ? (f.options?.[0] ?? '') : '';
     }
-    formData = seeded;
+    return seeded;
+  });
+
+  // Only what the user actually typed. Reading falls back to the derived defaults, so
+  // switching modes picks up the new schema without stale values from the old one.
+  let edited = $state<Record<string, string>>({});
+  let formData = $derived({ ...defaults, ...edited });
+
+  // Clear the form whenever the modal closes, so reopening it does not show the previous
+  // voice's details. Keyed on isOpen rather than done in onClose, because the parent can
+  // also close it by flipping the prop.
+  $effect(() => {
+    if (!isOpen) {
+      edited = {};
+      selectedFile = null;
+      trimmedFile = null;
+    }
   });
 
   function handleFileSelect(e: Event) {
@@ -59,7 +77,7 @@
       selectedFile = picked;
       trimmedFile = selectedFile;
       if (!formData['name']) {
-        formData['name'] = selectedFile.name.replace(/\.[^/.]+$/, '');
+        edited = { ...edited, name: picked.name.replace(/\.[^/.]+$/, '') };
       }
     }
   }
@@ -107,9 +125,12 @@
         </button>
       </div>
 
-      <!-- Upload area -->
-      <label for="create-voice-file-input" class="upload-drop-zone" style="display: block; width: 100%; margin-bottom: 1rem; background: none; border: 2px dashed rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center; cursor: pointer;">
-        <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.5rem; color: var(--primary); margin-bottom: 10px; display: block;"></i>
+      <!--
+        Flex column rather than text-align: the icon is a block element, and a block does
+        not centre from its parent's text-align — it needs a margin or a flex parent.
+      -->
+      <label for="create-voice-file-input" class="upload-drop-zone" style="display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; margin-bottom: 1rem; background: none; border: 2px dashed rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center; cursor: pointer;">
+        <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.5rem; color: var(--primary);"></i>
         {#if selectedFile}
           <p style="color: var(--success); font-weight: 600; margin: 0;">{selectedFile.name}</p>
         {:else}
@@ -143,7 +164,8 @@
               {#if field.type === 'select' && field.options}
                 <select
                   id="field-{field.key}"
-                  bind:value={formData[field.key]}
+                  value={formData[field.key] ?? ''}
+                  onchange={(e) => (edited = { ...edited, [field.key]: e.currentTarget.value })}
                   style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.1); color: white;"
                 >
                   {#each field.options as opt}
@@ -154,7 +176,8 @@
                 <input
                   id="field-{field.key}"
                   type="text"
-                  bind:value={formData[field.key]}
+                  value={formData[field.key] ?? ''}
+                  oninput={(e) => (edited = { ...edited, [field.key]: e.currentTarget.value })}
                   placeholder={field.placeholder || ''}
                   style="width: 100%; height: 38px; padding: 0 12px; border-radius: 6px; background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.1); color: white;"
                 />
