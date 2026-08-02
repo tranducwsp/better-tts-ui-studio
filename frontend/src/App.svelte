@@ -32,12 +32,22 @@
   let fetchedManifest = $state<UniversalManifest | null>(null);
   let manifest = $derived(fetchedManifest ?? initialManifest);
 
-  // UI mode is decided by the engine and published in the manifest. Whatever the
-  // current value is, push it onto <body> via `data-mode` so CSS can conditionally strip
-  // icons and fonts (the fast mode drops them entirely during prerender too).
+  // UI mode is decided by the engine and published in the manifest. Only "fast" means
+  // anything to CSS — app.css keys ~11 rules off body[data-mode="fast"] to drop blobs,
+  // backdrop filters and icons — so beauty is expressed by the attribute being absent,
+  // exactly as prerender.js writes it. Setting data-mode="beauty" would leave the hydrated
+  // DOM differing from the prerendered HTML for no benefit.
+  //
+  // Guarded on document because this component is also rendered by svelte/server during
+  // SSG, where $effect does not run today but nothing guarantees that.
   let uiMode = $derived(manifest?.ui_schema?.ui_mode ?? 'beauty');
   $effect(() => {
-    document.body.setAttribute('data-mode', uiMode);
+    if (typeof document === 'undefined') return;
+    if (uiMode === 'fast') {
+      document.body.setAttribute('data-mode', 'fast');
+    } else {
+      document.body.removeAttribute('data-mode');
+    }
   });
 
   // Keep the active tab valid whenever the manifest's mode list changes.
