@@ -208,7 +208,11 @@ class UniversalManifest(BaseModel):
         ),
         EngineModeSpec(
             id="clone", name="Voice Cloning", description="Reference audio speaker cloning",
-            capabilities=EngineCapabilities(supports_cloning=True, supports_voice_saving=True)
+            # No preset voices: this mode speaks with whatever reference clip the user
+            # supplies, so the only entries worth listing are their own saved clones.
+            capabilities=EngineCapabilities(
+                supports_cloning=True, supports_voice_saving=True, supports_preset_voices=False
+            )
         )
     ])
     # Engine-wide defaults. Modes that state nothing inherit these.

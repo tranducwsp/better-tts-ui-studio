@@ -79,9 +79,10 @@ def get_preset_voices(model_id: str | None = None):
                 "modes": ["fast"]
             })
 
-    # 2. Neural voices — the local model, used by standard and clone.
+    # 2. Neural voices — the local model. Not offered to `clone`: that mode synthesises
+    # from a reference clip the user supplies, so a preset speaker has nothing to do there.
     for p in DEFAULT_PRESET_VOICES:
-        voices.append({**p, "modes": ["standard", "clone"]})
+        voices.append({**p, "modes": ["standard"]})
 
     if not model_id:
         return voices

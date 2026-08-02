@@ -215,6 +215,11 @@ Every voice must declare `modes`. There is no "applies everywhere" shorthand: an
 whose modes share one pool lists each mode id explicitly. A silent default is precisely how
 a voice ends up offered where it does not work.
 
+A cloning mode usually belongs in no voice's `modes` at all: it speaks with the reference
+clip the user supplies, so a preset speaker has nothing to contribute. Pair that with
+`supports_preset_voices: false` on the mode, and the list shows only the user's own saved
+voices.
+
 #### Response Example (`application/json`):
 ```json
 [
