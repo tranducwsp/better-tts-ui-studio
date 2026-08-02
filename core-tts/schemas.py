@@ -23,16 +23,14 @@ class TaskStatusResponse(BaseModel):
 class VoiceInfo(BaseModel):
     """A preset voice the engine ships with.
 
-    `modes` names the modes this voice actually works in. An empty list means "every mode",
-    which is what an engine that never thought about the distinction implicitly meant — so
-    older engines keep working unchanged. Declaring it matters when modes use different
-    backends: a voice that only exists in the streaming provider is not selectable in the
-    neural one, and offering it there gives the user a choice that fails at synthesis time.
+    `modes` names the modes this voice works in, and is required. An engine whose modes all
+    share one voice pool lists every mode id; there is no "applies everywhere" shorthand,
+    because a silent default is how a voice ends up offered in a mode that cannot use it.
     """
     id: str
     name: str
     descriptions: List[str] = Field(default_factory=list)
-    modes: List[str] = Field(default_factory=list)
+    modes: List[str]
 
 class EngineCapabilities(BaseModel):
     """What an engine can do.

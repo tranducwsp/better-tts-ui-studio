@@ -204,16 +204,16 @@ control**, never whether the control exists — that is decided by capabilities 
 * **Endpoint**: `GET /voices?model_id={mode}`
 * **Description**: Returns the pre-loaded voices available in the Core Engine.
 
-`model_id` is optional and narrows the list to voices usable in that mode. Omitting it
-returns everything, so an engine may ignore the parameter entirely and keep working.
+`model_id` narrows the list to voices usable in that mode. The UI always sends it; omit it
+only to enumerate everything the engine has.
 
-Filter it if your modes are backed by different providers. A voice that only exists in the
-streaming backend cannot be used by the neural one, and offering it there hands the user a
-choice that fails at synthesis time — the platform cannot know which is which.
+**Filtering is the engine's job.** The platform passes the parameter and trusts the answer —
+it does not re-filter, because only the engine knows which of its modes share a voice pool.
+Returning a voice a mode cannot use hands the user a choice that fails at synthesis time.
 
-Each voice may also declare `modes`, listing where it applies. An empty or absent list means
-every mode. The platform filters on this as well, so an engine that declares `modes` but
-ignores `model_id` still gets the right list in the UI.
+Every voice must declare `modes`. There is no "applies everywhere" shorthand: an engine
+whose modes share one pool lists each mode id explicitly. A silent default is precisely how
+a voice ends up offered where it does not work.
 
 #### Response Example (`application/json`):
 ```json

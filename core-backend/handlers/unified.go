@@ -82,11 +82,6 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 		presetVoices, err := h.TTSClient.GetVoices(modelID)
 		if err == nil {
 			for _, v := range presetVoices {
-				// Lọc lại phía nền tảng: Engine cũ có thể bỏ qua model_id nhưng vẫn khai
-				// Modes, và hiển thị một giọng không dùng được thì tệ hơn là thiếu nó.
-				if !v.UsableIn(modelID) {
-					continue
-				}
 				unifiedList = append(unifiedList, UnifiedVoiceResponse{
 					ID:           v.ID,
 					Name:         v.Name,

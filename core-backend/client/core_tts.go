@@ -36,27 +36,6 @@ type CoreVoice struct {
 	ID           string   `json:"id,omitempty"`
 	Name         string   `json:"name"`
 	Descriptions []string `json:"descriptions,omitempty"`
-
-	// Modes liệt kê những Mode giọng này dùng được. Rỗng nghĩa là mọi Mode — hành vi của
-	// Engine chưa khai trường này.
-	Modes []string `json:"modes,omitempty"`
-}
-
-// UsableIn cho biết giọng có dùng được ở Mode chỉ định không.
-//
-// Engine đã lọc theo model_id thì hàm này không cắt thêm gì. Nó tồn tại cho trường hợp
-// Engine khai Modes nhưng bỏ qua tham số truy vấn — lúc đó nền tảng vẫn không hiển thị một
-// giọng mà tổng hợp sẽ thất bại.
-func (v CoreVoice) UsableIn(modeID string) bool {
-	if len(v.Modes) == 0 || modeID == "" || modeID == "all" {
-		return true
-	}
-	for _, m := range v.Modes {
-		if m == modeID {
-			return true
-		}
-	}
-	return false
 }
 
 type SynthesizeRequest struct {
@@ -82,11 +61,13 @@ func (c *CoreTTSClient) GetInfo() (*types.UniversalManifest, error) {
 	return &result, nil
 }
 
-// GetVoices lấy danh sách giọng có sẵn, giới hạn theo Mode nếu modelID khác rỗng.
+// GetVoices lấy danh sách giọng cho một Mode.
 //
-// Engine mới biết giọng nào chạy được ở Mode nào — chúng có thể đến từ những backend khác
-// nhau — nên việc lọc thuộc về Engine, không phải nền tảng đoán. Engine chưa hỗ trợ tham số
-// này sẽ bỏ qua nó và trả về toàn bộ, đúng như hành vi trước đây.
+// Việc lọc thuộc về Engine: chỉ nó biết giọng nào chạy được ở Mode nào, vì các Mode có thể
+// dùng những backend khác nhau. Nền tảng không lọc lại — nếu Engine trả về một giọng thì
+// nền tảng tin rằng Mode đó dùng được.
+//
+// modelID rỗng hoặc "all" nghĩa là hỏi toàn bộ, dùng cho màn hình quản lý.
 func (c *CoreTTSClient) GetVoices(modelID string) ([]CoreVoice, error) {
 	endpoint := c.BaseURL + "/voices"
 	if modelID != "" && modelID != "all" {

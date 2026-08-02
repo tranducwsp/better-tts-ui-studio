@@ -64,14 +64,16 @@ engine that meant 16 voices everywhere, when `fast` is driven by Edge TTS and ca
 2 of them — the other 14 were selectable and would have failed at synthesis time. The engine
 already knew the split; it just had no way to express it.
 
-`GET /voices?model_id=` filters now, and `VoiceInfo` carries a `modes` list. Both are
-optional: an engine that ignores the parameter and omits `modes` returns everything, exactly
-as before. The backend filters on `modes` as well as passing the parameter, so an engine
-that declares the field but ignores the query still produces a correct list.
+`GET /voices?model_id=` filters now, and `VoiceInfo.modes` is required — no "applies
+everywhere" default, because that is how a voice ends up offered where it does not work.
+
+Filtering is the engine's job alone. The platform passes the parameter and trusts the
+answer; it does not re-filter. An earlier draft did both, to cover an engine that declares
+`modes` but ignores the query — that is defensive code for a contract violation, and it
+would have outlived the memory of why it exists.
 
 Measured after the change: `fast` returns 2, `standard` 14, `clone` 17 (14 presets plus 3
-saved user voices). A legacy engine stub that ignores the parameter was confirmed to still
-work.
+saved user voices).
 
 ## Resolved: settings that were read but never enforced
 

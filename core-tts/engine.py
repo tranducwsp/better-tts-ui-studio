@@ -59,12 +59,11 @@ DEFAULT_PRESET_VOICES = [
 ]
 
 def get_preset_voices(model_id: str | None = None):
-    """Preset voices, optionally narrowed to one mode.
+    """Preset voices for one mode, or every voice when model_id is None.
 
-    The two groups come from different backends: Edge TTS drives `fast`, the local neural
-    model drives `standard` and `clone`. Returning all of them for every mode offered the
-    user voices that would fail at synthesis time, so each entry now declares which modes
-    it belongs to and callers can filter.
+    The two groups run on different backends — Edge TTS for `fast`, the local neural model
+    for `standard` and `clone` — so a voice from one is unusable in the other. Filtering
+    here rather than in the platform is deliberate: only the engine knows the split.
     """
     voices = []
 
@@ -82,13 +81,11 @@ def get_preset_voices(model_id: str | None = None):
 
     # 2. Neural voices — the local model, used by standard and clone.
     for p in DEFAULT_PRESET_VOICES:
-        voices.append({**p, "modes": p.get("modes") or ["standard", "clone"]})
+        voices.append({**p, "modes": ["standard", "clone"]})
 
     if not model_id:
         return voices
-
-    # An empty modes list means the voice works everywhere, so keep it either way.
-    return [v for v in voices if not v.get("modes") or model_id in v["modes"]]
+    return [v for v in voices if model_id in v["modes"]]
 
 def synthesize_standard_sync(text: str, voice: str, speed: float = 1.0) -> bytes:
     if not text.strip().endswith(('.', '?', '!')):
