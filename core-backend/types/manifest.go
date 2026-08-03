@@ -82,10 +82,16 @@ type AudioSpec struct {
 	DefaultFormat        string   `json:"default_format,omitempty"`
 	DefaultSampleRate    int      `json:"default_sample_rate,omitempty"`
 
-	// Ràng buộc cho âm thanh tham chiếu người dùng tải lên khi nhân bản giọng. Engine biết
-	// nó nhận tệp lớn tới đâu và cần bao nhiêu giây, nên nó khai — nền tảng không đoán.
-	MaxUploadBytes        int64   `json:"max_upload_bytes,omitempty"`
-	ReferenceAudioSeconds float64 `json:"reference_audio_seconds,omitempty"`
+	// Âm thanh tham chiếu NHẬN VÀO. Khác các trường trên, thứ mô tả định dạng Engine XUẤT
+	// RA — Engine xuất MP3 không có nghĩa nó đọc được MP3.
+	ReferenceAudioFormats []string `json:"reference_audio_formats,omitempty"`
+	ReferenceAudioSeconds float64  `json:"reference_audio_seconds,omitempty"`
+
+	// Hai trần cho hai thời điểm: MaxUploadBytes là tệp thô người dùng kéo vào (cao hơn, vì
+	// họ có thể kéo cả bản ghi dài rồi chỉ lấy vài giây), MaxReferenceBytes là clip sau khi
+	// cắt — thứ Engine thực sự nhận.
+	MaxUploadBytes    int64 `json:"max_upload_bytes,omitempty"`
+	MaxReferenceBytes int64 `json:"max_reference_bytes,omitempty"`
 }
 
 // AutoFormatRule định nghĩa quy tắc thay thế văn bản Regex tự động.
@@ -245,8 +251,10 @@ var PlatformDefaultAudioSpec = AudioSpec{
 	SupportedSampleRates:  []int{24000},
 	DefaultFormat:         "wav",
 	DefaultSampleRate:     24000,
-	MaxUploadBytes:        10 * 1024 * 1024,
+	ReferenceAudioFormats: []string{"wav"},
 	ReferenceAudioSeconds: 5.0,
+	MaxUploadBytes:        100 * 1024 * 1024,
+	MaxReferenceBytes:     10 * 1024 * 1024,
 }
 
 // ResolveAudioSpec hoà giải AudioSpec của một Mode với AudioSpec toàn Engine.
@@ -295,6 +303,22 @@ func (m *UniversalManifest) ResolveAudioSpec(modeID string) AudioSpec {
 		}
 		return ""
 	}
+	pickFloat := func(vals ...float64) float64 {
+		for _, v := range vals {
+			if v > 0 {
+				return v
+			}
+		}
+		return 0
+	}
+	pickBytes := func(vals ...int64) int64 {
+		for _, v := range vals {
+			if v > 0 {
+				return v
+			}
+		}
+		return 0
+	}
 	pickInt := func(vals ...int) int {
 		for _, v := range vals {
 			if v > 0 {
@@ -309,21 +333,11 @@ func (m *UniversalManifest) ResolveAudioSpec(modeID string) AudioSpec {
 		SupportedSampleRates: pickInts(mode.SupportedSampleRates, e.SupportedSampleRates, d.SupportedSampleRates),
 		DefaultFormat:        pickStr(mode.DefaultFormat, e.DefaultFormat, d.DefaultFormat),
 		DefaultSampleRate:    pickInt(mode.DefaultSampleRate, e.DefaultSampleRate, d.DefaultSampleRate),
-		MaxUploadBytes: func() int64 {
-			for _, v := range []int64{mode.MaxUploadBytes, e.MaxUploadBytes, d.MaxUploadBytes} {
-				if v > 0 {
-					return v
-				}
-			}
-			return 0
-		}(),
-		ReferenceAudioSeconds: func() float64 {
-			for _, v := range []float64{mode.ReferenceAudioSeconds, e.ReferenceAudioSeconds, d.ReferenceAudioSeconds} {
-				if v > 0 {
-					return v
-				}
-			}
-			return 0
-		}(),
+		ReferenceAudioFormats: pickStrings(
+			mode.ReferenceAudioFormats, e.ReferenceAudioFormats, d.ReferenceAudioFormats),
+		ReferenceAudioSeconds: pickFloat(
+			mode.ReferenceAudioSeconds, e.ReferenceAudioSeconds, d.ReferenceAudioSeconds),
+		MaxUploadBytes:    pickBytes(mode.MaxUploadBytes, e.MaxUploadBytes, d.MaxUploadBytes),
+		MaxReferenceBytes: pickBytes(mode.MaxReferenceBytes, e.MaxReferenceBytes, d.MaxReferenceBytes),
 	}
 }

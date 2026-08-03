@@ -13,16 +13,20 @@ const PLATFORM_DEFAULTS: Required<
     | 'supported_sample_rates'
     | 'default_format'
     | 'default_sample_rate'
-    | 'max_upload_bytes'
+    | 'reference_audio_formats'
     | 'reference_audio_seconds'
+    | 'max_upload_bytes'
+    | 'max_reference_bytes'
   >
 > = {
   supported_formats: ['wav'],
   supported_sample_rates: [24000],
   default_format: 'wav',
   default_sample_rate: 24000,
-  max_upload_bytes: 10 * 1024 * 1024,
+  reference_audio_formats: ['wav'],
   reference_audio_seconds: 5.0,
+  max_upload_bytes: 100 * 1024 * 1024,
+  max_reference_bytes: 10 * 1024 * 1024,
 };
 
 /**
@@ -72,15 +76,25 @@ export function resolveAudioSpec(
       engine.default_sample_rate,
       PLATFORM_DEFAULTS.default_sample_rate
     ),
-    max_upload_bytes: one(
-      modeSpec.max_upload_bytes,
-      engine.max_upload_bytes,
-      PLATFORM_DEFAULTS.max_upload_bytes
+    reference_audio_formats: list(
+      modeSpec.reference_audio_formats,
+      engine.reference_audio_formats,
+      PLATFORM_DEFAULTS.reference_audio_formats
     ),
     reference_audio_seconds: one(
       modeSpec.reference_audio_seconds,
       engine.reference_audio_seconds,
       PLATFORM_DEFAULTS.reference_audio_seconds
+    ),
+    max_upload_bytes: one(
+      modeSpec.max_upload_bytes,
+      engine.max_upload_bytes,
+      PLATFORM_DEFAULTS.max_upload_bytes
+    ),
+    max_reference_bytes: one(
+      modeSpec.max_reference_bytes,
+      engine.max_reference_bytes,
+      PLATFORM_DEFAULTS.max_reference_bytes
     ),
   };
 }
@@ -96,24 +110,23 @@ export function audioSpecLabel(manifest: UniversalManifest | null | undefined, m
 }
 
 /**
- * Formats accepted for reference-audio upload.
+ * accept="" filter for reference-audio uploads.
  *
- * Deliberately not `audio_spec.supported_formats`: that lists what the engine *emits*, which
- * is a different question from what it can *read*. Cloning wants uncompressed input — lossy
- * formats have already discarded detail the speaker encoder needs — and WAV is what the
- * trimmer produces anyway, so accepting anything else would only invite a file the engine
- * then rejects.
+ * Reads reference_audio_formats, not supported_formats: the latter lists what the engine
+ * *emits*, which is a different question from what it can *read*. An engine may return MP3
+ * yet require WAV input, or the reverse.
  */
-export const UPLOAD_FORMATS = ['wav'] as const;
-
-/** accept="" filter for reference-audio uploads. */
-export function acceptedUploadFormats(): string {
-  return UPLOAD_FORMATS.map((f) => `.${f}`).join(',');
+export function acceptedUploadFormats(manifest: UniversalManifest | null | undefined, mode?: Mode): string {
+  return resolveAudioSpec(manifest, mode)
+    .reference_audio_formats.map((f) => `.${f}`)
+    .join(',');
 }
 
-/** Human-readable list of accepted upload formats, e.g. "WAV". */
-export function supportedFormatsLabel(): string {
-  return UPLOAD_FORMATS.map((f) => f.toUpperCase()).join(', ');
+/** Human-readable list of accepted upload formats, e.g. "WAV, MP3". */
+export function supportedFormatsLabel(manifest: UniversalManifest | null | undefined, mode?: Mode): string {
+  return resolveAudioSpec(manifest, mode)
+    .reference_audio_formats.map((f) => f.toUpperCase())
+    .join(', ');
 }
 
 /** The default output format — what a chunk's streamed blob actually contains. */
@@ -167,15 +180,35 @@ export function combinedDownloadFormat(
   return ['mp3', 'aac'].find((f) => declared.includes(f)) ?? null;
 }
 
-/** Ceiling for reference-audio uploads, in bytes. */
+const asMB = (bytes: number): string => {
+  const mb = bytes / (1024 * 1024);
+  return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`;
+};
+
+/**
+ * Ceiling for the raw file a user picks, before trimming.
+ *
+ * Higher than maxReferenceBytes on purpose: someone may drop in a half-hour recording and
+ * keep four seconds of it, so rejecting at the file picker on the engine's own limit would
+ * refuse a file that is perfectly fine to trim.
+ */
 export function maxUploadBytes(manifest: UniversalManifest | null | undefined, mode?: Mode): number {
   return resolveAudioSpec(manifest, mode).max_upload_bytes;
 }
 
-/** Same ceiling rendered for a label, e.g. "10 MB". */
+/** maxUploadBytes rendered for a label, e.g. "100 MB". */
 export function maxUploadLabel(manifest: UniversalManifest | null | undefined, mode?: Mode): string {
-  const mb = maxUploadBytes(manifest, mode) / (1024 * 1024);
-  return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`;
+  return asMB(maxUploadBytes(manifest, mode));
+}
+
+/** Ceiling for the trimmed clip the engine actually receives. */
+export function maxReferenceBytes(manifest: UniversalManifest | null | undefined, mode?: Mode): number {
+  return resolveAudioSpec(manifest, mode).max_reference_bytes;
+}
+
+/** maxReferenceBytes rendered for a label, e.g. "10 MB". */
+export function maxReferenceLabel(manifest: UniversalManifest | null | undefined, mode?: Mode): string {
+  return asMB(maxReferenceBytes(manifest, mode));
 }
 
 /** Seconds of reference audio the engine wants — the window the trimmer selects. */

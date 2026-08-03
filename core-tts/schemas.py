@@ -71,11 +71,25 @@ class AudioSpec(BaseModel):
     default_format: Optional[str] = None
     default_sample_rate: Optional[int] = None
 
-    # Ràng buộc cho âm thanh tham chiếu mà người dùng tải lên để nhân bản giọng. Engine mới
-    # biết nó nhận tệp lớn tới đâu và cần bao nhiêu giây để trích đặc trưng giọng, nên đây
-    # là chỗ khai chúng — trước đây nền tảng tự đoán 10MB và 5 giây.
-    max_upload_bytes: Optional[int] = None
+    # ── Âm thanh tham chiếu NHẬN VÀO (khác các trường trên, mô tả thứ Engine XUẤT RA) ──
+    #
+    # reference_audio_formats: định dạng Engine đọc được. Đừng suy ra từ supported_formats:
+    # Engine xuất MP3 không có nghĩa nó đọc được MP3, và ngược lại.
+    reference_audio_formats: Optional[List[str]] = None
+
+    # Số giây Engine cần để trích đặc trưng giọng. Cũng là độ dài cửa sổ mà bộ cắt chọn.
     reference_audio_seconds: Optional[float] = None
+
+    # Hai trần dung lượng cho hai thời điểm khác nhau:
+    #
+    #   max_upload_bytes    — tệp THÔ người dùng kéo vào, trước khi cắt. Cao hơn, vì họ có
+    #                         thể kéo cả bản ghi 30 phút rồi chỉ lấy vài giây.
+    #   max_reference_bytes — clip SAU khi cắt, tức thứ Engine thực sự nhận. Thấp hơn.
+    #
+    # Trước đây chỉ có một trần dùng cho cả hai, nên một tệp hợp lệ để cắt lại bị từ chối
+    # ngay ở bước chọn tệp.
+    max_upload_bytes: Optional[int] = None
+    max_reference_bytes: Optional[int] = None
 
 
 class EngineModeSpec(BaseModel):
@@ -230,6 +244,15 @@ class UniversalManifest(BaseModel):
             # supplies, so the only entries worth listing are their own saved clones.
             capabilities=EngineCapabilities(
                 supports_cloning=True, supports_voice_saving=True, supports_preset_voices=False
+            ),
+            # clone chỉ nhận WAV (lossy đã mất chi tiết mà bộ mã hoá giọng cần).
+            # Engine này nộp giọng clone dưới tên file đuôi khác nếu user tải lên định dạng khác,
+            # nên cần kích thước tệp lớn cho tệp gốc trước khi encode.
+            audio_spec=AudioSpec(
+                reference_audio_formats=["wav"],
+                reference_audio_seconds=5.0,
+                max_upload_bytes=200 * 1024 * 1024,
+                max_reference_bytes=10 * 1024 * 1024,
             )
         )
     ])
@@ -251,8 +274,10 @@ class UniversalManifest(BaseModel):
         supported_sample_rates=[16000, 22050, 24000, 44100],
         default_format="wav",
         default_sample_rate=24000,
-        max_upload_bytes=10 * 1024 * 1024,
+        reference_audio_formats=["wav"],
         reference_audio_seconds=5.0,
+        max_upload_bytes=100 * 1024 * 1024,
+        max_reference_bytes=10 * 1024 * 1024,
     ))
     ui_schema: Optional[UISchemaSpec] = Field(default_factory=UISchemaSpec)
 

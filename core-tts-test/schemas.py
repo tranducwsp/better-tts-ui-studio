@@ -75,16 +75,24 @@ class EngineConstraints(BaseModel):
     chunking: ChunkingSpec = Field(default_factory=ChunkingSpec)
 
 class AudioSpec(BaseModel):
-    supported_formats: List[str] = Field(default_factory=lambda: ["wav", "mp3"])
-    supported_sample_rates: List[int] = Field(default_factory=lambda: [16000, 22050, 24000, 44100])
-    default_format: str = "wav"
-    default_sample_rate: int = 24000
+    """Định dạng Engine xuất ra, và ràng buộc cho âm thanh tham chiếu nhận vào.
 
-    # Ràng buộc cho âm thanh tham chiếu mà người dùng tải lên để nhân bản giọng. Engine mới
-    # biết nó nhận tệp lớn tới đâu và cần bao nhiêu giây để trích đặc trưng giọng, nên đây
-    # là chỗ khai chúng — trước đây nền tảng tự đoán 10MB và 5 giây.
-    max_upload_bytes: int = 10 * 1024 * 1024
-    reference_audio_seconds: float = 5.0
+    Xuất hiện hai tầng — toàn Engine và theo Mode — nên mọi trường Optional: None nghĩa là
+    kế thừa tầng trên.
+    """
+    supported_formats: Optional[List[str]] = None
+    supported_sample_rates: Optional[List[int]] = None
+    default_format: Optional[str] = None
+    default_sample_rate: Optional[int] = None
+
+    # Định dạng đọc được cho âm thanh tham chiếu. Engine mock này nhận cả MP3 để chứng minh
+    # rằng nền tảng không giả định WAV — không suy được từ supported_formats ở trên.
+    reference_audio_formats: Optional[List[str]] = None
+    reference_audio_seconds: Optional[float] = None
+
+    # Hai trần cho hai thời điểm: tệp thô kéo vào, và clip sau khi cắt.
+    max_upload_bytes: Optional[int] = None
+    max_reference_bytes: Optional[int] = None
 
 class AutoFormatRule(BaseModel):
     find: str
@@ -243,6 +251,15 @@ class UniversalManifest(BaseModel):
         supports_pitch=False, supports_emotion=False, supports_ssml=False,
     ))
     constraints: EngineConstraints = Field(default_factory=EngineConstraints)
-    audio_spec: AudioSpec = Field(default_factory=AudioSpec)
+    audio_spec: AudioSpec = Field(default_factory=lambda: AudioSpec(
+        supported_formats=["wav", "mp3"],
+        supported_sample_rates=[16000, 22050, 24000, 44100],
+        default_format="wav",
+        default_sample_rate=24000,
+        reference_audio_formats=["wav", "mp3", "flac"],
+        reference_audio_seconds=3.0,
+        max_upload_bytes=200 * 1024 * 1024,
+        max_reference_bytes=5 * 1024 * 1024,
+    ))
     ui_schema: Optional[UISchemaSpec] = Field(default_factory=UISchemaSpec)
 

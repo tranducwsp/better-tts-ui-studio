@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"core-backend/state"
@@ -25,26 +26,47 @@ func SetMaxUploadMB(mb int) {
 // MaxUploadBytes trả về trần hiện tại, tính bằng byte.
 func MaxUploadBytes() int64 { return maxUploadBytes }
 
-// referenceAudioFormats là các định dạng nhận cho âm thanh tham chiếu.
+// audioSignatures là chữ ký nhận dạng định dạng, để bắt tệp bị đổi tên phần mở rộng.
 //
-// Khác audio_spec.supported_formats, thứ mô tả định dạng Engine SINH RA. Nhân bản giọng cần
-// đầu vào không nén: định dạng lossy đã bỏ đi phần chi tiết mà bộ mã hoá giọng cần.
-var referenceAudioFormats = map[string]bool{"wav": true}
+// Chỉ liệt kê những định dạng có chữ ký ổn định ở đầu tệp. Định dạng không có trong bảng
+// vẫn được nhận nếu Engine khai — chỉ là nền tảng không kiểm được nội dung, và đoán bừa còn
+// tệ hơn là để Engine tự từ chối.
+var audioSignatures = map[string]func([]byte) bool{
+	"wav":  func(b []byte) bool { return len(b) >= 12 && string(b[0:4]) == "RIFF" && string(b[8:12]) == "WAVE" },
+	"flac": func(b []byte) bool { return len(b) >= 4 && string(b[0:4]) == "fLaC" },
+	"ogg":  func(b []byte) bool { return len(b) >= 4 && string(b[0:4]) == "OggS" },
+	// MP3 có thể mở đầu bằng thẻ ID3 hoặc trực tiếp bằng frame sync (0xFF 0xEx/0xFx).
+	"mp3": func(b []byte) bool {
+		if len(b) >= 3 && string(b[0:3]) == "ID3" {
+			return true
+		}
+		return len(b) >= 2 && b[0] == 0xFF && (b[1]&0xE0) == 0xE0
+	},
+}
 
-// checkReferenceAudio kiểm tra phần mở rộng và chữ ký tệp.
+// checkReferenceAudio kiểm tra định dạng tệp tham chiếu theo đúng thứ Engine khai đọc được.
 //
-// Thuộc tính accept của trình duyệt chỉ là gợi ý cho hộp chọn tệp; bất kỳ client nào cũng
-// gửi được thứ khác. Kiểm cả chữ ký vì đổi tên .mp3 thành .wav là việc dễ làm nhất.
-func checkReferenceAudio(filename string, data []byte) error {
+// Thuộc tính accept của trình duyệt chỉ là gợi ý cho hộp chọn tệp; client nào cũng gửi được
+// thứ khác. Kiểm cả chữ ký vì đổi tên .mp3 thành .wav là việc dễ làm nhất.
+func checkReferenceAudio(filename string, data []byte, modeID string) error {
+	spec := state.GlobalManifestState.Get().ResolveAudioSpec(modeID)
+
 	ext := ""
 	if i := strings.LastIndex(filename, "."); i != -1 {
 		ext = strings.ToLower(filename[i+1:])
 	}
-	if !referenceAudioFormats[ext] {
-		return fmt.Errorf("chỉ nhận tệp WAV cho âm thanh tham chiếu")
+
+	accepted := spec.ReferenceAudioFormats
+	if !slices.Contains(accepted, ext) {
+		return fmt.Errorf("chỉ nhận %s cho âm thanh tham chiếu", strings.ToUpper(strings.Join(accepted, ", ")))
 	}
-	if len(data) < 12 || string(data[0:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
-		return fmt.Errorf("tệp không phải WAV hợp lệ dù mang phần mở rộng .%s", ext)
+
+	if check, known := audioSignatures[ext]; known && !check(data) {
+		return fmt.Errorf("tệp không phải %s hợp lệ dù mang phần mở rộng .%s", strings.ToUpper(ext), ext)
+	}
+
+	if max := spec.MaxReferenceBytes; max > 0 && int64(len(data)) > max {
+		return fmt.Errorf("âm thanh tham chiếu vượt quá %d MB mà engine nhận được", max>>20)
 	}
 	return nil
 }
@@ -63,14 +85,17 @@ func parseUpload(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// uploadLimit ưu tiên giá trị Engine khai trong audio_spec.max_upload_bytes, vì chính
-// Engine mới biết nó xử lý được tệp lớn tới đâu. MAX_UPLOAD_SIZE_MB là trần của hạ tầng,
-// dùng khi Engine không khai — và luôn được tôn trọng nếu nó chặt hơn.
+// uploadLimit là trần cho tệp THÔ vừa tải lên, trước khi cắt.
+//
+// Cao hơn max_reference_bytes có chủ ý: người dùng có thể kéo cả bản ghi dài rồi chỉ lấy vài
+// giây, nên chặn ngay ở bước chọn tệp bằng trần của Engine sẽ từ chối một tệp hoàn toàn hợp
+// lệ để cắt. Engine khai giá trị này; MAX_UPLOAD_SIZE_MB vẫn là trần cứng của hạ tầng và
+// thắng nếu chặt hơn, vì nó nói về RAM và băng thông của deployment chứ không phải về model.
 func uploadLimit() int64 {
 	limit := maxUploadBytes
-	if m := state.GlobalManifestState.Get(); m != nil && m.AudioSpec.MaxUploadBytes > 0 {
-		if m.AudioSpec.MaxUploadBytes < limit {
-			limit = m.AudioSpec.MaxUploadBytes
+	if m := state.GlobalManifestState.Get(); m != nil {
+		if declared := m.ResolveAudioSpec("").MaxUploadBytes; declared > 0 && declared < limit {
+			limit = declared
 		}
 	}
 	return limit

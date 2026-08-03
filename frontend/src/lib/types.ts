@@ -123,10 +123,14 @@ export interface AudioSpec {
   supported_sample_rates?: number[];
   default_format?: string;
   default_sample_rate?: number;
-  /** Ceiling for reference-audio uploads, declared by the engine that consumes them. */
-  max_upload_bytes?: number;
-  /** How many seconds of reference audio the engine wants for voice cloning. */
+  /** Formats the engine can *read* as reference audio — not the same as what it emits. */
+  reference_audio_formats?: string[];
+  /** How many seconds of reference audio the engine wants, and the trimmer selects. */
   reference_audio_seconds?: number;
+  /** Ceiling for the raw file a user picks, before trimming. Higher of the two. */
+  max_upload_bytes?: number;
+  /** Ceiling for the trimmed clip the engine actually receives. Lower of the two. */
+  max_reference_bytes?: number;
 }
 
 export interface AutoFormatRule {

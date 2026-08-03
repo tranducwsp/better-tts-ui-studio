@@ -136,7 +136,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := checkReferenceAudio(header.Filename, fileBytes); err != nil {
+	if err := checkReferenceAudio(header.Filename, fileBytes, modelID); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
@@ -215,6 +215,11 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	modelID := r.FormValue("model_id")
+	if modelID == "" {
+		modelID = firstCloningMode()
+	}
+
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -230,7 +235,7 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := checkReferenceAudio(header.Filename, fileBytes); err != nil {
+	if err := checkReferenceAudio(header.Filename, fileBytes, modelID); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return

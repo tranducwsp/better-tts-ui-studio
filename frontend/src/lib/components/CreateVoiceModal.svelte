@@ -136,9 +136,9 @@
           <p style="color: var(--success); font-weight: 600; margin: 0;">{selectedFile.name}</p>
         {:else}
           <p style="color: #cbd5e1; margin: 0;">Drag & drop audio file here or <strong style="color: var(--primary);">click to browse</strong></p>
-          <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: {supportedFormatsLabel()} (max {maxUploadLabel(manifest, mode)})</span>
+          <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: {supportedFormatsLabel(manifest, mode)} (max {maxUploadLabel(manifest, mode)})</span>
         {/if}
-        <input id="create-voice-file-input" type="file" bind:this={fileInput} onchange={handleFileSelect} accept={acceptedUploadFormats()} style="display: none;" />
+        <input id="create-voice-file-input" type="file" bind:this={fileInput} onchange={handleFileSelect} accept={acceptedUploadFormats(manifest, mode)} style="display: none;" />
       </label>
 
       <!-- Trimmer if file loaded -->

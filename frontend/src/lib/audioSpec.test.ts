@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  acceptedUploadFormats,
   audioSpecLabel,
   defaultFormat,
   downloadFormats,
@@ -68,11 +69,41 @@ describe('per-mode audio spec', () => {
 
   it('falls back to platform defaults with no manifest', () => {
     expect(defaultFormat(null)).toBe('wav');
-    expect(maxUploadBytes(null)).toBe(10 * 1024 * 1024);
+    expect(maxUploadBytes(null)).toBe(100 * 1024 * 1024);
     expect(referenceAudioSeconds(null)).toBe(5);
   });
 
   it('ignores an unknown mode id rather than erroring', () => {
     expect(defaultFormat(manifest, 'no_such_mode')).toBe('wav');
+  });
+});
+
+describe('two upload limits', () => {
+  // The bug that exists for the same reason as the original getall one: a single
+  // ceiling applied to both the raw file and the post-trim clip rejects files that are
+  // perfectly fine to trim. They have to be separate fields, and the raw limit must be
+  // the higher of the two.
+  it('uses distinct fields for raw and post-trim', () => {
+    const m = {
+      audio_spec: {
+        reference_audio_seconds: 5,
+        max_upload_bytes: 100 * 1024 * 1024,
+        max_reference_bytes: 10 * 1024 * 1024,
+      },
+    } as unknown as UniversalManifest;
+    expect(maxUploadBytes(m)).toBe(100 * 1024 * 1024);
+    expect(m.audio_spec.max_upload_bytes).toBeGreaterThan(m.audio_spec.max_reference_bytes!);
+  });
+
+  it('accepts MP3 when the engine declares it, not what the engine emits', () => {
+    const m = {
+      audio_spec: {
+        supported_formats: ['wav'],
+        reference_audio_formats: ['wav', 'mp3'],
+      },
+    } as unknown as UniversalManifest;
+    const accepted = acceptedUploadFormats(m);
+    expect(accepted).toBe('.wav,.mp3');
+    expect(accepted).not.toContain('.flac');
   });
 });

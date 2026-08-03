@@ -126,9 +126,11 @@ var Settings = []Setting{
 
 	{Key: "STORAGE_DIR", Kind: KindString, Default: "storage", Group: "Storage"},
 	{
-		Key: "MAX_UPLOAD_SIZE_MB", Kind: KindInt, Default: "32", Min: 1, Max: 10240,
+		Key: "MAX_UPLOAD_SIZE_MB", Kind: KindInt, Default: "256", Min: 1, Max: 10240,
 		Group: "Storage",
-		Doc:   "Xem PLATFORM_GAPS.md §2: giới hạn này lẽ ra thuộc về manifest của engine.",
+		Doc: "Trần cứng của hạ tầng cho một request tải lên — nói về RAM và băng thông của\n" +
+			"deployment, không phải về model. Engine khai trần riêng trong\n" +
+			"audio_spec.max_upload_bytes; cái nào chặt hơn thì thắng.",
 	},
 	{
 		Key: "TEMP_AUDIO_RETENTION_HOURS", Kind: KindInt, Default: "24", Min: 1, Max: 8760,
