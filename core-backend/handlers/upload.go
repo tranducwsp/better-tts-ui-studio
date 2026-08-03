@@ -146,4 +146,3 @@ func receiveReferenceAudio(w http.ResponseWriter, r *http.Request) (referenceUpl
 
 	return referenceUpload{ModelID: modelID, Filename: header.Filename, Data: data}, true
 }
-
