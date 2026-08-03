@@ -136,6 +136,12 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := checkReferenceAudio(header.Filename, fileBytes); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
+		return
+	}
+
 	// 1. Save reference audio file under storage tier
 	userDir := storage.ModeDir(modelID, user.ID)
 	_ = os.MkdirAll(userDir, 0755)
@@ -221,6 +227,12 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi đọc file"})
+		return
+	}
+
+	if err := checkReferenceAudio(header.Filename, fileBytes); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
 	}
 

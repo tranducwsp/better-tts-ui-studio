@@ -95,18 +95,25 @@ export function audioSpecLabel(manifest: UniversalManifest | null | undefined, m
   return rate ? `${fmt} ${(rate / 1000).toFixed(rate % 1000 === 0 ? 0 : 1)}kHz` : fmt;
 }
 
-/** accept="" filter for reference-audio uploads, e.g. ".wav,.mp3". */
-export function acceptedUploadFormats(manifest: UniversalManifest | null | undefined, mode?: Mode): string {
-  return resolveAudioSpec(manifest, mode)
-    .supported_formats.map((f) => `.${f}`)
-    .join(',');
+/**
+ * Formats accepted for reference-audio upload.
+ *
+ * Deliberately not `audio_spec.supported_formats`: that lists what the engine *emits*, which
+ * is a different question from what it can *read*. Cloning wants uncompressed input — lossy
+ * formats have already discarded detail the speaker encoder needs — and WAV is what the
+ * trimmer produces anyway, so accepting anything else would only invite a file the engine
+ * then rejects.
+ */
+export const UPLOAD_FORMATS = ['wav'] as const;
+
+/** accept="" filter for reference-audio uploads. */
+export function acceptedUploadFormats(): string {
+  return UPLOAD_FORMATS.map((f) => `.${f}`).join(',');
 }
 
-/** Human-readable list, e.g. "WAV, MP3". */
-export function supportedFormatsLabel(manifest: UniversalManifest | null | undefined, mode?: Mode): string {
-  return resolveAudioSpec(manifest, mode)
-    .supported_formats.map((f) => f.toUpperCase())
-    .join(', ');
+/** Human-readable list of accepted upload formats, e.g. "WAV". */
+export function supportedFormatsLabel(): string {
+  return UPLOAD_FORMATS.map((f) => f.toUpperCase()).join(', ');
 }
 
 /** The default output format — what a chunk's streamed blob actually contains. */

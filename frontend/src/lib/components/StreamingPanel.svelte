@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { synthesize, subscribeTaskStream } from '../api';
   import { splitIntoChunks } from '../textLimits';
-  import { audioSpecLabel, combinedDownloadFormat, defaultFormat, defaultMimeType, downloadFormats } from '../audioSpec';
+  import { combinedDownloadFormat, defaultFormat, defaultMimeType, downloadFormats } from '../audioSpec';
   import { toast } from '../toast.svelte';
   import type { JobDetailResponse, ChunkItemResponse, UniversalManifest } from '../types';
 
@@ -334,7 +334,6 @@
       <i class="fa-solid fa-compact-disc fa-spin"></i> Audio Generation & Streaming Progress
     </h3>
     <div style="display: flex; align-items: center; gap: 10px;">
-      <span style="font-size: 0.8rem; opacity: 0.7; color: var(--text-muted);">{audioSpecLabel(manifest, engine)}</span>
       <span style="font-size: 0.85rem; padding: 4px 12px; border-radius: 12px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 500;">
         {statusBadge}
       </span>

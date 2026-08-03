@@ -340,10 +340,10 @@
           <div style="color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 6px;">
             <i class="fa-solid fa-cloud-arrow-up" style="font-size: 1.8rem; color: var(--primary);"></i>
             <span>Drag & drop audio file here or <strong style="color: var(--primary);">click to browse</strong></span>
-            <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: {supportedFormatsLabel(manifest, activeMode)}</span>
+            <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: {supportedFormatsLabel()}</span>
           </div>
         {/if}
-        <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" onchange={handleFileUpload} accept={acceptedUploadFormats(manifest, activeMode)} style="display: none;" />
+        <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" onchange={handleFileUpload} accept={acceptedUploadFormats()} style="display: none;" />
       </label>
 
       {#if selectedFile}

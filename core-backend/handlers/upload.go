@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"core-backend/state"
 )
@@ -23,6 +24,30 @@ func SetMaxUploadMB(mb int) {
 
 // MaxUploadBytes trả về trần hiện tại, tính bằng byte.
 func MaxUploadBytes() int64 { return maxUploadBytes }
+
+// referenceAudioFormats là các định dạng nhận cho âm thanh tham chiếu.
+//
+// Khác audio_spec.supported_formats, thứ mô tả định dạng Engine SINH RA. Nhân bản giọng cần
+// đầu vào không nén: định dạng lossy đã bỏ đi phần chi tiết mà bộ mã hoá giọng cần.
+var referenceAudioFormats = map[string]bool{"wav": true}
+
+// checkReferenceAudio kiểm tra phần mở rộng và chữ ký tệp.
+//
+// Thuộc tính accept của trình duyệt chỉ là gợi ý cho hộp chọn tệp; bất kỳ client nào cũng
+// gửi được thứ khác. Kiểm cả chữ ký vì đổi tên .mp3 thành .wav là việc dễ làm nhất.
+func checkReferenceAudio(filename string, data []byte) error {
+	ext := ""
+	if i := strings.LastIndex(filename, "."); i != -1 {
+		ext = strings.ToLower(filename[i+1:])
+	}
+	if !referenceAudioFormats[ext] {
+		return fmt.Errorf("chỉ nhận tệp WAV cho âm thanh tham chiếu")
+	}
+	if len(data) < 12 || string(data[0:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
+		return fmt.Errorf("tệp không phải WAV hợp lệ dù mang phần mở rộng .%s", ext)
+	}
+	return nil
+}
 
 // parseUpload đọc form multipart trong giới hạn đã cấu hình.
 //

@@ -202,6 +202,11 @@ browser an MP3 with `Content-Type: audio/wav`, which many players refuse to open
 `max_upload_bytes` and `reference_audio_seconds` describe what the engine accepts for voice
 cloning, not what it produces.
 
+Note that `supported_formats` describes what the engine **emits**. Reference-audio *input* is
+WAV only, enforced by the platform on both the extension and the RIFF signature — cloning
+needs uncompressed audio, and a lossy file has already discarded detail the speaker encoder
+depends on.
+
 * `max_upload_bytes` — largest reference clip the engine can process. The platform enforces
   whichever is stricter, this or the deployment's own `MAX_UPLOAD_SIZE_MB`, and rejects
   oversized uploads mid-transfer rather than buffering them first.
