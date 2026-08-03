@@ -186,6 +186,10 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 
 	taskID := uuid.NewString()
 	if req.TaskID != nil && *req.TaskID != "" {
+		if !safeTaskID(*req.TaskID) {
+			writeError(w, http.StatusBadRequest, "Invalid task ID")
+			return
+		}
 		taskID = *req.TaskID
 	}
 
@@ -219,9 +223,10 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		bgCtx := context.Background()
 		audioBytes, err := h.TTSClient.Synthesize(req.Text, req.Voice, req.Speed, req.Engine, req.Pitch, req.Emotion)
 		if err != nil {
+			_, _, progress, _ := taskItem.Snapshot()
 			taskItem.Notify(state.TaskUpdate{
 				Status:   "error",
-				Progress: taskItem.Progress,
+				Progress: progress,
 				Error:    err.Error(),
 			})
 			errMsg := err.Error()
@@ -233,12 +238,26 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		// để GetTaskAudio biết mình đang giữ gì thay vì đoán, và chỉ chuyển mã khi client
 		// hỏi định dạng khác.
 		sourceFormat := state.GlobalManifestState.Get().ResolveAudioSpec(req.Engine).DefaultFormat
-		taskItem.Audio = audioBytes
-		taskItem.SourceFormat = sourceFormat
+		taskItem.SetSourceFormat(sourceFormat)
 
 		_ = os.MkdirAll(storage.TempDir(), 0755)
 		filePath := filepath.Join(storage.TempDir(), fmt.Sprintf("%s.%s", taskID, sourceFormat))
-		_ = os.WriteFile(filePath, audioBytes, 0644)
+		wroteToDisk := os.WriteFile(filePath, audioBytes, 0644) == nil
+
+		// Đĩa là nơi giữ âm thanh; RAM chỉ giữ khi chưa ghi được ra đĩa.
+		//
+		// Trước đây cùng một đoạn âm thanh nằm đồng thời trong RAM, trên đĩa và trên Redis,
+		// mà bộ dọn RAM lại chỉ theo thời gian (10 phút, quét mỗi 5 phút) và không có trần
+		// theo số lượng hay dung lượng. Một job mười chunk giữ khoảng 29 MB trong mười lăm
+		// phút SAU KHI đã xong, mỗi định dạng tải thêm là thêm một bản nữa — nên một đợt tải
+		// đồng thời là RSS tăng không phanh. GetTaskAudio đã biết đọc từ đĩa, nên bỏ bản
+		// trong RAM không mất chức năng nào.
+		if wroteToDisk {
+			taskItem.ReleaseAudio()
+		} else {
+			taskItem.SetAudio(audioBytes)
+		}
+		taskItem.CacheAudio(bgCtx, sourceFormat, audioBytes)
 
 		_ = db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil)
 

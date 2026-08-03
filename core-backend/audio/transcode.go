@@ -5,12 +5,24 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"time"
 )
 
 // TranscodeTimeout giới hạn thời gian chạy ffmpeg cho một lần chuyển mã, tránh tiến trình
 // treo giữ mãi một goroutine.
 const TranscodeTimeout = 60 * time.Second
+
+// transcodeSlots chặn số tiến trình ffmpeg chạy cùng lúc.
+//
+// ffmpeg là việc nặng CPU và trước đây được gọi thẳng từ goroutine của request mà không có
+// hàng đợi: N lượt tải cùng lúc là N tiến trình giành nhau số nhân có hạn, mỗi tiến trình
+// còn giữ cả đầu vào và đầu ra trong RAM. Một người dùng gọi ?format=flac trong vòng lặp là
+// đủ ghim mọi nhân trong suốt TranscodeTimeout — không cần tới lỗ hổng nào.
+//
+// Số chỗ bằng số nhân khả dụng: chuyển mã đã bám CPU nên cho chạy nhiều hơn thế chỉ làm mọi
+// lượt chậm đi chứ không xong sớm hơn. Tối thiểu 2 để máy một nhân vẫn xử được lượt thứ hai.
+var transcodeSlots = make(chan struct{}, max(2, runtime.GOMAXPROCS(0)))
 
 // ffmpegArgs mô tả tham số mã hoá cho từng định dạng đầu ra được hỗ trợ.
 // Đầu vào luôn đọc từ stdin ("-i pipe:0") và kết quả ghi ra stdout ("pipe:1"), nên không
@@ -42,6 +54,15 @@ func Transcode(ctx context.Context, input []byte, format string) ([]byte, error)
 	}
 	if len(input) == 0 {
 		return nil, fmt.Errorf("no audio data to transcode")
+	}
+
+	// Chờ một chỗ, nhưng chỉ trong lúc client còn kết nối: ai đã bỏ đi thì không có lý do
+	// để vẫn xếp hàng chờ CPU.
+	select {
+	case transcodeSlots <- struct{}{}:
+		defer func() { <-transcodeSlots }()
+	case <-ctx.Done():
+		return nil, fmt.Errorf("transcode queue: %w", ctx.Err())
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, TranscodeTimeout)

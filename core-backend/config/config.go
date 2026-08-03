@@ -18,13 +18,15 @@ type Config struct {
 	DatabaseURL              string
 	SecretKey                string
 	AccessTokenExpireMinutes int
-	CoreTTSURL               string
-	CoreTTSGrpcURL           string
-	FEBuilderURL             string
-	DefaultAdminUsername     string
-	DefaultAdminPassword     string
-	DefaultUserUsername      string
-	DefaultUserPassword      string
+	// Số giây ghi nhớ bản ghi người dùng sau khi xác thực token. 0 nghĩa là không cache.
+	AuthUserCacheSeconds int
+	CoreTTSURL           string
+	CoreTTSGrpcURL       string
+	FEBuilderURL         string
+	DefaultAdminUsername string
+	DefaultAdminPassword string
+	DefaultUserUsername  string
+	DefaultUserPassword  string
 
 	// Cấu hình Redis Cache & PubSub Broker
 	RedisURL      string
@@ -97,6 +99,7 @@ func LoadConfig() *Config {
 		DatabaseURL:              str("DATABASE_URL"),
 		SecretKey:                resolveSecretKey(),
 		AccessTokenExpireMinutes: num("ACCESS_TOKEN_EXPIRE_MINUTES"),
+		AuthUserCacheSeconds:     num("AUTH_USER_CACHE_SECONDS"),
 		CoreTTSURL:               str("CORE_ENGINE_URL"),
 		CoreTTSGrpcURL:           str("CORE_ENGINE_GRPC_URL"),
 		FEBuilderURL:             str("FE_BUILDER_URL"),

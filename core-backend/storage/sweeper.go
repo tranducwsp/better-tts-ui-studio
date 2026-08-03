@@ -7,12 +7,10 @@ import (
 	"time"
 )
 
-// Mặc định giữ tập tin tạm trong 24 giờ và quét mỗi giờ. Đủ dài để người dùng tải lại bản
-// ghi vừa tạo hoặc mở lại một Job trong lịch sử, đủ ngắn để đĩa không phình vô hạn.
-const (
-	DefaultTempRetention = 24 * time.Hour
-	DefaultSweepInterval = 1 * time.Hour
-)
+// Chu kỳ quét mặc định. Thời gian giữ tập tin thì do TEMP_AUDIO_RETENTION_HOURS quyết định
+// và được truyền vào từ main, nên không có hằng thứ hai ở đây — hai nguồn cho cùng một con
+// số là cách chắc nhất để chúng lệch nhau.
+const DefaultSweepInterval = 1 * time.Hour
 
 // SweepTempFiles xoá các tập tin âm thanh tạm cũ hơn retention và trả về số tập tin đã xoá
 // cùng số byte giải phóng.

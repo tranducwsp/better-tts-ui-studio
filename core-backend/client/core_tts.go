@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -28,6 +29,26 @@ func NewCoreTTSClient(baseURL string, timeoutSeconds int) *CoreTTSClient {
 		BaseURL: baseURL,
 		HTTPClient: &http.Client{
 			Timeout: timeout,
+			// Transport khai riêng vì mặc định của thư viện chuẩn chỉ giữ 2 kết nối rỗi
+			// cho mỗi host. Mọi lượt tổng hợp đều đi tới cùng một Engine, nên từ lượt thứ
+			// ba đồng thời trở đi mỗi request phải bắt tay TCP mới rồi bỏ kết nối ngay sau
+			// đó — một đợt 50 lượt là 48 lần bắt tay và 48 socket rơi vào TIME_WAIT.
+			//
+			// ResponseHeaderTimeout tách riêng khỏi Timeout tổng: Engine im lặng hoàn toàn
+			// thì biết sớm, còn tổng hợp một đoạn dài vẫn được phép chạy hết thời gian.
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				MaxIdleConns:          100,
+				MaxIdleConnsPerHost:   100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+				ResponseHeaderTimeout: timeout,
+				DialContext: (&net.Dialer{
+					Timeout:   10 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+			},
 		},
 	}
 }

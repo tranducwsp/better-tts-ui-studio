@@ -76,6 +76,14 @@ var Settings = []Setting{
 		Key: "ACCESS_TOKEN_EXPIRE_MINUTES", Kind: KindInt, Default: "10080", Min: 1, Max: 525600,
 		Group: "Server", Doc: "Thời hạn token đăng nhập. Mặc định 7 ngày.",
 	},
+	{
+		Key: "AUTH_USER_CACHE_SECONDS", Kind: KindInt, Default: "15", Min: 0, Max: 3600,
+		Group: "Server",
+		Doc: "Số giây ghi nhớ bản ghi người dùng sau khi xác thực token, để mỗi request không\n" +
+			"phải hỏi lại PostgreSQL cùng một câu. Chỉ role và trạng thái duyệt cần tươi, nên\n" +
+			"độ trễ vài giây là chấp nhận được; duyệt tài khoản sẽ xoá cache ngay lập tức.\n" +
+			"Đặt 0 để tắt cache và quay về truy vấn từng request.",
+	},
 
 	{Key: "DATABASE_URL", Kind: KindString, Default: "postgres://postgres:postgres@localhost:5432/ai_studio?sslmode=disable", Group: "Database"},
 	{Key: "DB_MAX_CONNS", Kind: KindInt, Default: "25", Min: 1, Max: 10000, Group: "Database"},

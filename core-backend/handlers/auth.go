@@ -7,6 +7,7 @@ import (
 	"core-backend/config"
 	"core-backend/db"
 	"core-backend/db/sqlc"
+	"core-backend/middleware"
 	"core-backend/security"
 	"core-backend/state"
 
@@ -254,6 +255,10 @@ func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "User not found"})
 		return
 	}
+
+	// Xoá bản ghi đã cache, nếu không tài khoản vừa duyệt vẫn bị chặn cho tới khi TTL hết
+	// và người dùng không hiểu vì sao mình vẫn chưa vào được.
+	middleware.InvalidateUser(user.Username)
 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"message": "User " + user.Username + " approved!",

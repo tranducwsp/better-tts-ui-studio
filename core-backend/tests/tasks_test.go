@@ -33,8 +33,7 @@ func TestGetTaskStatus_Success(t *testing.T) {
 
 	// Prepare task in state
 	task := state.GlobalTaskManager.GetOrCreate("test-task-1")
-	task.Status = "processing"
-	task.Progress = 45
+	task.Notify(state.TaskUpdate{Status: "processing", Progress: 45})
 
 	r := chi.NewRouter()
 	r.Get("/tasks/{task_id}", h.GetTaskStatus)
@@ -62,9 +61,9 @@ func TestGetTaskAudio_SuccessWAV(t *testing.T) {
 	h := handlers.NewTasksHandler()
 
 	task := state.GlobalTaskManager.GetOrCreate("audio-task-wav")
-	task.Status = "done"
-	task.Audio = []byte("RIFF mock wav audio bytes")
-	task.SourceFormat = "wav"
+	task.Notify(state.TaskUpdate{Status: "done", Progress: 100})
+	task.SetSourceFormat("wav")
+	task.SetAudio([]byte("RIFF mock wav audio bytes"))
 
 	r := chi.NewRouter()
 	r.Get("/tasks/{task_id}/audio", h.GetTaskAudio)
@@ -87,7 +86,7 @@ func TestCancelTask(t *testing.T) {
 	h := handlers.NewTasksHandler()
 
 	task := state.GlobalTaskManager.GetOrCreate("cancel-task-1")
-	task.Status = "processing"
+	task.Notify(state.TaskUpdate{Status: "processing", Progress: 0})
 
 	r := chi.NewRouter()
 	r.Post("/tasks/{task_id}/cancel", h.CancelTask)
@@ -101,7 +100,7 @@ func TestCancelTask(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
 
-	if !task.Cancel {
+	if !task.IsCancelled() {
 		t.Errorf("Task cancel flag should be true")
 	}
 }
@@ -110,8 +109,7 @@ func TestStreamTaskProgress(t *testing.T) {
 	h := handlers.NewTasksHandler()
 
 	task := state.GlobalTaskManager.GetOrCreate("stream-task-1")
-	task.Status = "done"
-	task.Progress = 100
+	task.Notify(state.TaskUpdate{Status: "done", Progress: 100})
 
 	r := chi.NewRouter()
 	r.Get("/stream/tasks/{task_id}", h.StreamTaskProgress)

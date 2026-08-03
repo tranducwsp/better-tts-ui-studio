@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"core-backend/config"
 	"core-backend/db"
@@ -44,14 +45,17 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 				// Validate JWT token với secret key
 				claims, err := security.ValidateToken(tokenString, cfg.SecretKey)
 				if err == nil && claims.Username != "" {
-					// Query trạng thái tài khoản thời gian thực từ PostgreSQL bằng sqlc
-					user, err := db.Queries.GetUserByUsername(r.Context(), claims.Username)
-					if err == nil {
+					user, ok := lookupUser(r, claims.Username)
+					if ok {
 						ctx := context.WithValue(r.Context(), UserContextKey, &user)
 						r = r.WithContext(ctx)
 
-						// Cập nhật trạng thái Online thời gian thực lên Redis (TTL 60s)
-						state.TouchUserOnline(r.Context(), user.ID)
+						// Cập nhật trạng thái Online lên Redis (TTL 60s), không chặn request.
+						//
+						// Trước đây việc này dùng r.Context(), nên nó vừa nằm trong đường đi của
+						// request vừa bị huỷ giữa lúc ghi nếu client ngắt kết nối — một chỉ báo
+						// phụ trợ không đáng làm cả hai điều đó.
+						go state.TouchUserOnline(context.WithoutCancel(r.Context()), user.ID)
 					}
 				}
 			}
@@ -59,6 +63,21 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// lookupUser lấy bản ghi người dùng, ưu tiên cache ngắn hạn trước khi hỏi PostgreSQL.
+func lookupUser(r *http.Request, username string) (sqlc.User, bool) {
+	now := time.Now()
+	if cached, ok := globalUserCache.get(username, now); ok {
+		return cached, true
+	}
+
+	user, err := db.Queries.GetUserByUsername(r.Context(), username)
+	if err != nil {
+		return sqlc.User{}, false
+	}
+	globalUserCache.put(username, user, now)
+	return user, true
 }
 
 // GetCurrentUser lấy đối tượng *sqlc.User đã được lưu trong Request Context bởi AuthMiddleware.

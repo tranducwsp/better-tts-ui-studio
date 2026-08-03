@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"core-backend/audio"
 	"core-backend/state"
@@ -36,9 +37,10 @@ func (h *TasksHandler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	status, _, progress, _ := task.Snapshot()
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]interface{}{
-		"status":   task.Status,
-		"progress": task.Progress,
+		"status":   status,
+		"progress": progress,
 	})
 }
 
@@ -60,21 +62,40 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "task_id")
 	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
 
+	// task_id và format đi vào tên file bên dưới. Không để query string trở thành một
+	// filepath.Join escape hatch: format=../../etc/passwd trước đây được ghép vào
+	// <task>.to.<format> rồi đọc trước khi CanTranscode kịp từ chối.
+	if !safeTaskID(taskID) {
+		writeError(w, http.StatusBadRequest, "Invalid task ID")
+		return
+	}
+	if format != "" && !audio.CanTranscode(format) {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Audio format '%s' is not supported", format))
+		return
+	}
+
 	var source []byte
 	sourceFormat := ""
 
-	if task, ok := state.GlobalTaskManager.Get(taskID); ok && task.Status == "done" {
-		sourceFormat = task.SourceFormat
-		if format == "" {
-			format = sourceFormat
+	if task, ok := state.GlobalTaskManager.Get(taskID); ok {
+		status, declaredFormat, _, audioBytes := task.Snapshot()
+		if status == "done" {
+			sourceFormat = declaredFormat
+			if format == "" {
+				format = sourceFormat
+			}
+			if len(audioBytes) > 0 {
+				source = audioBytes
+			}
 		}
-		// Đã có sẵn bản đúng định dạng thì khỏi làm gì thêm.
-		if b, cached := task.Transcoded[format]; cached && len(b) > 0 {
+	}
+
+	// Bản đã chuyển mã của lần tải trước nằm trên đĩa cạnh bản gốc, nên lần này khỏi gọi
+	// ffmpeg. Bộ quét dọn thu hồi cả hai theo cùng một chính sách.
+	if format != "" {
+		if b, err := os.ReadFile(transcodePath(taskID, format)); err == nil && len(b) > 0 {
 			writeAudio(w, b, format)
 			return
-		}
-		if len(task.Audio) > 0 {
-			source = task.Audio
 		}
 	}
 
@@ -105,15 +126,6 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !audio.CanTranscode(format) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
-			"detail": fmt.Sprintf("Audio format '%s' is not supported", format),
-		})
-		return
-	}
-
 	converted, err := audio.Transcode(r.Context(), source, format)
 	if err != nil {
 		log.Printf("Transcode task %s from %s to %s failed: %v", taskID, sourceFormat, format, err)
@@ -126,7 +138,31 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state.GlobalTaskManager.CacheTranscoded(taskID, format, converted)
+	_ = os.WriteFile(transcodePath(taskID, format), converted, 0644)
 	writeAudio(w, converted, format)
+}
+
+// safeTaskID chỉ cho phép các ký tự mà UUID/task ID của nền tảng sử dụng.
+// Không dùng filepath.Base để "làm sạch": làm sạch một path độc vẫn có thể trỏ tới tệp
+// ngoài thư mục nếu phần còn lại được ghép tiếp.
+func safeTaskID(id string) bool {
+	if id == "" || len(id) > 128 {
+		return false
+	}
+	for _, r := range id {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// transcodePath là nơi cất bản đã chuyển mã, cạnh bản gốc trong thư mục tạm.
+//
+// Hậu tố tách bằng dấu chấm để bộ quét dọn nhìn thấy chúng như mọi tệp tạm khác, và để
+// vòng dò định dạng gốc ở trên không nhầm một bản chuyển mã là bản gốc.
+func transcodePath(taskID, format string) string {
+	return filepath.Join(storage.TempDir(), taskID+".to."+format)
 }
 
 // writeAudio ghi dữ liệu âm thanh kèm Content-Type và tên tập tin đúng định dạng.
@@ -158,14 +194,30 @@ func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
+	// Gỡ hạn ghi cho riêng luồng này.
+	//
+	// Server đặt WriteTimeout 120 giây để một client ngậm kết nối không giữ được tài nguyên
+	// mãi. Nhưng hạn đó tính cho cả phản hồi, mà phản hồi ở đây kéo dài đúng bằng công việc
+	// tổng hợp — nên mọi job quá hai phút bị net/http cắt ngang giữa chừng, đúng loại job mà
+	// SSE sinh ra để phục vụ. Trình duyệt thấy luồng vỡ rồi tự kết nối lại, tạo thêm một
+	// luồng nữa cũng sẽ bị cắt.
+	//
+	// Bỏ hạn ở đây không mất lớp bảo vệ: vòng lặp dưới thoát ngay khi r.Context() huỷ, tức
+	// là khi client ngắt kết nối.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		log.Printf("SSE task %s: không gỡ được hạn ghi (%v); luồng sẽ dừng khi WriteTimeout tới", taskID, err)
+	}
+
 	ch := task.Subscribe()
 	defer task.Unsubscribe(ch)
 
 	// Gửi sự kiện khởi tạo ban đầu
+	status, _, progress, _ := task.Snapshot()
 	initUpdate := state.TaskUpdate{
-		Status:   task.Status,
-		Progress: task.Progress,
-		Error:    task.Error,
+		Status:   status,
+		Progress: progress,
+		Error:    task.LastError(),
 	}
 	initBytes, _ := sonic.Marshal(initUpdate)
 	_, _ = w.Write([]byte("data: "))
@@ -173,7 +225,7 @@ func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write([]byte("\n\n"))
 	flusher.Flush()
 
-	if task.Status == "done" || task.Status == "error" || task.Status == "cancelled" {
+	if status == "done" || status == "error" || status == "cancelled" {
 		return
 	}
 

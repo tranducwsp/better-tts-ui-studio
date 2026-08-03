@@ -14,6 +14,7 @@ import (
 	"core-backend/config"
 	"core-backend/db"
 	"core-backend/handlers"
+	"core-backend/middleware"
 	"core-backend/router"
 	"core-backend/state"
 	"core-backend/storage"
@@ -34,6 +35,10 @@ func main() {
 	// Trần upload cho mọi handler multipart. Không có dòng này, MAX_UPLOAD_SIZE_MB chỉ là
 	// một con số trong log khởi động.
 	handlers.SetMaxUploadMB(cfg.MaxUploadMB)
+
+	// Cache người dùng cho tầng xác thực. Không có dòng này thì AUTH_USER_CACHE_SECONDS
+	// cũng chỉ là một con số trong log, và mỗi request vẫn hỏi PostgreSQL một lần.
+	middleware.ConfigureUserCache(time.Duration(cfg.AuthUserCacheSeconds) * time.Second)
 
 	// Xoá định kỳ các tập tin âm thanh tạm. Mỗi lần tổng hợp ghi một tập tin vào
 	// storage/temp và trước đây không có gì dọn chúng, nên đĩa chỉ có thể phình lên.

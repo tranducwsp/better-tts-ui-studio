@@ -220,19 +220,28 @@ func extractODTText(data []byte) (string, error) {
 	return sb.String(), nil
 }
 
+// Biểu thức chính quy bóc chữ từ PDF, biên dịch một lần lúc nạp gói.
+//
+// rePDFStringInArray trước đây được biên dịch NGAY TRONG vòng lặp duyệt kết quả khớp: một
+// PDF nhiều nghìn mảng chữ là bấy nhiêu lần biên dịch lại đúng một mẫu không đổi. Hai mẫu
+// còn lại cũng được biên dịch lại mỗi lần gọi hàm.
+var (
+	rePDFTextObj       = regexp.MustCompile(`\(([^)]*)\)\s*Tj|\[([^\]]*)\]\s*TJ`)
+	rePDFStringInArray = regexp.MustCompile(`\(([^)]*)\)`)
+	rePDFReadableRun   = regexp.MustCompile(`[\w\s.,!?;:\"'-]{5,}`)
+)
+
 // extractPDFText bóc tách các dòng chữ thô từ PDF Stream Objects.
 func extractPDFText(data []byte) (string, error) {
 	var sb strings.Builder
-	reTextObj := regexp.MustCompile(`\(([^)]*)\)\s*Tj|\[([^\]]*)\]\s*TJ`)
-	matches := reTextObj.FindAllSubmatch(data, -1)
+	matches := rePDFTextObj.FindAllSubmatch(data, -1)
 
 	for _, m := range matches {
 		if len(m[1]) > 0 {
 			sb.Write(m[1])
 			sb.WriteString(" ")
 		} else if len(m[2]) > 0 {
-			reSub := regexp.MustCompile(`\(([^)]*)\)`)
-			subMatches := reSub.FindAllSubmatch(m[2], -1)
+			subMatches := rePDFStringInArray.FindAllSubmatch(m[2], -1)
 			for _, sm := range subMatches {
 				sb.Write(sm[1])
 			}
@@ -242,8 +251,7 @@ func extractPDFText(data []byte) (string, error) {
 
 	res := sb.String()
 	if strings.TrimSpace(res) == "" {
-		reClean := regexp.MustCompile(`[\w\s.,!?;:\"'-]{5,}`)
-		found := reClean.FindAllString(string(data), -1)
+		found := rePDFReadableRun.FindAllString(string(data), -1)
 		res = strings.Join(found, "\n")
 	}
 

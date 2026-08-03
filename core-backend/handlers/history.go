@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -52,12 +51,21 @@ func (h *HistoryHandler) GetUserHistoryAdmin(w http.ResponseWriter, r *http.Requ
 	h.getHistoryForUser(w, r, userID)
 }
 
+// historyPageSize là số job trả về cho một lần xem lịch sử.
+//
+// Trước đây truy vấn không có LIMIT, nên người dùng lâu năm khiến mỗi lần mở lịch sử phải
+// tổng hợp và truyền về toàn bộ job từ trước tới nay. Giao diện chỉ hiển thị một danh sách
+// cuộn, nên trần này là thứ người dùng không nhìn thấy còn máy chủ thì thấy rõ.
+const historyPageSize = 200
+
 // getHistoryForUser hàm nội bộ tổng hợp dữ liệu lịch sử các Job và tiến độ hoàn thành các Chunk của User.
 func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Request, userID string) {
-	summaries, err := db.Queries.ListUserHistorySummaries(r.Context(), userID)
+	summaries, err := db.Queries.ListUserHistorySummaries(r.Context(), sqlc.ListUserHistorySummariesParams{
+		UserID: userID,
+		Limit:  historyPageSize,
+	})
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Database error"})
+		writeError(w, http.StatusInternalServerError, "Database error")
 		return
 	}
 
@@ -159,7 +167,12 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chunks, _ := db.Queries.ListTTSChunksByJobID(r.Context(), job.ID)
-	bestChunks := make(map[int32]sqlc.TtsChunk)
+
+	// Một chunk_index có thể có nhiều dòng (thử lại), nên giữ dòng ở trạng thái tiến xa nhất.
+	//
+	// Một lượt quét tiến, không map và không sắp xếp lại: truy vấn đã trả về theo
+	// ORDER BY chunk_index ASC, nên dựng map rồi rải ra rồi sort lại chỉ để có đúng thứ tự
+	// vốn đã có — mà mỗi lần vào/ra map là một lần sao chép cả struct, kể cả trường Text.
 	statusPriority := map[string]int{
 		"done":       4,
 		"processing": 3,
@@ -167,26 +180,22 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 		"error":      1,
 	}
 
-	for _, c := range chunks {
-		existing, found := bestChunks[c.ChunkIndex]
-		if !found || statusPriority[c.Status] > statusPriority[existing.Status] {
-			bestChunks[c.ChunkIndex] = c
+	best := make([]*sqlc.TtsChunk, 0, len(chunks))
+	for i := range chunks {
+		c := &chunks[i]
+		if n := len(best); n > 0 && best[n-1].ChunkIndex == c.ChunkIndex {
+			if statusPriority[c.Status] > statusPriority[best[n-1].Status] {
+				best[n-1] = c
+			}
+			continue
 		}
+		best = append(best, c)
 	}
 
-	sortedChunks := make([]sqlc.TtsChunk, 0, len(bestChunks))
-	for _, c := range bestChunks {
-		sortedChunks = append(sortedChunks, c)
-	}
+	chunkResponses := make([]ChunkItemResponse, len(best))
+	chunkTexts := make([]string, 0, len(best))
 
-	sort.Slice(sortedChunks, func(i, j int) bool {
-		return sortedChunks[i].ChunkIndex < sortedChunks[j].ChunkIndex
-	})
-
-	chunkResponses := make([]ChunkItemResponse, len(sortedChunks))
-	chunkTexts := make([]string, 0, len(sortedChunks))
-
-	for i, c := range sortedChunks {
+	for i, c := range best {
 		var audioPathPtr *string
 		if c.AudioPath.Valid {
 			audioPathPtr = &c.AudioPath.String
@@ -209,8 +218,8 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	totalChunks := int(job.TotalChunks)
-	if len(sortedChunks) > totalChunks {
-		totalChunks = len(sortedChunks)
+	if len(best) > totalChunks {
+		totalChunks = len(best)
 	}
 
 	// NULL pitch/emotion means the engine had no such control for this job; leave the
@@ -264,20 +273,22 @@ func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := db.Queries.GetTTSJobByID(r.Context(), req.JobID)
-	if err != nil {
-		audio := db.JobAudioParams{Speed: req.Speed, Pitch: req.Pitch, Emotion: req.Emotion}
-		_, _ = db.Queries.CreateTTSJob(r.Context(), sqlc.CreateTTSJobParams{
-			ID:          req.JobID,
-			UserID:      user.ID,
-			Engine:      req.Engine,
-			Voice:       req.Voice,
-			Speed:       req.Speed,
-			Pitch:       audio.PitchColumn(),
-			Emotion:     audio.EmotionColumn(),
-			TotalChunks: int32(req.TotalChunks),
-			Text:        req.Text,
-		})
+	// Một câu lệnh upsert: hai request khởi tạo cùng một job đồng thời đều thấy "chưa có"
+	// rồi cùng chèn, và cái thua bị bỏ lỗi âm thầm.
+	audio := db.JobAudioParams{Speed: req.Speed, Pitch: req.Pitch, Emotion: req.Emotion}
+	if err := db.Queries.EnsureTTSJob(r.Context(), sqlc.EnsureTTSJobParams{
+		ID:          req.JobID,
+		UserID:      user.ID,
+		Engine:      req.Engine,
+		Voice:       req.Voice,
+		Speed:       req.Speed,
+		Pitch:       audio.PitchColumn(),
+		Emotion:     audio.EmotionColumn(),
+		TotalChunks: int32(req.TotalChunks),
+		Text:        req.Text,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "Không khởi tạo được job")
+		return
 	}
 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Job initialized successfully"})

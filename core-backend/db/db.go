@@ -184,22 +184,24 @@ func (p JobAudioParams) EmotionColumn() pgtype.Text {
 }
 
 func RegisterJobAndChunk(ctx context.Context, userID, jobID, engine, voice string, audio JobAudioParams, totalChunks int, taskID string, chunkIndex int, text string) error {
-	_, err := Queries.GetTTSJobByID(ctx, jobID)
-	if err != nil {
-		_, _ = Queries.CreateTTSJob(ctx, sqlc.CreateTTSJobParams{
-			ID:          jobID,
-			UserID:      userID,
-			Engine:      engine,
-			Voice:       voice,
-			Speed:       audio.Speed,
-			Pitch:       audio.PitchColumn(),
-			Emotion:     audio.EmotionColumn(),
-			TotalChunks: int32(totalChunks),
-			Text:        text,
-		})
+	// Một câu lệnh thay cho đọc-rồi-ghi: hai chunk đầu của cùng một job tới song song đều
+	// thấy job chưa tồn tại rồi cùng chèn, và cái thua bị bỏ lỗi âm thầm. Việc này nằm
+	// thẳng trên đường đi của mỗi chunk nên bớt một lượt đi lại là bớt độ trễ người dùng thấy.
+	if err := Queries.EnsureTTSJob(ctx, sqlc.EnsureTTSJobParams{
+		ID:          jobID,
+		UserID:      userID,
+		Engine:      engine,
+		Voice:       voice,
+		Speed:       audio.Speed,
+		Pitch:       audio.PitchColumn(),
+		Emotion:     audio.EmotionColumn(),
+		TotalChunks: int32(totalChunks),
+		Text:        text,
+	}); err != nil {
+		return err
 	}
 
-	_, err = Queries.CreateTTSChunk(ctx, sqlc.CreateTTSChunkParams{
+	_, err := Queries.CreateTTSChunk(ctx, sqlc.CreateTTSChunkParams{
 		ID:         taskID,
 		JobID:      jobID,
 		ChunkIndex: int32(chunkIndex),
