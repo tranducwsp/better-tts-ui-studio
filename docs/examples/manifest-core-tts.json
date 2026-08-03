@@ -7,19 +7,22 @@
         {
             "id": "standard",
             "name": "Standard Neural",
-            "description": "High fidelity neural voice inference",
-            "capabilities": {
-                "supports_cloning": false,
-                "supports_voice_saving": false
-            }
+            "description": "High fidelity neural voice inference"
         },
         {
             "id": "fast",
             "name": "Fast Streaming",
             "description": "Low latency streaming TTS",
-            "capabilities": {
-                "supports_cloning": false,
-                "supports_voice_saving": false
+            "audio_spec": {
+                "supported_formats": [
+                    "mp3",
+                    "wav"
+                ],
+                "supported_sample_rates": [
+                    24000
+                ],
+                "default_format": "mp3",
+                "default_sample_rate": 24000
             }
         },
         {
@@ -27,8 +30,17 @@
             "name": "Voice Cloning",
             "description": "Reference audio speaker cloning",
             "capabilities": {
+                "supports_preset_voices": false,
                 "supports_cloning": true,
                 "supports_voice_saving": true
+            },
+            "audio_spec": {
+                "reference_audio_formats": [
+                    "wav"
+                ],
+                "reference_audio_seconds": 5.0,
+                "max_upload_bytes": 209715200,
+                "max_reference_bytes": 10485760
             }
         }
     ],
