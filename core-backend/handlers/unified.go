@@ -11,7 +11,6 @@ import (
 	"core-backend/client"
 	"core-backend/db"
 	"core-backend/db/sqlc"
-	"core-backend/middleware"
 	"core-backend/state"
 	"core-backend/storage"
 
@@ -53,10 +52,8 @@ func NewUnifiedHandler(ttsClient *client.CoreTTSClient) *UnifiedHandler {
 // GetVoices lấy danh sách giọng đọc đơn giản hóa theo model_id
 func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	user, ok := middleware.GetCurrentUser(r)
+	user, ok := currentUser(w, r)
 	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
@@ -137,10 +134,8 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 // Synthesize là Universal Gateway Endpoint xử lý mọi yêu cầu sinh âm thanh bất đồng bộ có Validate Manifest tự động.
 func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	user, ok := middleware.GetCurrentUser(r)
+	user, ok := currentUser(w, r)
 	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 

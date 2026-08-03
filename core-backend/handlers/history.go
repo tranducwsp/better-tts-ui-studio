@@ -9,7 +9,6 @@ import (
 
 	"core-backend/db"
 	"core-backend/db/sqlc"
-	"core-backend/middleware"
 
 	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
@@ -38,10 +37,8 @@ type JobSummaryResponse struct {
 // GetUserHistory lấy danh sách lịch sử tạo TTS của chính người dùng đang đăng nhập.
 func (h *HistoryHandler) GetUserHistory(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	user, ok := middleware.GetCurrentUser(r)
+	user, ok := currentUser(w, r)
 	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
@@ -143,10 +140,8 @@ type JobDetailResponse struct {
 func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	jobID := chi.URLParam(r, "job_id")
-	user, ok := middleware.GetCurrentUser(r)
+	user, ok := currentUser(w, r)
 	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
@@ -257,10 +252,8 @@ type JobInitRequest struct {
 // InitJob khởi tạo thông tin ban đầu của Job TTS trước khi tiến hành chia nhỏ văn bản và phát âm từng chunk.
 func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	user, ok := middleware.GetCurrentUser(r)
+	user, ok := currentUser(w, r)
 	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 

@@ -7,7 +7,6 @@ import (
 	"core-backend/config"
 	"core-backend/db"
 	"core-backend/db/sqlc"
-	"core-backend/middleware"
 	"core-backend/security"
 	"core-backend/state"
 
@@ -207,10 +206,8 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 // Me trả về thông tin chi tiết của người dùng đang đăng nhập dựa trên JWT Token.
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	user, ok := middleware.GetCurrentUser(r)
+	user, ok := currentUser(w, r)
 	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 

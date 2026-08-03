@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -22,9 +23,6 @@ func SetMaxUploadMB(mb int) {
 		maxUploadBytes = int64(mb) << 20
 	}
 }
-
-// MaxUploadBytes trả về trần hiện tại, tính bằng byte.
-func MaxUploadBytes() int64 { return maxUploadBytes }
 
 // audioSignatures là chữ ký nhận dạng định dạng, để bắt tệp bị đổi tên phần mở rộng.
 //
@@ -100,3 +98,52 @@ func uploadLimit() int64 {
 	}
 	return limit
 }
+
+// referenceUpload là tệp tham chiếu đã qua mọi bước kiểm, sẵn sàng để dùng.
+type referenceUpload struct {
+	ModelID  string
+	Filename string
+	Data     []byte
+}
+
+// receiveReferenceAudio chạy trọn chuỗi phân tích form → chốt mode → đọc tệp → kiểm định dạng.
+//
+// Hai handler upload (lưu lâu dài và dùng tạm) chỉ khác nhau ở việc làm gì SAU khi có
+// tệp hợp lệ, nhưng trước đây lặp lại cả bốn bước trên — nên chúng đã trôi ra khỏi nhau:
+// cùng một lỗi thiếu tệp trả về hai thông báo khác ngôn ngữ. Đã ghi phản hồi lỗi thì
+// trả ok=false, người gọi chỉ cần return.
+func receiveReferenceAudio(w http.ResponseWriter, r *http.Request) (referenceUpload, bool) {
+	if err := parseUpload(w, r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return referenceUpload{}, false
+	}
+
+	// Không đoán tên mode: hỏi Manifest xem Mode nào thực sự hỗ trợ cloning. Chuỗi "clone"
+	// cứng trước đây khiến giọng của một Engine đặt tên mode là zero_shot_clone bị lưu dưới
+	// một model_id không tồn tại, nên sau đó không mode nào liệt kê được nó.
+	modelID := r.FormValue("model_id")
+	if modelID == "" {
+		modelID = firstCloningMode()
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Thiếu tệp âm thanh")
+		return referenceUpload{}, false
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Không đọc được tệp âm thanh")
+		return referenceUpload{}, false
+	}
+
+	if err := checkReferenceAudio(header.Filename, data, modelID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return referenceUpload{}, false
+	}
+
+	return referenceUpload{ModelID: modelID, Filename: header.Filename, Data: data}, true
+}
+
