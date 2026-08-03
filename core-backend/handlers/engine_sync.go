@@ -24,7 +24,7 @@ func NewEngineSyncHandler(ttsClient *client.CoreTTSClient, feBuilderURL string) 
 	}
 }
 
-// ReloadManifest xử lý yêu cầu POST /api/internal/engine/reload (hoặc /api/internal/manifest/reload)
+// ReloadManifest xử lý yêu cầu POST /api/internal/engine/reload.
 // Tự động truy vấn lại Manifest mới nhất từ Core AI Engine và kích hoạt re-build HTML tĩnh ở Frontend Builder.
 func (h *EngineSyncHandler) ReloadManifest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

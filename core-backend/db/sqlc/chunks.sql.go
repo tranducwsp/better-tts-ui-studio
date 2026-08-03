@@ -50,26 +50,6 @@ func (q *Queries) CreateTTSChunk(ctx context.Context, arg CreateTTSChunkParams) 
 	return i, err
 }
 
-const getTTSChunkByID = `-- name: GetTTSChunkByID :one
-SELECT id, job_id, chunk_index, text, audio_path, status, error_msg FROM tts_chunks
-WHERE id = $1 LIMIT 1
-`
-
-func (q *Queries) GetTTSChunkByID(ctx context.Context, id string) (TtsChunk, error) {
-	row := q.db.QueryRow(ctx, getTTSChunkByID, id)
-	var i TtsChunk
-	err := row.Scan(
-		&i.ID,
-		&i.JobID,
-		&i.ChunkIndex,
-		&i.Text,
-		&i.AudioPath,
-		&i.Status,
-		&i.ErrorMsg,
-	)
-	return i, err
-}
-
 const listTTSChunksByJobID = `-- name: ListTTSChunksByJobID :many
 SELECT id, job_id, chunk_index, text, audio_path, status, error_msg FROM tts_chunks
 WHERE job_id = $1

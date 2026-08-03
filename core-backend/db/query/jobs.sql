@@ -7,19 +7,6 @@ RETURNING *;
 SELECT * FROM tts_jobs
 WHERE id = $1 LIMIT 1;
 
--- name: GetTTSJobByIDAndUser :one
-SELECT * FROM tts_jobs
-WHERE id = $1 AND user_id = $2 LIMIT 1;
-
--- name: ListTTSJobsByUserID :many
-SELECT * FROM tts_jobs
-WHERE user_id = $1
-ORDER BY created_at DESC;
-
--- name: ListAllTTSJobs :many
-SELECT * FROM tts_jobs
-ORDER BY created_at DESC;
-
 -- name: ListUserHistorySummaries :many
 SELECT 
     j.id AS job_id,

@@ -53,9 +53,7 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 	r.Route("/api", func(r chi.Router) {
 		// Public Auth & Engine Info routes
 		r.Get("/info", handlers.GetEngineInfo)
-		r.Get("/manifest", handlers.GetEngineInfo)
 		r.Post("/internal/engine/reload", engineSyncHandler.ReloadManifest)
-		r.Post("/internal/manifest/reload", engineSyncHandler.ReloadManifest)
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
 		r.Post("/logout", authHandler.Logout)
@@ -80,7 +78,6 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 			r.Post("/clone/upload-temp", cloneHandler.UploadTempVoice)
 			r.Get("/clone/voices", cloneHandler.GetUserVoices)
 			r.Delete("/clone/voices/{clone_id}", cloneHandler.DeleteUserVoice)
-
 
 			// Tasks
 			r.Get("/tasks/{task_id}", tasksHandler.GetTaskStatus)
