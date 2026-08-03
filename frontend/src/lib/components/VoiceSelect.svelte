@@ -139,7 +139,7 @@
               </button>
             {/if}
 
-            {#if onDelete}
+            {#if onDelete && v.deletable}
               <button
                 type="button"
                 onclick={(e) => handleDelete(e, v)}

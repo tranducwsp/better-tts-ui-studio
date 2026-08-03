@@ -6,6 +6,12 @@ export interface VoiceOption {
   descriptions?: string[];
   sampleUrl?: string;
   createdAt?: string;
+  /**
+   * True only for a voice this user saved, which is the only kind that can be deleted.
+   * Engine presets sit in the same list; offering a delete button on those would promise
+   * an action the backend has no route for.
+   */
+  deletable?: boolean;
 }
 
 export interface Preset {

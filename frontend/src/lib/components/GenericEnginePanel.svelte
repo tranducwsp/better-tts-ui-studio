@@ -3,8 +3,8 @@
   import VoiceSelect from './VoiceSelect.svelte';
   import WaveformTrimmer from './WaveformTrimmer.svelte';
   import CreateVoiceModal from './CreateVoiceModal.svelte';
-  import { fetchVoices, fetchPresets, cloneVoiceTemp } from '../api';
-  import { acceptedUploadFormats, maxUploadBytes, maxUploadLabel, supportedFormatsLabel } from '../audioSpec';
+  import { fetchVoices, fetchPresets, cloneVoiceTemp, deleteCloneVoice } from '../api';
+  import { acceptedUploadFormats, maxUploadBytes, maxUploadLabel, referenceSizeError, supportedFormatsLabel } from '../audioSpec';
   import { resolveCapabilities } from '../capabilities';
   import { pitchRange, speedRange } from '../ranges';
   import { resolveStreamingThreshold } from '../textLimits';
@@ -115,6 +115,7 @@
           const userVoices: VoiceOption[] = userPresets.map((p) => ({
             id: p.id,
             name: p.name,
+            deletable: true,
             descriptions: [p.gender, p.region, p.style].filter((d): d is string => typeof d === 'string' && d.trim() !== '')
           }));
           combined = [...userVoices, ...combined];
@@ -191,7 +192,7 @@
     isCloningTemp = true;
     toast.show('Processing reference audio file...', 'info');
     try {
-      const tempPath = await cloneVoiceTemp(file, activeMode.id);
+      const tempPath = await sendReference(file);
       referenceAudioPath = tempPath;
       toast.show('Reference audio file loaded successfully!', 'success');
     } catch (err: unknown) {
@@ -203,11 +204,39 @@
     }
   }
 
+  // Both reference uploads go through here so the engine's clip ceiling is enforced once.
+  // The trimmer path needs it most: trimming is exactly what a user does to get under the
+  // limit, so failing there must say so rather than surface a generic upload error.
+  async function sendReference(file: File): Promise<string> {
+    const tooBig = referenceSizeError(file.size, manifest, activeMode);
+    if (tooBig) throw new Error(tooBig);
+    return cloneVoiceTemp(file, activeMode.id);
+  }
+
+  // Deleting a saved voice needs a confirm: the reference clip goes with it on the server,
+  // so there is nothing to undo from. Only voices marked deletable reach here — engine
+  // presets share the list but have no route to delete.
+  async function handleDeleteVoice(v: VoiceOption) {
+    if (!confirm(`Delete the saved voice "${v.name}"? This cannot be undone.`)) return;
+
+    try {
+      await deleteCloneVoice(v.id);
+      // Clear the selection before reloading, otherwise the panel keeps synthesising
+      // against an id the backend no longer knows.
+      if (selectedVoice === v.id) selectedVoice = '';
+      toast.show(`Deleted voice "${v.name}".`, 'success');
+      await loadVoicesForMode(activeMode.id);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.show('Error deleting voice: ' + errMsg, 'error');
+    }
+  }
+
   function handleTrimmedAudio(blob: Blob) {
     const file = new File([blob], 'trimmed_reference.wav', { type: 'audio/wav' });
     isCloningTemp = true;
     toast.show('Uploading trimmed audio sample...', 'info');
-    cloneVoiceTemp(file, activeMode.id)
+    sendReference(file)
       .then((path) => {
         referenceAudioPath = path;
         toast.show('Reference audio updated from trimmer!', 'success');
@@ -316,6 +345,7 @@
           voices={activeVoices}
           selectedVoiceId={selectedVoice}
           onSelect={(v) => selectedVoice = v.id || v.name}
+          onDelete={handleDeleteVoice}
         />
       {/if}
     </div>
