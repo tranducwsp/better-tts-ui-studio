@@ -88,14 +88,22 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upload, ok := receiveReferenceAudio(w, r)
-	if !ok {
+	if err := parseUpload(w, r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
+	// Kiểm trước khi đọc tệp: đây là kiểm rẻ nhất, và nuốt hết một tệp lớn vào RAM để rồi
+	// từ chối vì thiếu tên giọng là lãng phí băng thông của người dùng cho một câu trả lời
+	// đã biết trước.
 	name := r.FormValue("name")
 	if name == "" {
 		writeError(w, http.StatusBadRequest, "Tên giọng là bắt buộc")
+		return
+	}
+
+	upload, ok := receiveReferenceAudio(w, r)
+	if !ok {
 		return
 	}
 
@@ -166,6 +174,11 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if _, ok := currentUser(w, r); !ok {
+		return
+	}
+
+	if err := parseUpload(w, r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

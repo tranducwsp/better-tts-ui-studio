@@ -106,18 +106,18 @@ type referenceUpload struct {
 	Data     []byte
 }
 
-// receiveReferenceAudio chạy trọn chuỗi phân tích form → chốt mode → đọc tệp → kiểm định dạng.
+// receiveReferenceAudio chốt mode → đọc tệp → kiểm định dạng, sau khi form đã được phân tích.
 //
 // Hai handler upload (lưu lâu dài và dùng tạm) chỉ khác nhau ở việc làm gì SAU khi có
-// tệp hợp lệ, nhưng trước đây lặp lại cả bốn bước trên — nên chúng đã trôi ra khỏi nhau:
+// tệp hợp lệ, nhưng trước đây lặp lại cả chuỗi trên — nên chúng đã trôi ra khỏi nhau:
 // cùng một lỗi thiếu tệp trả về hai thông báo khác ngôn ngữ. Đã ghi phản hồi lỗi thì
 // trả ok=false, người gọi chỉ cần return.
+//
+// parseUpload nằm ngoài hàm này có chủ ý: r.FormValue chỉ đọc được sau khi form được
+// phân tích, nên người gọi cần tự gọi parseUpload trước để còn kiểm những trường rẻ tiền
+// — nuốt hết một tệp 100 MB vào RAM rồi mới phát hiện thiếu tên giọng là đúng thứ mà
+// MaxBytesReader trong parseUpload được đặt ở đó để tránh.
 func receiveReferenceAudio(w http.ResponseWriter, r *http.Request) (referenceUpload, bool) {
-	if err := parseUpload(w, r); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return referenceUpload{}, false
-	}
-
 	// Không đoán tên mode: hỏi Manifest xem Mode nào thực sự hỗ trợ cloning. Chuỗi "clone"
 	// cứng trước đây khiến giọng của một Engine đặt tên mode là zero_shot_clone bị lưu dưới
 	// một model_id không tồn tại, nên sau đó không mode nào liệt kê được nó.
