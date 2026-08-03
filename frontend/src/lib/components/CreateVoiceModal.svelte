@@ -3,7 +3,7 @@
   import { cloneVoice } from '../api';
   import { toast } from '../toast.svelte';
   import type { VoiceMetadataFieldSpec, UniversalManifest, EngineModeSpec } from '../types';
-  import { acceptedUploadFormats, maxUploadBytes, maxUploadLabel, supportedFormatsLabel } from '../audioSpec';
+  import { acceptedUploadFormats, maxUploadBytes, maxUploadLabel, referenceSizeError, supportedFormatsLabel } from '../audioSpec';
 
   interface Props {
     isOpen: boolean;
@@ -92,6 +92,14 @@
     const nameVal = formData['name'] || '';
     if (!nameVal.trim()) {
       toast.show('Please enter a voice name!', 'error');
+      return;
+    }
+
+    // Checked on the trimmed clip, not the file that was picked: the picker's ceiling is
+    // deliberately looser so a long recording can be dropped in and cut down.
+    const tooBig = referenceSizeError(fileToUpload.size, manifest, mode);
+    if (tooBig) {
+      toast.show(tooBig, 'error');
       return;
     }
 

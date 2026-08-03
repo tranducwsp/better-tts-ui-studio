@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   acceptedUploadFormats,
-  audioSpecLabel,
   defaultFormat,
   downloadFormats,
   maxUploadBytes,
   referenceAudioSeconds,
+  referenceSizeError,
   resolveAudioSpec,
 } from './audioSpec';
 import type { UniversalManifest } from './types';
@@ -51,11 +51,6 @@ describe('per-mode audio spec', () => {
   it('puts the mode default first in the download list', () => {
     expect(downloadFormats(manifest, 'fast')[0]).toBe('mp3');
     expect(downloadFormats(manifest, 'standard')[0]).toBe('wav');
-  });
-
-  it('labels each mode with its own format', () => {
-    expect(audioSpecLabel(manifest, 'fast')).toBe('MP3 24kHz');
-    expect(audioSpecLabel(manifest, 'standard')).toBe('WAV 24kHz');
   });
 
   it('accepts a mode object as well as an id', () => {
@@ -105,5 +100,34 @@ describe('two upload limits', () => {
     const accepted = acceptedUploadFormats(m);
     expect(accepted).toBe('.wav,.mp3');
     expect(accepted).not.toContain('.flac');
+  });
+
+  // The gap this closes: max_reference_bytes was resolved and labelled but nothing
+  // consulted it, so an oversized clip was uploaded in full before the backend refused it.
+  it('rejects a clip over the post-trim ceiling but not the raw one', () => {
+    const m = {
+      audio_spec: {
+        max_upload_bytes: 100 * 1024 * 1024,
+        max_reference_bytes: 10 * 1024 * 1024,
+      },
+    } as unknown as UniversalManifest;
+
+    expect(referenceSizeError(9 * 1024 * 1024, m)).toBeNull();
+    expect(referenceSizeError(10 * 1024 * 1024, m)).toBeNull();
+    expect(referenceSizeError(11 * 1024 * 1024, m)).toContain('10 MB');
+    // A 50 MB raw file is under the upload ceiling, so the picker lets it in — this is the
+    // check that still stops it from reaching the engine untrimmed.
+    expect(referenceSizeError(50 * 1024 * 1024, m)).not.toBeNull();
+  });
+
+  it('honours a per-mode reference ceiling', () => {
+    const m = {
+      audio_spec: { max_reference_bytes: 10 * 1024 * 1024 },
+      supported_modes: [
+        { id: 'tight', name: 'Tight', description: '', audio_spec: { max_reference_bytes: 1024 * 1024 } },
+      ],
+    } as unknown as UniversalManifest;
+    expect(referenceSizeError(2 * 1024 * 1024, m, 'tight')).not.toBeNull();
+    expect(referenceSizeError(2 * 1024 * 1024, m)).toBeNull();
   });
 });

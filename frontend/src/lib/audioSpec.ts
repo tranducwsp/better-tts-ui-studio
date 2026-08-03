@@ -2,7 +2,7 @@ import type { AudioSpec, EngineModeSpec, UniversalManifest } from './types';
 
 /**
  * Output-format helpers, described by the engine's manifest rather than assumed.
- * Shared so the settings panel and the streaming panel label audio identically.
+ * One place resolves the precedence so no two callers disagree about what a mode emits.
  */
 
 /** Applied when neither the mode nor the engine states a value. */
@@ -101,14 +101,6 @@ export function resolveAudioSpec(
 
 type Mode = EngineModeSpec | string | null | undefined;
 
-/** e.g. "WAV 24kHz", "FLAC 48kHz", "MP3 22.1kHz". */
-export function audioSpecLabel(manifest: UniversalManifest | null | undefined, mode?: Mode): string {
-  const spec = resolveAudioSpec(manifest, mode);
-  const fmt = spec.default_format.toUpperCase();
-  const rate = spec.default_sample_rate;
-  return rate ? `${fmt} ${(rate / 1000).toFixed(rate % 1000 === 0 ? 0 : 1)}kHz` : fmt;
-}
-
 /**
  * accept="" filter for reference-audio uploads.
  *
@@ -202,13 +194,35 @@ export function maxUploadLabel(manifest: UniversalManifest | null | undefined, m
 }
 
 /** Ceiling for the trimmed clip the engine actually receives. */
-export function maxReferenceBytes(manifest: UniversalManifest | null | undefined, mode?: Mode): number {
+function maxReferenceBytes(manifest: UniversalManifest | null | undefined, mode?: Mode): number {
   return resolveAudioSpec(manifest, mode).max_reference_bytes;
 }
 
 /** maxReferenceBytes rendered for a label, e.g. "10 MB". */
-export function maxReferenceLabel(manifest: UniversalManifest | null | undefined, mode?: Mode): string {
+function maxReferenceLabel(manifest: UniversalManifest | null | undefined, mode?: Mode): string {
   return asMB(maxReferenceBytes(manifest, mode));
+}
+
+/**
+ * Why the engine would reject this clip on size, or null if it would accept it.
+ *
+ * The check belongs next to the ceiling it enforces, not at each of the three places a
+ * reference clip is sent: the ceiling was resolved from the manifest and labelled here,
+ * yet nothing consulted it, so an oversized clip travelled the whole way up before the
+ * backend said no. Distinct from the maxUploadBytes check at the file picker — that one
+ * bounds the raw file a user may drop in to trim, this one bounds what actually goes to
+ * the engine.
+ */
+export function referenceSizeError(
+  bytes: number,
+  manifest: UniversalManifest | null | undefined,
+  mode?: Mode
+): string | null {
+  const ceiling = maxReferenceBytes(manifest, mode);
+  if (ceiling > 0 && bytes > ceiling) {
+    return `Reference clip is ${asMB(bytes)}; the engine accepts up to ${maxReferenceLabel(manifest, mode)}. Trim it shorter.`;
+  }
+  return null;
 }
 
 /** Seconds of reference audio the engine wants — the window the trimmer selects. */
