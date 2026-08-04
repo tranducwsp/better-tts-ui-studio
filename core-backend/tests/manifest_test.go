@@ -33,7 +33,7 @@ func TestEngineManifestState_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.Set(manifest)
+			_ = s.Set(manifest)
 		}()
 	}
 
@@ -70,7 +70,9 @@ func TestEngineManifestState_Validation(t *testing.T) {
 			{ID: "standard"},
 		},
 	}
-	s.Set(manifest)
+	if err := s.Set(manifest); err != nil {
+		t.Fatalf("manifest hợp lệ mà bị từ chối: %v", err)
+	}
 
 	// Test max text length error
 	err := s.ValidateRequest("This text is way too long for max length 10", 1.0, "standard")

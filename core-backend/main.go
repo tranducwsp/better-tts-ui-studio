@@ -62,7 +62,13 @@ func main() {
 		for {
 			manifest, err := ttsClient.GetInfo()
 			if err == nil && manifest != nil {
-				state.GlobalManifestState.Set(manifest)
+				// Manifest tự mâu thuẫn được coi như chưa phát hiện được Engine: thà tiếp tục
+				// chờ còn hơn phục vụ bằng một bản khai mà resolver không diễn giải nổi.
+				if setErr := state.GlobalManifestState.Set(manifest); setErr != nil {
+					log.Printf("⏳ Engine tại %s trả về manifest không hợp lệ (%v). Thử lại sau 3s", cfg.CoreTTSURL, setErr)
+					time.Sleep(3 * time.Second)
+					continue
+				}
 				log.Printf("🚀 AI Engine Manifest discovered & cached: %s (v%s) [Max Length: %d chars]",
 					manifest.EngineName, manifest.Version, manifest.Constraints.MaxTextLength)
 				break

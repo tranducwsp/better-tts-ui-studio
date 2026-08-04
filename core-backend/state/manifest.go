@@ -1,7 +1,9 @@
 package state
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"sync"
 
 	"core-backend/types"
@@ -16,11 +18,40 @@ type EngineManifestState struct {
 // GlobalManifestState thể hiện trạng thái Singleton RAM Cache cho Manifest của AI Engine.
 var GlobalManifestState = &EngineManifestState{}
 
-// Set cập nhật bản Manifest mới vào bộ nhớ RAM Cache.
-func (s *EngineManifestState) Set(m *types.UniversalManifest) {
+// Set cập nhật bản Manifest mới vào bộ nhớ RAM Cache, sau khi kiểm tính nhất quán.
+//
+// Manifest tự mâu thuẫn bị từ chối và bản đang dùng được giữ nguyên: một lần reload lỗi
+// không được phép hạ một Engine đang chạy tốt xuống trạng thái tệ hơn trước khi gọi. Những
+// sai sót nhẹ hơn chỉ được ghi log — xem types.Validate để biết ranh giới giữa hai loại.
+func (s *EngineManifestState) Set(m *types.UniversalManifest) error {
+	errs, warnings := m.Validate()
+
+	for _, w := range warnings {
+		log.Printf("⚠️  Manifest: %s", w)
+	}
+
+	if len(errs) > 0 {
+		for _, e := range errs {
+			log.Printf("❌ Manifest bị từ chối: %v", e)
+		}
+		return fmt.Errorf("manifest không hợp lệ: %w", errors.Join(errs...))
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.manifest = m
+	return nil
+}
+
+// Clear xoá Manifest đang giữ, đưa nền tảng về trạng thái chưa phát hiện được Engine.
+//
+// Tách khỏi Set vì hai việc khác nhau: Set nhận một bản khai và phải kiểm nó, còn đây là chủ
+// động quay về trạng thái rỗng. Trước đây cùng một hàm làm cả hai qua Set(nil), nên không
+// phân biệt được "Engine khai sai" với "cố ý dọn trạng thái".
+func (s *EngineManifestState) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.manifest = nil
 }
 
 // Get truy xuất bản Manifest hiện tại từ RAM Cache (Thread-safe).

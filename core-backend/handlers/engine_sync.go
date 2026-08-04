@@ -48,8 +48,16 @@ func (h *EngineSyncHandler) ReloadManifest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Cập nhật RAM Cache nội bộ
-	state.GlobalManifestState.Set(manifest)
+	// Cập nhật RAM Cache nội bộ. Manifest mâu thuẫn bị từ chối và bản đang dùng giữ nguyên,
+	// nên một lần reload lỗi không làm hệ thống tệ hơn lúc trước khi gọi.
+	if err := state.GlobalManifestState.Set(manifest); err != nil {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
+			"status": "error",
+			"detail": "Manifest từ Core AI Engine không hợp lệ, đã giữ lại bản đang dùng: " + err.Error(),
+		})
+		return
+	}
 	log.Printf("🚀 Đã đồng bộ lại AI Engine Manifest thành công: %s (v%s) [Max Text: %d]",
 		manifest.EngineName, manifest.Version, manifest.Constraints.MaxTextLength)
 
