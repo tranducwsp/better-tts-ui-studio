@@ -90,8 +90,12 @@
         ],
         "default_format": "wav",
         "default_sample_rate": 24000,
-        "max_upload_bytes": 10485760,
-        "reference_audio_seconds": 5
+        "reference_audio_formats": [
+            "wav"
+        ],
+        "reference_audio_seconds": 5.0,
+        "max_upload_bytes": 104857600,
+        "max_reference_bytes": 10485760
     },
     "ui_schema": {
         "ui_mode": "beauty",
