@@ -46,6 +46,7 @@ type Config struct {
 	TempRetentionHours int
 	MaxUploadMB        int
 	CORSOrigins        []string
+	CookieSecure       bool
 	TTSClientTimeout   int
 }
 
@@ -123,6 +124,7 @@ func LoadConfig() *Config {
 		TempRetentionHours: num("TEMP_AUDIO_RETENTION_HOURS"),
 		MaxUploadMB:        num("MAX_UPLOAD_SIZE_MB"),
 		CORSOrigins:        corsOrigins,
+		CookieSecure:       num("COOKIE_SECURE") == 1,
 		TTSClientTimeout:   num("TTS_CLIENT_TIMEOUT_SECONDS"),
 	}
 

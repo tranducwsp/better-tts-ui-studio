@@ -148,6 +148,14 @@ var Settings = []Setting{
 	},
 
 	{
+		Key: "COOKIE_SECURE", Kind: KindInt, Default: "1", Min: 0, Max: 1,
+		Group: "CORS",
+		Doc: "Đặt cờ Secure trên cookie access_token, tức chỉ gửi cookie qua HTTPS. Mặc định bật.\n" +
+			"Trước đây cờ này bị viết cứng thành false, nên kể cả khi triển khai sau TLS thì token\n" +
+			"phiên vẫn đi được qua HTTP thường. Chỉ đặt 0 khi phát triển cục bộ trên http://localhost.",
+	},
+
+	{
 		Key: "CORS_ALLOWED_ORIGINS", Kind: KindList,
 		Default: "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173",
 		Group:   "CORS",
