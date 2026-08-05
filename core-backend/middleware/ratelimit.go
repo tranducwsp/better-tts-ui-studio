@@ -1,11 +1,18 @@
 package middleware
 
 import (
+	"context"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"core-backend/state"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // RateLimit giới hạn số request theo IP trong một cửa sổ thời gian trượt.
@@ -19,9 +26,10 @@ import (
 // Cửa sổ trượt chứ không phải cửa sổ cố định: với cửa sổ cố định, người gọi dồn hết lượt vào
 // cuối cửa sổ này và đầu cửa sổ sau sẽ đi được gấp đôi hạn mức trong khoảnh khắc giao nhau.
 //
-// Bộ đếm nằm trong RAM của từng tiến trình. Chạy nhiều replica thì hạn mức thực tế là
-// limit × số replica — vẫn chặn được dò mật khẩu tự động, nhưng nếu cần con số chính xác thì
-// phải chuyển sang Redis.
+// Bộ đếm nằm trên Redis khi có, RAM tiến trình khi không. Với bộ đếm trong RAM, hạn mức thực
+// tế là limit × số replica: mỗi tiến trình đếm riêng, nên người dò mật khẩu chỉ cần được load
+// balancer rải đều là có thêm bấy nhiêu lần thử — và đó là trạng thái mặc định của một
+// deployment nhiều node, không phải trường hợp hiếm.
 func RateLimit(limit int, window time.Duration) func(http.Handler) http.Handler {
 	l := &ipLimiter{
 		limit:  limit,
@@ -32,9 +40,9 @@ func RateLimit(limit int, window time.Duration) func(http.Handler) http.Handler 
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !l.allow(clientIP(r), time.Now()) {
+			if !l.allow(r.Context(), clientIP(r), time.Now()) {
 				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("Retry-After", strconvItoa(int(window.Seconds())))
+				w.Header().Set("Retry-After", strconv.Itoa(int(window.Seconds())))
 				w.WriteHeader(http.StatusTooManyRequests)
 				_, _ = w.Write([]byte(`{"detail":"Quá nhiều yêu cầu. Vui lòng thử lại sau."}`))
 				return
@@ -44,16 +52,68 @@ func RateLimit(limit int, window time.Duration) func(http.Handler) http.Handler 
 	}
 }
 
+// slidingWindowScript đếm và quyết định trong MỘT lượt gọi Redis.
+//
+// Phải là script chứ không phải chuỗi lệnh rời: đọc số lượt rồi mới ghi thêm là hai bước, và
+// hai request đồng thời đều đọc được "còn chỗ" trước khi bên nào kịp ghi — đúng lúc hạn mức
+// cần chính xác nhất thì nó hở. Redis chạy script tuần tự nên không có khe đó.
+//
+// ZSET với score là thời điểm gọi: ZREMRANGEBYSCORE cắt phần đã rơi ra khỏi cửa sổ, nên đây
+// là cửa sổ trượt thật, không phải cửa sổ cố định.
+//
+// KEYS[1] khoá  ARGV[1] mốc cắt  ARGV[2] thời điểm hiện tại  ARGV[3] hạn mức  ARGV[4] TTL giây
+// ARGV[5] chuỗi phân biệt request, để hai lượt cùng micro giây không ghi đè nhau
+var slidingWindowScript = redis.NewScript(`
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+local used = redis.call('ZCARD', KEYS[1])
+if used >= tonumber(ARGV[3]) then
+  return 0
+end
+redis.call('ZADD', KEYS[1], ARGV[2], ARGV[5])
+redis.call('EXPIRE', KEYS[1], ARGV[4])
+return 1
+`)
+
 type ipLimiter struct {
 	limit  int
 	window time.Duration
 
 	mu   sync.Mutex
 	hits map[string][]time.Time
+
+	// seq phân biệt hai request tới trong cùng một nano giây. Không có nó, ZADD lần sau ghi
+	// đè member cũ thay vì thêm một lượt, và hạn mức đếm thiếu.
+	seq atomic.Int64
 }
 
+// rateLimitKey đặt tiền tố để khoá không đụng khoá nào khác trên cùng Redis.
+func rateLimitKey(ip string) string { return "ratelimit:ip:" + ip }
+
 // allow ghi nhận một lượt gọi và cho biết nó có nằm trong hạn mức không.
-func (l *ipLimiter) allow(ip string, now time.Time) bool {
+func (l *ipLimiter) allow(ctx context.Context, ip string, now time.Time) bool {
+	if rdb := state.RedisClient; rdb != nil {
+		// Không dùng context của request: nó bị huỷ khi client ngắt kết nối, và một người dò
+		// mật khẩu tự ngắt sau mỗi lượt sẽ khiến lượt đó không được tính.
+		opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheOpTimeout)
+		defer cancel()
+
+		res, err := slidingWindowScript.Run(opCtx, rdb,
+			[]string{rateLimitKey(ip)},
+			now.Add(-l.window).UnixNano(),
+			now.UnixNano(),
+			l.limit,
+			int(l.window.Seconds())+1,
+			strconv.FormatInt(now.UnixNano(), 10)+"-"+strconv.FormatInt(l.seq.Add(1), 10),
+		).Int64()
+
+		if err == nil {
+			return res == 1
+		}
+		// Redis lỗi thì rơi xuống bộ đếm RAM bên dưới. Fail-open hoàn toàn sẽ biến một sự cố
+		// Redis thành cửa mở cho việc dò mật khẩu; bộ đếm mỗi tiến trình lỏng hơn nhưng vẫn
+		// chặn, nên đó là lựa chọn đúng hơn cả hai thái cực.
+	}
+
 	cutoff := now.Add(-l.window)
 
 	l.mu.Lock()
@@ -76,10 +136,11 @@ func (l *ipLimiter) allow(ip string, now time.Time) bool {
 	return true
 }
 
-// reap dọn các IP đã hết dấu vết.
+// reap dọn các IP đã hết dấu vết khỏi bộ đếm RAM.
 //
 // Không có nó, map giữ một khoá cho mỗi IP từng gọi tới và chỉ lớn lên — tức là một cách rẻ
-// để làm cạn RAM của chính máy chủ mà lớp giới hạn này đang bảo vệ.
+// để làm cạn RAM của chính máy chủ mà lớp giới hạn này đang bảo vệ. Nhánh Redis không cần:
+// EXPIRE trong script tự thu hồi khoá.
 func (l *ipLimiter) reap() {
 	for range time.Tick(10 * time.Minute) {
 		cutoff := time.Now().Add(-l.window)
@@ -116,19 +177,4 @@ func clientIP(r *http.Request) string {
 		return host
 	}
 	return r.RemoteAddr
-}
-
-// strconvItoa tránh import strconv chỉ để đổi một số giây thành chuỗi.
-func strconvItoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
 }
