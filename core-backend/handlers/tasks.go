@@ -227,7 +227,7 @@ func transcodePath(taskID, format string) string {
 // writeAudio ghi dữ liệu âm thanh kèm Content-Type và tên tập tin đúng định dạng.
 func writeAudio(w http.ResponseWriter, data []byte, format string) {
 	w.Header().Set("Content-Type", audio.MimeType(format))
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="tts_studio_audio.%s"`, format))
+	w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.`+format+`"`)
 	_, _ = w.Write(data)
 }
 

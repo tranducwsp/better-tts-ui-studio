@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -257,7 +256,7 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		// Ghi ra đĩa thất bại không phải lỗi chí tử — bản trong RAM là phương án dự phòng ngay
 		// dưới đây — nhưng nó cần để lại dấu vết: đĩa đầy biểu hiện thành RSS tăng dần thay vì
 		// một lỗi, và không có dòng log này thì nguyên nhân không thể truy ra từ triệu chứng.
-		filePath := filepath.Join(storage.TempDir(), fmt.Sprintf("%s.%s", taskID, sourceFormat))
+		filePath := filepath.Join(storage.TempDir(), taskID+"."+sourceFormat)
 		wroteToDisk := false
 		if err := os.MkdirAll(storage.TempDir(), 0755); err != nil {
 			log.Printf("Không tạo được thư mục tạm %s: %v — giữ âm thanh trong RAM", storage.TempDir(), err)
