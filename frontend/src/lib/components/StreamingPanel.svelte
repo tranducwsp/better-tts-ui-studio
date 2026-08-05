@@ -71,13 +71,15 @@
 
       chunks = chunkTexts.map((ctext, i) => {
         const c = dbChunksMap[i];
+        // Luôn đi qua /api/tasks/{id}/audio.
+        //
+        // Trước đây chunk mang audio_path và chỗ này ghép nó thành URL trực tiếp. Đó là khoá
+        // nội bộ của kho, nên nó chỉ có cơ hội hoạt động khi backend tình cờ phục vụ tĩnh
+        // đúng thư mục đó — và với S3 thì không bao giờ. Endpoint API kiểm quyền sở hữu mỗi
+        // lần gọi, còn một URL trỏ thẳng vào kho thì không.
         let url = null;
-        if (c) {
-          if (c.audio_path) {
-            url = c.audio_path.startsWith('/') ? c.audio_path : `/${c.audio_path}`;
-          } else if (c.task_id) {
-            url = `/api/tasks/${c.task_id}/audio?format=${defaultFormat(manifest, engine)}`;
-          }
+        if (c?.task_id) {
+          url = `/api/tasks/${c.task_id}/audio?format=${defaultFormat(manifest, engine)}`;
         }
 
         return {

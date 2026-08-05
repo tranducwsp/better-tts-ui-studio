@@ -151,7 +151,17 @@ var Settings = []Setting{
 			"Đây là biến khởi động: không thể lấy từ manifest, vì cần nó mới lấy được manifest.",
 	},
 
-	{Key: "STORAGE_DIR", Kind: KindString, Default: "storage", Group: "Storage"},
+	{
+		Key: "STORAGE_BACKEND", Kind: KindString, Default: "local", Group: "Storage",
+		Doc: "Nơi cất âm thanh và giọng tham chiếu: \"local\" (đĩa của tiến trình) hoặc \"s3\".\n" +
+			"Mặc định local để `docker compose up` chạy được ngay mà không cần tài khoản nào.\n" +
+			"Một giá trị lạ làm backend dừng khởi động thay vì lặng lẽ quay về local — tệp đi\n" +
+			"vào chỗ không ai đọc chỉ lộ ra khi có người cần lại chúng.\n" +
+			"Chọn \"s3\" khi web và worker chạy trên nhiều node: với \"local\", node này không\n" +
+			"đọc được tệp node kia vừa ghi.",
+	},
+	{Key: "STORAGE_DIR", Kind: KindString, Default: "storage", Group: "Storage",
+		Doc: "Gốc lưu trữ khi STORAGE_BACKEND=local. Bị bỏ qua với các backend khác."},
 	{
 		Key: "MAX_UPLOAD_SIZE_MB", Kind: KindInt, Default: "256", Min: 1, Max: 10240,
 		Group: "Storage",

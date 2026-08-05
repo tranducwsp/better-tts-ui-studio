@@ -1,9 +1,8 @@
 package storage
 
 import (
+	"context"
 	"log"
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -12,43 +11,34 @@ import (
 // số là cách chắc nhất để chúng lệch nhau.
 const DefaultSweepInterval = 1 * time.Hour
 
-// SweepTempFiles xoá các tập tin âm thanh tạm cũ hơn retention và trả về số tập tin đã xoá
-// cùng số byte giải phóng.
+// sweepOpTimeout chặn một lượt quét, để bộ quét không treo mãi khi kho ở xa không trả lời.
+const sweepOpTimeout = 2 * time.Minute
+
+// SweepTempObjects xoá âm thanh tạm cũ hơn retention và trả về số đối tượng đã xoá cùng số
+// byte giải phóng.
 //
-// Chỉ quét đúng một cấp trong dir và bỏ qua thư mục con: storage/temp chứa tập tin phẳng
-// theo task_id, còn giọng đã lưu nằm ở nhánh khác và không được phép xoá.
-func SweepTempFiles(dir string, retention time.Duration) (int, int64, error) {
-	entries, err := os.ReadDir(dir)
+// Chỉ quét nhánh temp: giọng người dùng đã lưu nằm ở nhánh khác và không được phép xoá. Ràng
+// buộc đó do List thi hành (không đệ quy), không phải do người gọi nhớ.
+func SweepTempObjects(ctx context.Context, store Store, retention time.Duration) (int, int64, error) {
+	objects, err := store.List(ctx, TempPrefix)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, 0, nil // chưa có job nào chạy
-		}
 		return 0, 0, err
 	}
 
-	cutoff := time.Now().Add(-retention)
+	cutoff := time.Now().Add(-retention).Unix()
 	var removed int
 	var freed int64
 
-	for _, e := range entries {
-		if e.IsDir() {
+	for _, o := range objects {
+		if o.Modified > cutoff {
 			continue
 		}
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		if info.ModTime().After(cutoff) {
-			continue
-		}
-
-		size := info.Size()
-		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
-			// Tập tin có thể đang được đọc để trả về cho client; lần quét sau sẽ dọn.
+		if err := store.Delete(ctx, o.Key); err != nil {
+			// Tệp có thể đang được đọc để trả về cho client; lần quét sau sẽ dọn.
 			continue
 		}
 		removed++
-		freed += size
+		freed += o.Size
 	}
 
 	return removed, freed, nil
@@ -58,15 +48,18 @@ func SweepTempFiles(dir string, retention time.Duration) (int, int64, error) {
 //
 // Quét ngay một lần lúc khởi động để dọn phần rác còn lại từ lần chạy trước — nếu tiến
 // trình bị dừng đột ngột thì không ai xoá những tập tin đã sinh ra trong phiên đó.
-func StartTempSweeper(dir string, retention, interval time.Duration) {
+func StartTempSweeper(store Store, retention, interval time.Duration) {
 	sweep := func() {
-		n, freed, err := SweepTempFiles(dir, retention)
+		ctx, cancel := context.WithTimeout(context.Background(), sweepOpTimeout)
+		defer cancel()
+
+		n, freed, err := SweepTempObjects(ctx, store, retention)
 		if err != nil {
-			log.Printf("Temp sweep on %s failed: %v", dir, err)
+			log.Printf("Quét dọn âm thanh tạm thất bại: %v", err)
 			return
 		}
 		if n > 0 {
-			log.Printf("Temp sweep: removed %d file(s), freed %.1f MB from %s", n, float64(freed)/(1024*1024), dir)
+			log.Printf("Quét dọn: đã xoá %d tệp, giải phóng %.1f MB", n, float64(freed)/(1024*1024))
 		}
 	}
 

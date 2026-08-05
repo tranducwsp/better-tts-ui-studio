@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -144,19 +142,19 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Bản đã chuyển mã của lần tải trước nằm trên đĩa cạnh bản gốc, nên lần này khỏi gọi
+	// Bản đã chuyển mã của lần tải trước nằm cạnh bản gốc trong kho, nên lần này khỏi gọi
 	// ffmpeg. Bộ quét dọn thu hồi cả hai theo cùng một chính sách.
 	if format != "" {
-		if b, err := os.ReadFile(transcodePath(taskID, format)); err == nil && len(b) > 0 {
+		if b, err := storage.Global.Get(r.Context(), storage.TranscodeKey(taskID, format)); err == nil && len(b) > 0 {
 			writeAudio(w, b, format)
 			return
 		}
 	}
 
-	// Task có thể đã bị dọn khỏi RAM; tệp trên đĩa mang phần mở rộng là định dạng gốc.
+	// Task có thể đã bị dọn khỏi RAM; đối tượng trong kho mang phần mở rộng là định dạng gốc.
 	if source == nil {
 		for _, ext := range audio.KnownFormats() {
-			b, err := os.ReadFile(filepath.Join(storage.TempDir(), taskID+"."+ext))
+			b, err := storage.Global.Get(r.Context(), storage.TempKey(taskID, ext))
 			if err != nil || len(b) == 0 {
 				continue
 			}
@@ -192,10 +190,10 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state.GlobalTaskManager.CacheTranscoded(taskID, format, converted)
-	// Bản trên đĩa chỉ là bộ nhớ đệm cho lần tải sau; ghi thất bại chỉ có nghĩa là lần sau
+	// Bản trong kho chỉ là bộ nhớ đệm cho lần tải sau; ghi thất bại chỉ có nghĩa là lần sau
 	// chạy lại ffmpeg, nên không cần làm hỏng phản hồi đang thành công. Vẫn log để đĩa đầy
 	// không biểu hiện thành "sao dạo này tải chậm".
-	if err := os.WriteFile(transcodePath(taskID, format), converted, 0644); err != nil {
+	if err := storage.Global.Put(r.Context(), storage.TranscodeKey(taskID, format), converted); err != nil {
 		log.Printf("Không cất được bản chuyển mã %s.%s: %v", taskID, format, err)
 	}
 	writeAudio(w, converted, format)
@@ -214,14 +212,6 @@ func safeTaskID(id string) bool {
 		}
 	}
 	return true
-}
-
-// transcodePath là nơi cất bản đã chuyển mã, cạnh bản gốc trong thư mục tạm.
-//
-// Hậu tố tách bằng dấu chấm để bộ quét dọn nhìn thấy chúng như mọi tệp tạm khác, và để
-// vòng dò định dạng gốc ở trên không nhầm một bản chuyển mã là bản gốc.
-func transcodePath(taskID, format string) string {
-	return filepath.Join(storage.TempDir(), taskID+".to."+format)
 }
 
 // writeAudio ghi dữ liệu âm thanh kèm Content-Type và tên tập tin đúng định dạng.

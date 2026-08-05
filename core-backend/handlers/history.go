@@ -125,12 +125,18 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 }
 
 // ChunkItemResponse thông tin từng đoạn audio chunk trong job.
+// ChunkItemResponse KHÔNG mang đường dẫn lưu trữ.
+//
+// Trường audio_path từng được trả ra và giao diện ghép nó thành URL trực tiếp. Đó là khoá nội
+// bộ của kho, nên với backend không phải đĩa thì nó vô nghĩa, và kể cả với đĩa thì trình duyệt
+// cũng không phục vụ được. Quan trọng hơn: một URL trỏ thẳng vào kho sẽ đi vòng qua ownsTask,
+// tức là bỏ đúng lớp kiểm quyền sở hữu vừa được thêm cho task. Client dùng
+// /api/tasks/{task_id}/audio, nơi quyền được kiểm mỗi lần.
 type ChunkItemResponse struct {
-	TaskID     string  `json:"task_id"`
-	ChunkIndex int     `json:"chunk_index"`
-	AudioPath  *string `json:"audio_path"`
-	Status     string  `json:"status"`
-	Text       string  `json:"text"`
+	TaskID     string `json:"task_id"`
+	ChunkIndex int    `json:"chunk_index"`
+	Status     string `json:"status"`
+	Text       string `json:"text"`
 }
 
 // JobDetailResponse chi tiết đầy đủ của một Job TTS bao gồm tất cả các đoạn Chunks ghép lại.
@@ -198,14 +204,9 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 	chunkTexts := make([]string, 0, len(best))
 
 	for i, c := range best {
-		var audioPathPtr *string
-		if c.AudioPath.Valid {
-			audioPathPtr = &c.AudioPath.String
-		}
 		chunkResponses[i] = ChunkItemResponse{
 			TaskID:     c.ID,
 			ChunkIndex: int(c.ChunkIndex),
-			AudioPath:  audioPathPtr,
 			Status:     c.Status,
 			Text:       c.Text,
 		}

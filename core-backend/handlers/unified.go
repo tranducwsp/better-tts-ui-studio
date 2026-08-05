@@ -4,8 +4,6 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"core-backend/client"
@@ -253,20 +251,17 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		sourceFormat := state.GlobalManifestState.Get().ResolveAudioSpec(req.Engine).DefaultFormat
 		taskItem.SetSourceFormat(sourceFormat)
 
-		// Ghi ra đĩa thất bại không phải lỗi chí tử — bản trong RAM là phương án dự phòng ngay
-		// dưới đây — nhưng nó cần để lại dấu vết: đĩa đầy biểu hiện thành RSS tăng dần thay vì
+		// Ghi vào kho thất bại không phải lỗi chí tử — bản trong RAM là phương án dự phòng ngay
+		// dưới đây — nhưng nó cần để lại dấu vết: kho đầy biểu hiện thành RSS tăng dần thay vì
 		// một lỗi, và không có dòng log này thì nguyên nhân không thể truy ra từ triệu chứng.
-		filePath := filepath.Join(storage.TempDir(), taskID+"."+sourceFormat)
-		wroteToDisk := false
-		if err := os.MkdirAll(storage.TempDir(), 0755); err != nil {
-			log.Printf("Không tạo được thư mục tạm %s: %v — giữ âm thanh trong RAM", storage.TempDir(), err)
-		} else if err := os.WriteFile(filePath, audioBytes, 0644); err != nil {
-			log.Printf("Không ghi được âm thanh task %s ra %s: %v — giữ trong RAM", taskID, filePath, err)
-		} else {
-			wroteToDisk = true
+		audioKey := storage.TempKey(taskID, sourceFormat)
+		wroteToStore := true
+		if err := storage.Global.Put(bgCtx, audioKey, audioBytes); err != nil {
+			log.Printf("Không ghi được âm thanh task %s vào kho (%s): %v — giữ trong RAM", taskID, audioKey, err)
+			wroteToStore = false
 		}
 
-		// Đĩa là nơi giữ âm thanh; RAM chỉ giữ khi chưa ghi được ra đĩa.
+		// Kho là nơi giữ âm thanh; RAM chỉ giữ khi chưa ghi được vào kho.
 		//
 		// Trước đây cùng một đoạn âm thanh nằm đồng thời trong RAM, trên đĩa và trên Redis,
 		// mà bộ dọn RAM lại chỉ theo thời gian (10 phút, quét mỗi 5 phút) và không có trần
@@ -274,7 +269,7 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		// phút SAU KHI đã xong, mỗi định dạng tải thêm là thêm một bản nữa — nên một đợt tải
 		// đồng thời là RSS tăng không phanh. GetTaskAudio đã biết đọc từ đĩa, nên bỏ bản
 		// trong RAM không mất chức năng nào.
-		if wroteToDisk {
+		if wroteToStore {
 			taskItem.ReleaseAudio()
 		} else {
 			taskItem.SetAudio(audioBytes)
@@ -285,7 +280,7 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		// sử đọc trạng thái từ DB, nên một lượt ghi thất bại trong im lặng để chunk mãi ở
 		// "processing": giao diện hiển thị một job không bao giờ hoàn thành dù tệp đã nằm sẵn
 		// trên đĩa.
-		if err := db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil); err != nil {
+		if err := db.UpdateChunkStatus(bgCtx, taskID, "done", &audioKey, nil); err != nil {
 			log.Printf("Chunk %s đã xong nhưng không ghi được trạng thái vào DB: %v", taskID, err)
 		}
 

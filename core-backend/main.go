@@ -65,14 +65,14 @@ func discoverManifest(ttsClient *client.CoreTTSClient, engineURL string, timeout
 func main() {
 	cfg := config.LoadConfig()
 
-	// Create storage directory if missing
-	if err := os.MkdirAll(cfg.StorageDir, 0755); err != nil {
-		log.Fatalf("Failed to create storage directory '%s': %v", cfg.StorageDir, err)
+	// Kho lưu trữ phải sẵn sàng trước khi bất kỳ handler nào ghi tệp.
+	//
+	// Dừng luôn nếu không khởi tạo được, thay vì để handler đầu tiên phát hiện: một backend
+	// nhận request mà không cất được âm thanh chỉ tiêu tốn GPU cho những tệp không ai lấy
+	// lại được.
+	if err := storage.Init(cfg.StorageBackend, cfg.StorageDir); err != nil {
+		log.Fatalf("Không khởi tạo được kho lưu trữ: %v", err)
 	}
-
-	// Gốc lưu trữ phải được đặt trước khi bất kỳ handler nào ghi tệp, nếu không chúng sẽ
-	// dùng mặc định "storage" và bỏ qua STORAGE_DIR.
-	storage.InitStorage(cfg.StorageDir)
 
 	// Trần upload cho mọi handler multipart. Không có dòng này, MAX_UPLOAD_SIZE_MB chỉ là
 	// một con số trong log khởi động.
@@ -82,10 +82,10 @@ func main() {
 	// cũng chỉ là một con số trong log, và mỗi request vẫn hỏi PostgreSQL một lần.
 	middleware.ConfigureUserCache(time.Duration(cfg.AuthUserCacheSeconds) * time.Second)
 
-	// Xoá định kỳ các tập tin âm thanh tạm. Mỗi lần tổng hợp ghi một tập tin vào
-	// storage/temp và trước đây không có gì dọn chúng, nên đĩa chỉ có thể phình lên.
+	// Xoá định kỳ âm thanh tạm. Mỗi lần tổng hợp ghi một đối tượng vào nhánh temp và trước
+	// đây không có gì dọn chúng, nên kho chỉ có thể phình lên.
 	storage.StartTempSweeper(
-		storage.TempDir(),
+		storage.Global,
 		time.Duration(cfg.TempRetentionHours)*time.Hour,
 		storage.DefaultSweepInterval,
 	)

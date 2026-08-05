@@ -1,37 +1,76 @@
 package storage
 
 import (
-	"os"
-	"path/filepath"
+	"fmt"
+	"log"
+	"strings"
 )
 
-// baseDir là gốc lưu trữ đang có hiệu lực, đặt một lần lúc khởi động từ STORAGE_DIR.
+// Global là Store đang có hiệu lực, chốt một lần lúc khởi động qua Init.
 //
-// Handler dùng TempDir()/ModeDir() thay vì ghép "storage/..." tại chỗ. Trước đây mỗi nơi
-// tự ghép chuỗi cứng, nên đặt STORAGE_DIR=/data khiến bộ quét dọn /data/temp trong khi
-// tổng hợp vẫn ghi vào ./storage/temp — cấu hình có vẻ nhận nhưng không có tác dụng.
+// Một biến gói thay vì tham số truyền qua từng handler: đây là singleton thứ ba của repo,
+// cùng lý do với GlobalTaskManager và GlobalManifestState — đổi nó thành dependency injection
+// sẽ chạm vào mọi constructor handler, và việc đó đáng làm cùng lúc cho cả ba chứ không phải
+// riêng cái này.
+var Global Store
+
+// baseDir là gốc lưu trữ đang có hiệu lực, giữ lại cho những chỗ còn cần đường dẫn thật.
 var baseDir = "storage"
 
-// InitStorage chốt gốc lưu trữ và đảm bảo nó tồn tại.
-func InitStorage(dir string) {
-	if dir != "" {
-		baseDir = dir
-	}
-	_ = os.MkdirAll(baseDir, 0755)
-}
-
-// TempDir là nơi chứa âm thanh tạm theo task, do bộ quét dọn định kỳ.
-func TempDir() string { return filepath.Join(baseDir, "temp") }
-
-// ModeDir là nơi chứa giọng người dùng đã lưu, tách theo mode rồi tới user.
+// Init chốt backend lưu trữ theo cấu hình.
 //
-// Cả hai thành phần đều đi qua safeSegment: người gọi được kỳ vọng đã kiểm modeID theo
-// Manifest, nhưng một hàm dựng đường dẫn không nên tin điều đó. Một lần quên kiểm ở tầng
-// handler là đủ để os.WriteFile ghi ra ngoài baseDir, nên chặn ở đây là chặn ở nơi hậu quả
-// xảy ra.
-func ModeDir(modeID, userID string) string {
-	return filepath.Join(baseDir, safeSegment(modeID), safeSegment(userID), "voice")
+// backend rỗng hoặc "local" dùng đĩa cục bộ. Tên khác được nhận diện ở đây để thông báo lỗi
+// nói rõ giá trị nào hợp lệ, thay vì lặng lẽ rơi về local — một backend gõ sai mà vẫn khởi
+// động được nghĩa là tệp đi vào chỗ không ai đọc, và điều đó chỉ lộ ra khi có người cần lại
+// chúng.
+func Init(backend, dir string) error {
+	switch strings.ToLower(strings.TrimSpace(backend)) {
+	case "", "local":
+		if dir != "" {
+			baseDir = dir
+		}
+		s, err := NewLocalStore(baseDir)
+		if err != nil {
+			return fmt.Errorf("không khởi tạo được kho cục bộ tại %q: %w", baseDir, err)
+		}
+		Global = s
+		log.Printf("Lưu trữ: cục bộ tại %s", s.root)
+		return nil
+
+	case "s3":
+		return fmt.Errorf("STORAGE_BACKEND=s3 chưa được cài đặt trong bản này")
+
+	default:
+		return fmt.Errorf("STORAGE_BACKEND=%q không hợp lệ; chỉ nhận \"local\" hoặc \"s3\"", backend)
+	}
 }
+
+// TempKey là khoá của âm thanh đã sinh cho một task.
+func TempKey(taskID, format string) string {
+	return "temp/" + safeSegment(taskID) + "." + safeSegment(format)
+}
+
+// TranscodeKey là khoá của bản đã chuyển mã, cất cạnh bản gốc.
+//
+// Hậu tố tách bằng dấu chấm để bộ quét dọn nhìn thấy chúng như mọi tệp tạm khác, và để vòng
+// dò định dạng gốc không nhầm một bản chuyển mã là bản gốc.
+func TranscodeKey(taskID, format string) string {
+	return "temp/" + safeSegment(taskID) + ".to." + safeSegment(format)
+}
+
+// VoiceKey là khoá của tệp giọng tham chiếu người dùng đã lưu, tách theo mode rồi tới user.
+func VoiceKey(modeID, userID, filename string) string {
+	return safeSegment(modeID) + "/" + safeSegment(userID) + "/voice/" + safeSegment(filename)
+}
+
+// TempPrefix là nhánh chứa âm thanh tạm, thứ duy nhất bộ quét dọn được phép đụng vào.
+const TempPrefix = "temp"
+
+// Root trả về gốc lưu trữ cục bộ đang có hiệu lực.
+//
+// Chỉ dùng để nhận ra tiền tố trong những bản ghi cũ lưu đường dẫn hệ thống thay vì khoá.
+// Với backend không phải đĩa, giá trị này không mô tả nơi thật sự chứa dữ liệu.
+func Root() string { return baseDir }
 
 // safeSegment thay mọi ký tự không nằm trong [A-Za-z0-9._-] bằng "_", và loại riêng ".."
 // vì nó chỉ gồm các ký tự được phép nhưng vẫn trèo lên một cấp.

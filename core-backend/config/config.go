@@ -39,7 +39,8 @@ type Config struct {
 	DBConnectRetryIntervalSec int
 
 	// Cấu hình Storage & Limit
-	StorageDir string
+	StorageBackend string
+	StorageDir     string
 	// Số giờ giữ tập tin âm thanh tạm trước khi bị quét xoá.
 	TempRetentionHours int
 	MaxUploadMB        int
@@ -148,6 +149,7 @@ func LoadConfig() *Config {
 		DBConnectMaxRetries:       num("DB_CONNECT_MAX_RETRIES"),
 		DBConnectRetryIntervalSec: num("DB_CONNECT_RETRY_INTERVAL_SECONDS"),
 
+		StorageBackend:     str("STORAGE_BACKEND"),
 		StorageDir:         str("STORAGE_DIR"),
 		TempRetentionHours: num("TEMP_AUDIO_RETENTION_HOURS"),
 		MaxUploadMB:        num("MAX_UPLOAD_SIZE_MB"),
@@ -178,8 +180,8 @@ func (c *Config) logSummary() {
 	log.Printf("  db pool       max=%d min=%d lifetime=%dm idle=%dm retry=%dx%ds",
 		c.DBMaxConns, c.DBMinConns, c.DBMaxConnLifetimeMinutes, c.DBMaxConnIdleMinutes,
 		c.DBConnectMaxRetries, c.DBConnectRetryIntervalSec)
-	log.Printf("  storage       %s | giữ tạm %dh | upload tối đa %dMB",
-		c.StorageDir, c.TempRetentionHours, c.MaxUploadMB)
+	log.Printf("  storage       backend=%s dir=%s | giữ tạm %dh | upload tối đa %dMB",
+		c.StorageBackend, c.StorageDir, c.TempRetentionHours, c.MaxUploadMB)
 	log.Printf("  cors          %s", strings.Join(c.CORSOrigins, ", "))
 }
 

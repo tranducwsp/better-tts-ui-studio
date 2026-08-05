@@ -133,7 +133,7 @@ func receiveReferenceAudio(w http.ResponseWriter, r *http.Request) (referenceUpl
 		modelID = firstCloningMode()
 	}
 
-	// model_id đi vào đường dẫn lưu tệp bên dưới (storage.ModeDir), nên nó phải là một Mode
+	// model_id đi vào khoá lưu trữ bên dưới (storage.VoiceKey), nên nó phải là một Mode
 	// Engine thực sự khai — không phải chuỗi bất kỳ. Trước đây trường này được dùng nguyên
 	// văn: model_id=../../.. đưa os.WriteFile ra ngoài thư mục storage, với nội dung tệp do
 	// người gửi kiểm soát. ResolveAudioSpec không chắn được vì nó lặng lẽ quay về mặc định

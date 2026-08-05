@@ -39,7 +39,6 @@ export interface HistoryItem {
 export interface ChunkItemResponse {
   task_id: string;
   chunk_index: number;
-  audio_path?: string | null;
   status: string;
   text: string;
 }

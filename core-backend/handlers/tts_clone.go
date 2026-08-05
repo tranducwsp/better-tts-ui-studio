@@ -116,27 +116,20 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	style := r.FormValue("style")
 	extra := extraMetadata(r)
 
-	// 1. Save reference audio file under storage tier
-	userDir := storage.ModeDir(upload.ModelID, user.ID)
-	if err := os.MkdirAll(userDir, 0755); err != nil {
-		log.Printf("Không tạo được thư mục giọng %s: %v", userDir, err)
-		writeError(w, http.StatusInternalServerError, "Không lưu được giọng lên đĩa")
-		return
-	}
-
+	// 1. Save reference audio under the storage tier
 	cloneID := uuid.NewString()
 	ext := "wav"
 	if idx := strings.LastIndex(upload.Filename, "."); idx != -1 {
 		ext = upload.Filename[idx+1:]
 	}
-	filePath := filepath.Join(userDir, fmt.Sprintf("%s.%s", cloneID, ext))
+	voiceKey := storage.VoiceKey(upload.ModelID, user.ID, cloneID+"."+ext)
 
-	// Đĩa đầy hay hết quota trước đây vẫn đi tiếp và báo "Nhân bản giọng thành công!", đồng
+	// Kho đầy hay hết quota trước đây vẫn đi tiếp và báo "Nhân bản giọng thành công!", đồng
 	// thời ghi một bản ghi trỏ tới tệp không tồn tại — người dùng chỉ phát hiện khi chọn dùng
 	// giọng đó, ở một lần khác và một thông báo lỗi không liên quan.
-	if err := os.WriteFile(filePath, upload.Data, 0644); err != nil {
-		log.Printf("Không ghi được tệp giọng %s: %v", filePath, err)
-		writeError(w, http.StatusInternalServerError, "Không lưu được giọng lên đĩa")
+	if err := storage.Global.Put(r.Context(), voiceKey, upload.Data); err != nil {
+		log.Printf("Không ghi được tệp giọng %s: %v", voiceKey, err)
+		writeError(w, http.StatusInternalServerError, "Không lưu được giọng vào kho")
 		return
 	}
 
@@ -146,7 +139,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	// lại thì nó là rác vô hình mà bộ quét dọn (chỉ nhìn storage/temp) không bao giờ thu hồi.
 	res, err := h.TTSClient.CloneVoice(upload.Data, upload.Filename, name)
 	if err != nil {
-		_ = os.Remove(filePath)
+		_ = storage.Global.Delete(r.Context(), voiceKey)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -162,7 +155,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		UserID:   user.ID,
 		ModelID:  upload.ModelID,
 		Name:     name,
-		FilePath: filePath,
+		FilePath: voiceKey,
 	}
 	if gender != "" {
 		params.Gender = pgtype.Text{String: gender, Valid: true}
@@ -177,7 +170,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 
 	_, err = db.Queries.CreateUserVoice(r.Context(), params)
 	if err != nil {
-		_ = os.Remove(filePath)
+		_ = storage.Global.Delete(r.Context(), voiceKey)
 		log.Printf("Không lưu được bản ghi giọng %s: %v", coreCloneID, err)
 		writeError(w, http.StatusInternalServerError, "Không lưu được giọng vào cơ sở dữ liệu")
 		return
@@ -221,6 +214,22 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 		"clone_id": cloneID,
 		"message":  "Nạp giọng tạm thành công!",
 	})
+}
+
+// storageKey đổi giá trị FilePath trong DB thành khoá của kho.
+//
+// Bản ghi tạo trước khi tầng lưu trữ tách thành interface mang đường dẫn hệ thống đầy đủ
+// ("storage/clone/<user>/voice/x.wav"), còn bản ghi mới mang khoá ("clone/<user>/voice/x.wav").
+// Bỏ đúng một tiền tố gốc nếu có, nên cả hai dạng đều xoá được — không có bước này thì mọi
+// giọng lưu trước lần đổi này nằm lại trong kho vĩnh viễn.
+//
+// Cũng đổi dấu phân cách của Windows sang "/" vì khoá luôn dùng "/".
+func storageKey(filePath string) string {
+	key := filepath.ToSlash(filePath)
+	if root := filepath.ToSlash(storage.Root()); root != "" {
+		key = strings.TrimPrefix(key, strings.TrimSuffix(root, "/")+"/")
+	}
+	return strings.TrimPrefix(key, "/")
 }
 
 // UserVoiceResponse cấu trúc phản hồi danh sách giọng nhân bản của người dùng.
@@ -321,10 +330,14 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Tệp không xoá được chỉ còn là rác trên đĩa, không còn ảnh hưởng tới người dùng — nên
+	// Tệp không xoá được chỉ còn là rác trong kho, không còn ảnh hưởng tới người dùng — nên
 	// ghi log rồi báo thành công, vì với họ giọng đó đã biến mất thật.
+	//
+	// FilePath của bản ghi cũ là đường dẫn hệ thống ("storage/clone/<user>/voice/x.wav") chứ
+	// không phải khoá; storageKey bóc phần gốc ra để những giọng lưu trước lần đổi này vẫn xoá
+	// được thay vì tồn tại mãi.
 	if voice.FilePath != "" && os.Getenv("PRESERVE_FILES") == "" {
-		if err := os.Remove(voice.FilePath); err != nil && !os.IsNotExist(err) {
+		if err := storage.Global.Delete(r.Context(), storageKey(voice.FilePath)); err != nil {
 			log.Printf("Bản ghi giọng %s đã xoá nhưng còn tệp %s: %v", cloneID, voice.FilePath, err)
 		}
 	}
