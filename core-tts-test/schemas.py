@@ -21,9 +21,19 @@ class TaskStatusResponse(BaseModel):
     error: Optional[str] = None
 
 class VoiceInfo(BaseModel):
+    """A preset voice the engine ships with.
+
+    `modes` names the modes this voice works in, and is required — same as the real engine's
+    schema. It stayed absent here after `modes` was tightened from optional to required, so
+    this mock answered /voices with every voice for every mode while the real engine filtered.
+    A mock that is laxer than the contract cannot catch the bug it exists to catch: the UI
+    offering a voice its mode cannot use looked fine in development and only broke against
+    the real engine.
+    """
     id: str
     name: str
     descriptions: List[str] = Field(default_factory=list)
+    modes: List[str]
 
 class EngineCapabilities(BaseModel):
     """What an engine (or one of its modes) can do.
@@ -41,12 +51,34 @@ class EngineCapabilities(BaseModel):
     supports_emotion: Optional[bool] = None
     supports_ssml: Optional[bool] = None
 
+class AudioSpec(BaseModel):
+    """Định dạng Engine xuất ra, và ràng buộc cho âm thanh tham chiếu nhận vào.
+
+    Xuất hiện hai tầng — toàn Engine và theo Mode — nên mọi trường Optional: None nghĩa là
+    kế thừa tầng trên.
+    """
+    supported_formats: Optional[List[str]] = None
+    supported_sample_rates: Optional[List[int]] = None
+    default_format: Optional[str] = None
+    default_sample_rate: Optional[int] = None
+
+    # Định dạng đọc được cho âm thanh tham chiếu. Engine mock này nhận cả MP3 để chứng minh
+    # rằng nền tảng không giả định WAV — không suy được từ supported_formats ở trên.
+    reference_audio_formats: Optional[List[str]] = None
+    reference_audio_seconds: Optional[float] = None
+
+    # Hai trần cho hai thời điểm: tệp thô kéo vào, và clip sau khi cắt.
+    max_upload_bytes: Optional[int] = None
+    max_reference_bytes: Optional[int] = None
+
 class EngineModeSpec(BaseModel):
     """One processing mode. Capabilities stated here override the engine-wide set."""
     id: str
     name: str
     description: str = ""
     capabilities: EngineCapabilities = Field(default_factory=lambda: EngineCapabilities())
+    # Chỉ khai những trường khác với audio_spec toàn Engine.
+    audio_spec: AudioSpec = Field(default_factory=lambda: AudioSpec())
 
 class RangeConstraint(BaseModel):
     min: float = 0.5
@@ -73,26 +105,6 @@ class EngineConstraints(BaseModel):
     # emotion support with no vocabulary to choose from would be a contradiction.
     supported_emotions: List[str] = Field(default_factory=lambda: ["neutral", "happy", "sad", "angry", "excited"])
     chunking: ChunkingSpec = Field(default_factory=ChunkingSpec)
-
-class AudioSpec(BaseModel):
-    """Định dạng Engine xuất ra, và ràng buộc cho âm thanh tham chiếu nhận vào.
-
-    Xuất hiện hai tầng — toàn Engine và theo Mode — nên mọi trường Optional: None nghĩa là
-    kế thừa tầng trên.
-    """
-    supported_formats: Optional[List[str]] = None
-    supported_sample_rates: Optional[List[int]] = None
-    default_format: Optional[str] = None
-    default_sample_rate: Optional[int] = None
-
-    # Định dạng đọc được cho âm thanh tham chiếu. Engine mock này nhận cả MP3 để chứng minh
-    # rằng nền tảng không giả định WAV — không suy được từ supported_formats ở trên.
-    reference_audio_formats: Optional[List[str]] = None
-    reference_audio_seconds: Optional[float] = None
-
-    # Hai trần cho hai thời điểm: tệp thô kéo vào, và clip sau khi cắt.
-    max_upload_bytes: Optional[int] = None
-    max_reference_bytes: Optional[int] = None
 
 class AutoFormatRule(BaseModel):
     find: str

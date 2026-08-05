@@ -48,10 +48,20 @@ HOST = os.getenv("CORE_HOST", "0.0.0.0")
 tasks_db: Dict[str, Dict[str, Any]] = {}
 cloned_voices_db: Dict[str, Dict[str, Any]] = {}
 
+# Mock voices, each declaring the modes it belongs to.
+#
+# The pools deliberately differ per mode instead of every voice being usable everywhere: the
+# real engine splits them (Edge TTS backs `fast`, the local model backs the rest), and a mock
+# where every voice works in every mode would let a mode/voice mismatch pass unnoticed until
+# it hit the real engine. `clone` and `zero_shot_clone` carry no preset voices at all, since
+# those modes take a reference upload.
 MOCK_VOICES = [
-    {"id": "Mock Voice A", "name": "Mock Voice A", "descriptions": ["Female", "Northern", "Expressive"]},
-    {"id": "Mock Voice B", "name": "Mock Voice B", "descriptions": ["Male", "Southern", "News"]},
-    {"id": "Mock Voice C", "name": "Mock Voice C", "descriptions": ["Male", "Central", "Natural"]}
+    {"id": "Mock Voice A", "name": "Mock Voice A", "descriptions": ["Female", "Northern", "Expressive"],
+     "modes": ["standard", "express", "multilingual", "emotion_v2"]},
+    {"id": "Mock Voice B", "name": "Mock Voice B", "descriptions": ["Male", "Southern", "News"],
+     "modes": ["standard", "express", "multilingual", "emotion_v2"]},
+    {"id": "Mock Voice C", "name": "Mock Voice C", "descriptions": ["Male", "Central", "Natural"],
+     "modes": ["fast"]},
 ]
 
 @app.get("/", tags=["Info"])
@@ -71,9 +81,15 @@ def get_info():
     return UniversalManifest()
 
 @app.get("/voices", response_model=list[VoiceInfo], tags=["Voices"])
-def get_voices():
-    """Returns available mock voices."""
-    return [VoiceInfo(**v) for v in MOCK_VOICES]
+def get_voices(model_id: str | None = None):
+    """Returns available mock voices, narrowed to one mode when model_id is given.
+
+    Accepting model_id matters as much as declaring `modes`: the platform passes it and trusts
+    the response, so a mock that ignored the parameter returned voices the mode cannot use.
+    """
+    if model_id is None:
+        return [VoiceInfo(**v) for v in MOCK_VOICES]
+    return [VoiceInfo(**v) for v in MOCK_VOICES if model_id in v["modes"]]
 
 @app.get("/health", tags=["Health"])
 def health_check():
