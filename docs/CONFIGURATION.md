@@ -75,7 +75,7 @@ The table below is a summary; `settings.go` and `.env.example` are authoritative
 
 | Variable | Default | Notes |
 |---|---|---|
-| `SECRET_KEY` | *random per boot* | Signs JWTs. Unset logs a warning; sessions then die on restart and replicas cannot share them. |
+| `SECRET_KEY` | **none — required** | Signs JWTs. Unset refuses to start (`requireAll`), rather than booting on a throwaway key. |
 | `DEFAULT_ADMIN_USERNAME` / `_PASSWORD` | empty | Both blank ⇒ no admin seeded. |
 | `DEFAULT_USER_USERNAME` / `_PASSWORD` | empty | Same. |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | |
@@ -85,14 +85,16 @@ The table below is a summary; `settings.go` and `.env.example` are authoritative
 | `DB_MAX_CONN_LIFETIME_MINUTES` / `DB_MAX_CONN_IDLE_MINUTES` | `30` / `15` | |
 | `DB_CONNECT_MAX_RETRIES` / `DB_CONNECT_RETRY_INTERVAL_SECONDS` | `10` / `2` | |
 | `REDIS_URL` / `REDIS_PASSWORD` | `localhost:6379` / empty | Absent ⇒ in-memory mode |
-| `CORE_ENGINE_URL` | `http://localhost:8001` | Where the manifest is fetched from. Legacy alias: `CORE_TTS_URL`. |
-| `CORE_ENGINE_GRPC_URL` | `localhost:50051` | gRPC endpoint. Legacy alias: `CORE_TTS_GRPC_URL`. |
+| `CORE_ENGINE_URL` | `http://localhost:8001` | Where the manifest is fetched from. |
+| `CORE_ENGINE_GRPC_URL` | `localhost:50051` | gRPC endpoint. Read into `Config`; the gRPC path is written but not wired in yet, so nothing consumes this today. Set it now and it will be correct when that path lands. |
 | `FE_BUILDER_URL` | `http://frontend-builder:3001` | Backend → builder: signals a rebuild when the manifest changes. Carries no payload. |
 | `VITE_BACKEND_URL` | `http://core-backend:8000` | Builder → backend: where it fetches the manifest. Read by the frontend, not the backend. |
 | `TTS_CLIENT_TIMEOUT_SECONDS` | `60` | |
+| `COOKIE_SECURE` | `1` | Sets Secure on the session cookie. Use `0` only for local http://localhost. |
+| `POSTGRES_PASSWORD` | **none — required** | Read by docker-compose to build `DATABASE_URL`; compose refuses to start while empty. |
 | `STORAGE_DIR` | `storage` | |
 | `TEMP_AUDIO_RETENTION_HOURS` | `24` | Sweeper deletes older temp audio hourly |
-| `MAX_UPLOAD_SIZE_MB` | `32` | Infrastructure ceiling; `audio_spec.max_upload_bytes` can lower it |
+| `MAX_UPLOAD_SIZE_MB` | `256` | Infrastructure ceiling; `audio_spec.max_upload_bytes` can lower it |
 | `CORS_ALLOWED_ORIGINS` | localhost dev ports | Comma-separated |
 | `UI_MODE` | `beauty` | Read by the *engine*, surfaced as `ui_schema.ui_mode` |
 

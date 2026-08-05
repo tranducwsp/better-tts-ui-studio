@@ -161,10 +161,12 @@ Two things that made the stack unsafe to expose, both fixed.
 repository could forge a valid admin token without a password or database access. The
 seed-account passwords were literals in the same file.
 
-There is no default now. An unset `SECRET_KEY` generates a random one and logs a warning
-explaining the consequences — sessions do not survive a restart and multiple replicas cannot
-share them — so the insecure path is loud rather than silent. Seed accounts default to empty,
-and `seedDefaultAccounts` already skipped entries missing a username or password, so an
+There is no default now, and no fallback either. An unset `SECRET_KEY` used to generate a
+random key and log a warning — safer than a shared literal, but it still let the process boot
+into a state nobody chose: sessions dropped on every restart and replicas could not share
+them, announced only by a log line that scrolls away. `requireAll()` refuses to start instead,
+listing every missing required variable at once. Seed accounts default to empty, and
+`seedDefaultAccounts` already skipped entries missing a username or password, so an
 unconfigured deployment simply creates no accounts and the first user registers through the UI.
 
 `.env.example` now lists every variable, with the required ones called out.
