@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -26,10 +27,9 @@ func NewUtilsHandler() *UtilsHandler {
 func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	err := r.ParseMultipartForm(32 << 20) // Read 32MB max
-	if err != nil {
+	if err := parseUpload(w, r); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to parse upload form"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
 	}
 
@@ -92,6 +92,48 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// maxDocumentXMLBytes là trần cho phần XML đã giải nén của một tệp DOCX/ODT.
+//
+// MaxBytesReader trong parseUpload chỉ chặn kích thước tệp NÉN, mà DOCX và ODT đều là zip:
+// một tệp 597 KB giải nén ra 600 MB (đã đo, khuếch đại ~1000x), nên trần đầu vào không nói
+// gì về lượng RAM việc bóc chữ sẽ dùng. Vài request song song là đủ hạ tiến trình, và người
+// gửi chỉ cần một tài khoản đã được duyệt.
+//
+// 64 MB rộng hơn mọi tài liệu văn bản thực tế nhiều lần — văn bản thuần trong một tệp Word
+// nghìn trang vẫn ở mức vài MB — nên trần này không chạm tới người dùng thật, chỉ chạm tệp
+// được dựng riêng để phình ra.
+const maxDocumentXMLBytes = 64 << 20
+
+// readZipEntry giải nén một entry trong zip với trần cố định.
+//
+// Kiểm hai lần, vì mỗi lần bắt một kiểu tệp khác nhau: UncompressedSize64 lấy từ header của
+// zip nên chặn được trước khi đọc byte nào, nhưng header do người tạo tệp ghi và nói dối
+// được. LimitReader là thứ thực sự chặn, đo trên dữ liệu đã giải nén. Đọc thêm một byte quá
+// trần để phân biệt "vừa đủ" với "vượt".
+func readZipEntry(f *zip.File) ([]byte, error) {
+	if f.UncompressedSize64 > maxDocumentXMLBytes {
+		return nil, fmtError(fmt.Sprintf(
+			"nội dung tài liệu sau giải nén (%d MB) vượt quá giới hạn %d MB",
+			f.UncompressedSize64>>20, maxDocumentXMLBytes>>20))
+	}
+
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	data, err := io.ReadAll(io.LimitReader(rc, maxDocumentXMLBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxDocumentXMLBytes {
+		return nil, fmtError(fmt.Sprintf(
+			"nội dung tài liệu sau giải nén vượt quá giới hạn %d MB", maxDocumentXMLBytes>>20))
+	}
+	return data, nil
+}
+
 // extractDOCXText đọc file DOCX (Zip archive) và parse XML word/document.xml để lấy toàn bộ chữ.
 func extractDOCXText(data []byte) (string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
@@ -110,13 +152,7 @@ func extractDOCXText(data []byte) (string, error) {
 		return "", fmtError("document.xml không tồn tại trong DOCX")
 	}
 
-	rc, err := docFile.Open()
-	if err != nil {
-		return "", err
-	}
-	defer rc.Close()
-
-	xmlBytes, err := io.ReadAll(rc)
+	xmlBytes, err := readZipEntry(docFile)
 	if err != nil {
 		return "", err
 	}
@@ -167,13 +203,7 @@ func extractODTText(data []byte) (string, error) {
 		return "", fmtError("content.xml không tồn tại trong ODT")
 	}
 
-	rc, err := contentFile.Open()
-	if err != nil {
-		return "", err
-	}
-	defer rc.Close()
-
-	xmlBytes, err := io.ReadAll(rc)
+	xmlBytes, err := readZipEntry(contentFile)
 	if err != nil {
 		return "", err
 	}
@@ -221,19 +251,28 @@ func extractODTText(data []byte) (string, error) {
 	return sb.String(), nil
 }
 
+// Biểu thức chính quy bóc chữ từ PDF, biên dịch một lần lúc nạp gói.
+//
+// rePDFStringInArray trước đây được biên dịch NGAY TRONG vòng lặp duyệt kết quả khớp: một
+// PDF nhiều nghìn mảng chữ là bấy nhiêu lần biên dịch lại đúng một mẫu không đổi. Hai mẫu
+// còn lại cũng được biên dịch lại mỗi lần gọi hàm.
+var (
+	rePDFTextObj       = regexp.MustCompile(`\(([^)]*)\)\s*Tj|\[([^\]]*)\]\s*TJ`)
+	rePDFStringInArray = regexp.MustCompile(`\(([^)]*)\)`)
+	rePDFReadableRun   = regexp.MustCompile(`[\w\s.,!?;:\"'-]{5,}`)
+)
+
 // extractPDFText bóc tách các dòng chữ thô từ PDF Stream Objects.
 func extractPDFText(data []byte) (string, error) {
 	var sb strings.Builder
-	reTextObj := regexp.MustCompile(`\(([^)]*)\)\s*Tj|\[([^\]]*)\]\s*TJ`)
-	matches := reTextObj.FindAllSubmatch(data, -1)
+	matches := rePDFTextObj.FindAllSubmatch(data, -1)
 
 	for _, m := range matches {
 		if len(m[1]) > 0 {
 			sb.Write(m[1])
 			sb.WriteString(" ")
 		} else if len(m[2]) > 0 {
-			reSub := regexp.MustCompile(`\(([^)]*)\)`)
-			subMatches := reSub.FindAllSubmatch(m[2], -1)
+			subMatches := rePDFStringInArray.FindAllSubmatch(m[2], -1)
 			for _, sm := range subMatches {
 				sb.Write(sm[1])
 			}
@@ -243,8 +282,7 @@ func extractPDFText(data []byte) (string, error) {
 
 	res := sb.String()
 	if strings.TrimSpace(res) == "" {
-		reClean := regexp.MustCompile(`[\w\s.,!?;:\"'-]{5,}`)
-		found := reClean.FindAllString(string(data), -1)
+		found := rePDFReadableRun.FindAllString(string(data), -1)
 		res = strings.Join(found, "\n")
 	}
 

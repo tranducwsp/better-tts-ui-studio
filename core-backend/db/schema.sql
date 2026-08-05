@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS tts_jobs (
     engine VARCHAR(50) NOT NULL,
     voice VARCHAR(255) NOT NULL,
     speed DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+    pitch DOUBLE PRECISION,
+    emotion VARCHAR(50),
     total_chunks INT NOT NULL DEFAULT 1,
     text TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -42,3 +44,9 @@ CREATE TABLE IF NOT EXISTS tts_chunks (
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     error_msg TEXT
 );
+
+-- Khoá ngoại không tự có index trong Postgres. Lịch sử lọc theo user_id rồi sắp xếp theo
+-- created_at, và join sang chunks theo job_id; thiếu hai index này thì mỗi lần mở lịch sử
+-- là một lần quét toàn bảng.
+CREATE INDEX IF NOT EXISTS idx_tts_chunks_job_id ON tts_chunks (job_id);
+CREATE INDEX IF NOT EXISTS idx_tts_jobs_user_created ON tts_jobs (user_id, created_at DESC);

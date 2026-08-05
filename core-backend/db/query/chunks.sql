@@ -3,10 +3,6 @@ INSERT INTO tts_chunks (id, job_id, chunk_index, text, audio_path, status, error
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
--- name: GetTTSChunkByID :one
-SELECT * FROM tts_chunks
-WHERE id = $1 LIMIT 1;
-
 -- name: UpdateTTSChunkStatus :one
 UPDATE tts_chunks
 SET status = $2,
@@ -19,3 +15,8 @@ RETURNING *;
 SELECT * FROM tts_chunks
 WHERE job_id = $1
 ORDER BY chunk_index ASC;
+
+-- name: GetTaskOwner :one
+SELECT j.user_id FROM tts_chunks c
+JOIN tts_jobs j ON j.id = c.job_id
+WHERE c.id = $1;

@@ -2,8 +2,6 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-ARG VITE_UI_MODE=beauty
-ENV VITE_UI_MODE=$VITE_UI_MODE
 
 COPY package*.json ./
 RUN npm install

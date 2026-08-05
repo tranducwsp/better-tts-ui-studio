@@ -69,5 +69,3 @@ func TestTTSClone_DeleteUserVoice_Unauthenticated(t *testing.T) {
 		t.Errorf("Expected status 401 for unauthenticated DeleteUserVoice, got %d", rec.Code)
 	}
 }
-
-

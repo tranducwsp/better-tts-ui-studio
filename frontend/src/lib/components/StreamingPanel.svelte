@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { synthesize, subscribeTaskStream } from '../api';
+  import { splitIntoChunks } from '../textLimits';
+  import { combinedDownloadFormat, defaultFormat, defaultMimeType, downloadFormats } from '../audioSpec';
   import { toast } from '../toast.svelte';
-  import type { JobDetailResponse, ChunkItemResponse } from '../types';
+  import type { JobDetailResponse, ChunkItemResponse, UniversalManifest } from '../types';
 
   export interface ChunkState {
     index: number;
@@ -10,6 +12,8 @@
     status: 'pending' | 'retrying' | 'ready' | 'playing' | 'error';
     blob: Blob | null;
     blobUrl: string | null;
+    /** Backend task id, used to fetch alternate formats such as MP3. */
+    taskId: string | null;
   }
 
   interface Props {
@@ -17,11 +21,15 @@
     engine: string;
     voice: string;
     speed: number;
+    pitch?: number;
+    emotion?: string;
+    manifest?: UniversalManifest | null;
     reloadedJob?: JobDetailResponse | null;
     onClose?: () => void;
   }
 
-  let { text, engine, voice, speed, reloadedJob = null, onClose }: Props = $props();
+  let { text, engine, voice, speed, pitch, emotion, manifest = null, reloadedJob = null, onClose }: Props = $props();
+
 
   let chunks = $state<ChunkState[]>([]);
   let currentPlayIndex = $state<number>(-1);
@@ -51,48 +59,8 @@
     }
   });
 
-  function splitTextIntoChunks(rawText: string, minSize = 1000, maxSize = 2000): string[] {
-    if (!rawText || rawText.length <= minSize) return [rawText];
-    let paragraphs: string[];
-    try {
-      paragraphs = rawText.split(/\n\n|\.\s*\n/);
-    } catch {
-      paragraphs = rawText.split('\n');
-    }
-    const result: string[] = [];
-    let current = '';
-
-    for (const p of paragraphs) {
-      const cleanP = p.trim();
-      if (!cleanP) continue;
-
-      if (cleanP.length > maxSize) {
-        const sentences = cleanP.match(/[^.!?]+[.!?]+/g) || [cleanP];
-        for (const s of sentences) {
-          const cleanS = s.trim();
-          if (!cleanS) continue;
-          if (current.length + cleanS.length + 1 <= minSize) {
-            current += (current ? ' ' : '') + cleanS;
-          } else {
-            if (current) result.push(current);
-            current = cleanS;
-          }
-        }
-      } else {
-        if (current.length + cleanP.length + 1 <= minSize) {
-          current += (current ? '\n' : '') + cleanP;
-        } else {
-          if (current) result.push(current);
-          current = cleanP;
-        }
-      }
-    }
-    if (current) result.push(current);
-    return result;
-  }
-
   async function startStreamingJob() {
-    const chunkTexts = splitTextIntoChunks(text, 1000, 2000);
+    const chunkTexts = splitIntoChunks(text, manifest);
 
     if (reloadedJob && reloadedJob.chunks && reloadedJob.chunks.length > 0) {
       // Restore chunks strictly from reloaded history job
@@ -108,7 +76,7 @@
           if (c.audio_path) {
             url = c.audio_path.startsWith('/') ? c.audio_path : `/${c.audio_path}`;
           } else if (c.task_id) {
-            url = `/api/tasks/${c.task_id}/audio?format=wav`;
+            url = `/api/tasks/${c.task_id}/audio?format=${defaultFormat(manifest, engine)}`;
           }
         }
 
@@ -118,6 +86,7 @@
           status: url ? 'ready' : 'pending',
           blob: null,
           blobUrl: url,
+          taskId: c?.task_id || null,
         };
       });
 
@@ -140,6 +109,7 @@
       status: 'pending',
       blob: null,
       blobUrl: null,
+      taskId: null,
     }));
 
     currentPlayIndex = -1;
@@ -158,6 +128,8 @@
           engine: engine,
           voice: voice,
           speed: speed,
+          pitch: pitch ?? null,
+          emotion: emotion || null,
           total_chunks: chunks.length,
           text: text,
         }),
@@ -192,7 +164,15 @@
         }
 
         try {
-          const taskId = await synthesize(item.text, voice, speed, engine, currentJobId, i, chunks.length);
+          const taskId = await synthesize(item.text, voice, speed, engine, {
+            jobId: currentJobId,
+            chunkIndex: i,
+            totalChunks: chunks.length,
+            pitch,
+            emotion,
+          });
+
+          item.taskId = taskId;
 
           const blob = await new Promise<Blob>((resolve, reject) => {
             subscribeTaskStream(
@@ -282,16 +262,69 @@
     generateChunksLoop();
   }
 
-  function downloadCombinedAudio() {
-    toast.show('Combining all chunk audio files...', 'info');
-    const validBlobs = chunks.filter((c) => c.blob).map((c) => c.blob as Blob);
-    if (validBlobs.length === 0) return;
-    const finalBlob = new Blob(validBlobs, { type: 'audio/wav' });
-    const url = URL.createObjectURL(finalBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'voice_full_stream.wav';
-    a.click();
+  // Download buttons follow what the engine declares, not a hardcoded WAV assumption.
+  let defaultFmt = $derived(defaultFormat(manifest, engine));
+  let chunkFormats = $derived(downloadFormats(manifest, engine));
+  let combinedFormat = $derived(combinedDownloadFormat(manifest, engine));
+  let selectedFormat = $state('');
+  let isCombining = $state(false);
+
+  // Default the picker to the engine's own format once the manifest is known.
+  $effect(() => {
+    if (!selectedFormat || !chunkFormats.includes(selectedFormat)) {
+      selectedFormat = defaultFmt;
+    }
+  });
+
+  // The default format is already in memory as a blob; anything else is transcoded by the
+  // backend on request.
+  let chunkDownloadHref = $derived.by(() => {
+    if (!currentChunk) return null;
+    if (selectedFormat === defaultFmt) return currentChunk.blobUrl;
+    return currentChunk.taskId
+      ? `/api/tasks/${currentChunk.taskId}/audio?format=${selectedFormat}`
+      : null;
+  });
+
+  async function downloadCombinedAudio() {
+    if (!combinedFormat || isCombining) return;
+
+    const ready = chunks.filter((c) => c.taskId);
+    if (ready.length === 0) {
+      toast.show('No finished chunks to combine yet.', 'error');
+      return;
+    }
+
+    isCombining = true;
+    toast.show(`Fetching ${ready.length} chunks as ${combinedFormat.toUpperCase()}...`, 'info');
+    try {
+      // Fetch each chunk in the combined format rather than concatenating the WAV blobs we
+      // already hold: appending WAV files leaves the first header in place, so players see
+      // only the first chunk's duration.
+      const parts = await Promise.all(
+        ready.map(async (c) => {
+          const res = await fetch(`/api/tasks/${c.taskId}/audio?format=${combinedFormat}`, {
+            credentials: 'include',
+          });
+          if (!res.ok) throw new Error(`Chunk ${c.index + 1} failed (${res.status})`);
+          return res.blob();
+        })
+      );
+
+      const finalBlob = new Blob(parts, { type: defaultMimeType(manifest, engine) });
+      const url = URL.createObjectURL(finalBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `voice_full_stream.${combinedFormat}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.show('Combined audio ready!', 'success');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.show('Could not combine audio: ' + msg, 'error');
+    } finally {
+      isCombining = false;
+    }
   }
 </script>
 
@@ -300,9 +333,21 @@
     <h3 style="color: var(--primary); font-size: 1.1rem; margin: 0; display: flex; align-items: center; gap: 8px;">
       <i class="fa-solid fa-compact-disc fa-spin"></i> Audio Generation & Streaming Progress
     </h3>
-    <span style="font-size: 0.85rem; padding: 4px 12px; border-radius: 12px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 500;">
-      {statusBadge}
-    </span>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="font-size: 0.85rem; padding: 4px 12px; border-radius: 12px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 500;">
+        {statusBadge}
+      </span>
+      <!-- Closing releases the text lock in the parent, so the user can edit and re-run. -->
+      <button
+        onclick={() => onClose?.()}
+        type="button"
+        title="Close panel and unlock the text"
+        aria-label="Close streaming panel"
+        style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #cbd5e1; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;"
+      >
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
   </div>
 
   <!-- Row 1: Chunk selector buttons -->
@@ -354,26 +399,58 @@
 
     <div style="display: flex; gap: 12px; justify-content: center; align-items: center; margin-top: 10px; flex-wrap: wrap;">
       {#if !isCompleted && !isCancelled}
-        <button onclick={handleCancel} class="btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; background: #ef4444; color: white; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+        <button onclick={handleCancel} style="height: 36px; padding: 0 1rem; font-size: 0.85rem; font-weight: 500; line-height: 1; background: #ef4444; color: white; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;">
           <i class="fa-solid fa-pause"></i> Pause Generation
         </button>
       {/if}
 
       {#if isCancelled && !isCompleted}
-        <button onclick={handleResume} class="btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; background: #10b981; color: white; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+        <button onclick={handleResume} style="height: 36px; padding: 0 1rem; font-size: 0.85rem; font-weight: 500; line-height: 1; background: #10b981; color: white; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;">
           <i class="fa-solid fa-play"></i> Resume Generation
         </button>
       {/if}
 
-      {#if currentChunk && currentChunk.blobUrl}
-        <a href={currentChunk.blobUrl} download="chunk_{currentChunk.index + 1}.wav" class="btn secondary-btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; background: #6366f1; color: white; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
-          <i class="fa-solid fa-download"></i> WAV (Chunk {currentChunk.index + 1})
-        </a>
+      <!--
+        One select rather than one button per format: an engine may declare half a dozen,
+        and a row of download buttons would crowd out the transport controls.
+
+        Deliberately not using .btn here — that class carries padding: 1rem 1.5rem and
+        flex: 1, which stretches the pair out of line with the transport buttons. Both
+        halves set an explicit height so the select and the link match exactly.
+      -->
+      {#if currentChunk && chunkDownloadHref}
+        <div style="display: inline-flex; align-items: center; height: 36px;">
+          <select
+            bind:value={selectedFormat}
+            aria-label="Download format for the current chunk"
+            style="height: 100%; padding: 0 0.55rem; font-size: 0.85rem; font-weight: 500; line-height: 1; background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(255,255,255,0.2); border-right: none; border-radius: 8px 0 0 8px; cursor: pointer; appearance: none; text-align: center;"
+          >
+            {#each chunkFormats as fmt (fmt)}
+              <option value={fmt} style="background: #1e293b;">{fmt.toUpperCase()}</option>
+            {/each}
+          </select>
+          <a
+            href={chunkDownloadHref}
+            download="chunk_{currentChunk.index + 1}.{selectedFormat}"
+            style="height: 100%; padding: 0 1rem; font-size: 0.85rem; font-weight: 500; line-height: 1; background: #6366f1; color: white; border: 1px solid #6366f1; border-radius: 0 8px 8px 0; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;"
+          >
+            <i class="fa-solid fa-download"></i> Chunk {currentChunk.index + 1}
+          </a>
+        </div>
       {/if}
 
-      {#if isCompleted}
-        <button onclick={downloadCombinedAudio} class="btn secondary-btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; background: #10b981; color: white; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border: none;">
-          <i class="fa-solid fa-download"></i> Download Full WAV
+      <!--
+        Combined download is MP3-only: concatenating WAV blobs yields a file whose header
+        claims the length of the first chunk, so most players stop there.
+      -->
+      {#if isCompleted && combinedFormat}
+        <button
+          onclick={downloadCombinedAudio}
+          disabled={isCombining}
+          style="height: 36px; padding: 0 1rem; font-size: 0.85rem; font-weight: 500; line-height: 1; background: #10b981; color: white; border: none; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: {isCombining ? 'wait' : 'pointer'}; opacity: {isCombining ? 0.6 : 1};"
+        >
+          <i class="fa-solid {isCombining ? 'fa-spinner fa-spin' : 'fa-download'}"></i>
+          {isCombining ? 'Preparing...' : `Full ${combinedFormat.toUpperCase()}`}
         </button>
       {/if}
     </div>

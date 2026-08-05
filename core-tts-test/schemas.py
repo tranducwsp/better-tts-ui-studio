@@ -25,14 +25,28 @@ class VoiceInfo(BaseModel):
     name: str
     descriptions: List[str] = Field(default_factory=list)
 
+class EngineCapabilities(BaseModel):
+    """What an engine (or one of its modes) can do.
+
+    Every field is Optional and defaults to None, meaning "not stated". A mode's own value
+    wins if it states one, otherwise the engine-wide value applies. None is therefore
+    distinct from False: False means "explicitly cannot", None means "inherit".
+    """
+    supports_preset_voices: Optional[bool] = None
+    supports_cloning: Optional[bool] = None
+    supports_voice_saving: Optional[bool] = None
+    supports_streaming: Optional[bool] = None
+    supports_speed: Optional[bool] = None
+    supports_pitch: Optional[bool] = None
+    supports_emotion: Optional[bool] = None
+    supports_ssml: Optional[bool] = None
+
 class EngineModeSpec(BaseModel):
+    """One processing mode. Capabilities stated here override the engine-wide set."""
     id: str
     name: str
     description: str = ""
-    supports_preset_voices: bool = True
-    supports_cloning: bool = False
-    supports_voice_saving: bool = False
-    supports_streaming: bool = True
+    capabilities: EngineCapabilities = Field(default_factory=lambda: EngineCapabilities())
 
 class RangeConstraint(BaseModel):
     min: float = 0.5
@@ -40,26 +54,45 @@ class RangeConstraint(BaseModel):
     default: float = 1.0
     step: float = 0.1
 
+class ChunkingSpec(BaseModel):
+    """How the platform must divide text longer than max_text_length.
+
+    Lives under constraints, not ui_schema: it decides what is transmitted, not how
+    anything looks. `delimiters` is an ordered list of cut points, most preferred first;
+    the platform tries each on any fragment still too long, then hard-splits the rest.
+    Patterns are used with split(), so zero-width lookbehinds are the expected shape.
+    """
+    max_chunk_size: Optional[int] = 1000
+    delimiters: List[str] = Field(default_factory=lambda: [r"(?<=\.\s*\n)", r"(?<=[.!?]\s+)"])
+
 class EngineConstraints(BaseModel):
     max_text_length: int = 3000
     speed_range: RangeConstraint = Field(default_factory=RangeConstraint)
     pitch_range: RangeConstraint = Field(default_factory=lambda: RangeConstraint(min=-10.0, max=10.0, default=0.0, step=0.5))
-    supported_emotions: List[str] = Field(default_factory=list)
+    # Non-empty because one mode (emotion_v2) declares supports_emotion; a mode claiming
+    # emotion support with no vocabulary to choose from would be a contradiction.
+    supported_emotions: List[str] = Field(default_factory=lambda: ["neutral", "happy", "sad", "angry", "excited"])
+    chunking: ChunkingSpec = Field(default_factory=ChunkingSpec)
 
 class AudioSpec(BaseModel):
-    supported_formats: List[str] = Field(default_factory=lambda: ["wav", "mp3"])
-    supported_sample_rates: List[int] = Field(default_factory=lambda: [16000, 22050, 24000, 44100])
-    default_format: str = "wav"
-    default_sample_rate: int = 24000
+    """Định dạng Engine xuất ra, và ràng buộc cho âm thanh tham chiếu nhận vào.
 
-class EngineCapabilities(BaseModel):
-    supports_preset_voices: bool = True
-    supports_cloning: bool = True
-    supports_streaming: bool = True
-    supports_speed: bool = True
-    supports_pitch: bool = False
-    supports_emotion: bool = False
-    supports_ssml: bool = False
+    Xuất hiện hai tầng — toàn Engine và theo Mode — nên mọi trường Optional: None nghĩa là
+    kế thừa tầng trên.
+    """
+    supported_formats: Optional[List[str]] = None
+    supported_sample_rates: Optional[List[int]] = None
+    default_format: Optional[str] = None
+    default_sample_rate: Optional[int] = None
+
+    # Định dạng đọc được cho âm thanh tham chiếu. Engine mock này nhận cả MP3 để chứng minh
+    # rằng nền tảng không giả định WAV — không suy được từ supported_formats ở trên.
+    reference_audio_formats: Optional[List[str]] = None
+    reference_audio_seconds: Optional[float] = None
+
+    # Hai trần cho hai thời điểm: tệp thô kéo vào, và clip sau khi cắt.
+    max_upload_bytes: Optional[int] = None
+    max_reference_bytes: Optional[int] = None
 
 class AutoFormatRule(BaseModel):
     find: str
@@ -84,8 +117,6 @@ class InputPanelSpec(BaseModel):
     find_mode: str = "expert"
     replace_tool: bool = True
     enable_chunk_box: bool = True
-    max_chunk_size: int = 1000
-    chunk_delimiters: List[str] = Field(default_factory=lambda: [r"(?<=\.\s*\n)", r"(?<=[.!?]\s+)"])
     auto_format: List[AutoFormatRule] = Field(default_factory=lambda: DEFAULT_AUTO_FORMAT_RULES)
 
 class VoiceMetadataFieldSpec(BaseModel):
@@ -96,13 +127,26 @@ class VoiceMetadataFieldSpec(BaseModel):
     placeholder: Optional[str] = None
     options: Optional[List[str]] = None
 
+class PresetVoiceSpec(BaseModel):
+    """A voice the engine ships with, listed in the manifest instead of via /voices."""
+    id: str
+    name: str
+    gender: Optional[str] = None
+    descriptions: List[str] = Field(default_factory=list)
+    sample_url: Optional[str] = None
+
 class ModelOptionSpec(BaseModel):
+    """Presentation only: how a control is drawn, never whether it exists.
+
+    Whether a control appears is decided by capabilities; these fields pick the widget for
+    one already known to be supported.
+    """
     notice_banner: Optional[NoticeBannerSpec] = None
     voice_type: Optional[str] = None
     speed_type: Optional[str] = None
     pitch_type: Optional[str] = None
     emotion_type: Optional[str] = None
-    preset_voices: Optional[List[Dict[str, str]]] = None
+    preset_voices: Optional[List[PresetVoiceSpec]] = None
     voice_metadata_schema: Optional[List[VoiceMetadataFieldSpec]] = None
 
 class UISchemaSpec(BaseModel):
@@ -184,17 +228,38 @@ class UniversalManifest(BaseModel):
     version: str = Field(default_factory=lambda: os.getenv("ENGINE_VERSION", "1.0.0-mock"))
     provider: str = Field(default_factory=lambda: os.getenv("ENGINE_PROVIDER", "Universal AI Testbed"))
     supported_modes: List[EngineModeSpec] = Field(default_factory=lambda: [
-        EngineModeSpec(id="standard", name="Mock Standard", description="Fast mock audio generator", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
-        EngineModeSpec(id="fast", name="Mock Fast", description="Instant mock audio generator", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
-        EngineModeSpec(id="express", name="Mock Express", description="Ultra-low latency streaming model", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
-        EngineModeSpec(id="zero_shot_clone", name="Mock Instant Zero-Shot Clone", description="Instant voice cloning from uploaded reference audio with voice saving support", supports_preset_voices=True, supports_cloning=True, supports_voice_saving=True, supports_streaming=True),
-        EngineModeSpec(id="multilingual", name="Mock Multilingual", description="Cross-lingual multi-accent voice engine", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
-        EngineModeSpec(id="emotion_v2", name="Mock Emotion & Style", description="Dynamic prosody & pitch control model", supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False, supports_streaming=True),
-        EngineModeSpec(id="clone", name="Mock Voice Cloning", description="Simulated speaker cloning", supports_preset_voices=True, supports_cloning=True, supports_voice_saving=True, supports_streaming=True)
+        # Only what differs from the engine-wide set below is stated here; anything left
+        # unset is inherited. emotion_v2 is the interesting one: it is the sole mode that
+        # can do pitch and emotion, which the engine-wide defaults switch off.
+        EngineModeSpec(id="standard", name="Mock Standard", description="Fast mock audio generator"),
+        EngineModeSpec(id="fast", name="Mock Fast", description="Instant mock audio generator"),
+        EngineModeSpec(id="express", name="Mock Express", description="Ultra-low latency streaming model"),
+        EngineModeSpec(id="zero_shot_clone", name="Mock Instant Zero-Shot Clone",
+                       description="Instant voice cloning from uploaded reference audio with voice saving support",
+                       capabilities=EngineCapabilities(supports_cloning=True, supports_voice_saving=True)),
+        EngineModeSpec(id="multilingual", name="Mock Multilingual", description="Cross-lingual multi-accent voice engine"),
+        EngineModeSpec(id="emotion_v2", name="Mock Emotion & Style",
+                       description="Dynamic prosody & pitch control model",
+                       capabilities=EngineCapabilities(supports_pitch=True, supports_emotion=True)),
+        EngineModeSpec(id="clone", name="Mock Voice Cloning", description="Simulated speaker cloning",
+                       capabilities=EngineCapabilities(supports_cloning=True, supports_voice_saving=True)),
     ])
-    capabilities: EngineCapabilities = Field(default_factory=EngineCapabilities)
+    # Engine-wide defaults; modes that state nothing inherit these.
+    capabilities: EngineCapabilities = Field(default_factory=lambda: EngineCapabilities(
+        supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False,
+        supports_streaming=True, supports_speed=True,
+        supports_pitch=False, supports_emotion=False, supports_ssml=False,
+    ))
     constraints: EngineConstraints = Field(default_factory=EngineConstraints)
-    audio_spec: AudioSpec = Field(default_factory=AudioSpec)
+    audio_spec: AudioSpec = Field(default_factory=lambda: AudioSpec(
+        supported_formats=["wav", "mp3"],
+        supported_sample_rates=[16000, 22050, 24000, 44100],
+        default_format="wav",
+        default_sample_rate=24000,
+        reference_audio_formats=["wav", "mp3", "flac"],
+        reference_audio_seconds=3.0,
+        max_upload_bytes=200 * 1024 * 1024,
+        max_reference_bytes=5 * 1024 * 1024,
+    ))
     ui_schema: Optional[UISchemaSpec] = Field(default_factory=UISchemaSpec)
 
-CoreInfoResponse = UniversalManifest

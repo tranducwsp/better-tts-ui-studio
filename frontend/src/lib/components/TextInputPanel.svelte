@@ -1,17 +1,25 @@
 <script lang="ts">
-  import type { InputPanelSpec } from '../types';
+  import type { InputPanelSpec, UniversalManifest } from '../types';
+  import { resolveChunkSize, splitIntoChunks } from '../textLimits';
   import { extractTextFromFile } from '../api';
   import { toast } from '../toast.svelte';
 
   interface Props {
     text: string;
     isReadOnly?: boolean;
+    isCollapsed?: boolean;
     inputPanelSpec?: InputPanelSpec | null;
+    manifest?: UniversalManifest | null;
   }
 
-  let { text = $bindable(), isReadOnly = $bindable(false), inputPanelSpec = null }: Props = $props();
+  let {
+    text = $bindable(),
+    isReadOnly = $bindable(false),
+    isCollapsed = $bindable(false),
+    inputPanelSpec = null,
+    manifest = null
+  }: Props = $props();
 
-  let isCollapsed = $state(false);
   let isRegexMode = $state(false);
   let findQuery = $state('');
   let replaceQuery = $state('');
@@ -19,59 +27,10 @@
   let lastSearchIndex = $state(0);
   let textareaElement = $state<HTMLTextAreaElement | undefined>();
 
-  let maxChunkSize = $derived(inputPanelSpec?.max_chunk_size || 1000);
-  let chunkDelimiters = $derived(inputPanelSpec?.chunk_delimiters || ['(?<=\\.\\s*\\n)', '[^.!?]+[.!?]+']);
-
-  // Svelte 5 derived state for text chunks (Supports custom regex delimiters from manifest)
-  let chunks = $derived.by(() => {
-    const limit = maxChunkSize;
-    if (!text || text.length <= limit) return text ? [text] : [];
-
-    let paragraphRegex: RegExp;
-    try {
-      paragraphRegex = new RegExp(chunkDelimiters[0] || '\\n\\n');
-    } catch {
-      paragraphRegex = /\n\n/;
-    }
-
-    const paragraphs = text.split(paragraphRegex);
-    const result: string[] = [];
-    let currentChunk = '';
-
-    for (const p of paragraphs) {
-      const cleanP = p.trim();
-      if (!cleanP) continue;
-
-      if (cleanP.length > limit * 2) {
-        let sentenceRegex: RegExp;
-        try {
-          sentenceRegex = new RegExp(chunkDelimiters[1] || '[^.!?]+[.!?]+', 'g');
-        } catch {
-          sentenceRegex = /[^.!?]+[.!?]+/g;
-        }
-        const sentences = cleanP.match(sentenceRegex) || [cleanP];
-        for (const s of sentences) {
-          const cleanS = s.trim();
-          if (!cleanS) continue;
-          if (currentChunk.length + cleanS.length + 1 <= limit) {
-            currentChunk += (currentChunk ? ' ' : '') + cleanS;
-          } else {
-            if (currentChunk) result.push(currentChunk);
-            currentChunk = cleanS;
-          }
-        }
-      } else {
-        if (currentChunk.length + cleanP.length + 1 <= limit) {
-          currentChunk += (currentChunk ? '\n' : '') + cleanP;
-        } else {
-          if (currentChunk) result.push(currentChunk);
-          currentChunk = cleanP;
-        }
-      }
-    }
-    if (currentChunk) result.push(currentChunk);
-    return result.length ? result : [text];
-  });
+  // Shared resolver + shared splitter: this preview must be the exact division that
+  // StreamingPanel transmits, so both call the same function.
+  let maxChunkSize = $derived(resolveChunkSize(manifest));
+  let chunks = $derived(splitIntoChunks(text, manifest));
 
   let fileInput = $state<HTMLInputElement | undefined>();
 
@@ -323,7 +282,7 @@
         <i class="fa-solid fa-file-lines"></i> Input Text
         {#if isReadOnly}
           <span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); font-size: 0.75rem; margin-left: 8px;">
-            <i class="fa-solid fa-lock"></i> Read-Only (History)
+            Locked
           </span>
         {/if}
       </label>

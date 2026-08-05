@@ -57,14 +57,24 @@ Ensure you have **Docker** and **Docker Compose** installed.
 git clone https://github.com/your-username/better-tts-ui-studio.git
 cd better-tts-ui-studio
 
-# 2. Launch services using Docker Compose
+# 2. Set the required secrets
+cp .env.example .env
+# Fill in at least SECRET_KEY, POSTGRES_PASSWORD and REDIS_PASSWORD —
+# docker compose refuses to start while any of them is empty.
+#   openssl rand -hex 32
+
+# 3. Launch services using Docker Compose
 docker compose up -d --build
 ```
 
 Access the application in your browser:
 - 🌐 **Web Studio UI**: [http://localhost:5173](http://localhost:5173)
 - ⚙️ **Control Plane API**: [http://localhost:8000](http://localhost:8000)
-- 🧠 **Core Compute Engine**: [http://localhost:8001](http://localhost:8001)
+
+Only those two ports are published. The compute engine, frontend builder, Postgres and Redis
+stay on the internal compose network: the engine has no authentication of its own, so anything
+that can reach it can spend your GPU and read other users' tasks. Reach them for debugging with
+`docker compose exec` (e.g. `docker compose exec core-engine curl localhost:8001/health`).
 
 ---
 
@@ -72,10 +82,14 @@ Access the application in your browser:
 
 Detailed documentation is available in the [`docs/`](./docs/) directory:
 
+- 🗺️ [**Code Map**](./docs/CODE_MAP.md): Which file does what, and the order to read them in. Start here before reviewing.
 - 📖 [**Frontend Overview (Giới thiệu chung FE)**](./docs/frontend_overview.md): High-level overview of the Svelte 5 Studio interface, features, and UI/UX design.
 - 🛠️ [**Frontend Technical & Engineering Spec**](./docs/frontend_tech_and_engineering.md): Detailed technical spec on Svelte 5 Runes, Web Audio API binary handling, streaming, and build pipeline.
 - 📖 [**AI Engineer Integration Guide**](./docs/ENGINEER_INTEGRATION_GUIDE.md): How to plug your custom AI Model into the system using Python schemas.
-- 📜 [**Universal TTS Core Protocol Specification**](./docs/core_tts_protocol_spec.md): Complete REST & gRPC API protocol reference.
+- 📜 [**Universal TTS Core Protocol Specification**](./docs/core_tts_protocol_spec.md): Complete REST API protocol reference.
+- ⚙️ [**Configuration Reference**](./docs/CONFIGURATION.md): Which knob lives in the manifest, which in the environment, and why.
+- 📦 [**Manifest Examples**](./docs/examples/): Real `/api/info` responses to adapt.
+- 🕳️ [**Platform Gaps**](./docs/PLATFORM_GAPS.md): Manifest fields the platform does not honour yet, and what was already resolved.
 
 ---
 

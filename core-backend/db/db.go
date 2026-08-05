@@ -158,21 +158,50 @@ func seedDefaultAccounts(ctx context.Context, cfg *config.Config) {
 }
 
 // RegisterJobAndChunk đăng ký hoặc cập nhật một Job TTS lớn cùng với đoạn Chunk con vào PostgreSQL bằng sqlc.
-func RegisterJobAndChunk(ctx context.Context, userID, jobID, engine, voice string, speed float64, totalChunks int, taskID string, chunkIndex int, text string) error {
-	_, err := Queries.GetTTSJobByID(ctx, jobID)
-	if err != nil {
-		_, _ = Queries.CreateTTSJob(ctx, sqlc.CreateTTSJobParams{
-			ID:          jobID,
-			UserID:      userID,
-			Engine:      engine,
-			Voice:       voice,
-			Speed:       speed,
-			TotalChunks: int32(totalChunks),
-			Text:        text,
-		})
+// JobAudioParams gom các tham số điều khiển giọng đọc mà Manifest có thể bật/tắt theo
+// từng Engine. Pitch/Emotion dùng con trỏ để phân biệt "engine không hỗ trợ" (nil) với
+// giá trị người dùng thực sự chọn (ví dụ pitch = 0 là trung tính hợp lệ).
+type JobAudioParams struct {
+	Speed   float64
+	Pitch   *float64
+	Emotion *string
+}
+
+// PitchColumn chuyển Pitch sang cột nullable của PostgreSQL.
+func (p JobAudioParams) PitchColumn() pgtype.Float8 {
+	if p.Pitch == nil {
+		return pgtype.Float8{}
+	}
+	return pgtype.Float8{Float64: *p.Pitch, Valid: true}
+}
+
+// EmotionColumn chuyển Emotion sang cột nullable của PostgreSQL.
+func (p JobAudioParams) EmotionColumn() pgtype.Text {
+	if p.Emotion == nil || *p.Emotion == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: *p.Emotion, Valid: true}
+}
+
+func RegisterJobAndChunk(ctx context.Context, userID, jobID, engine, voice string, audio JobAudioParams, totalChunks int, taskID string, chunkIndex int, text string) error {
+	// Một câu lệnh thay cho đọc-rồi-ghi: hai chunk đầu của cùng một job tới song song đều
+	// thấy job chưa tồn tại rồi cùng chèn, và cái thua bị bỏ lỗi âm thầm. Việc này nằm
+	// thẳng trên đường đi của mỗi chunk nên bớt một lượt đi lại là bớt độ trễ người dùng thấy.
+	if err := Queries.EnsureTTSJob(ctx, sqlc.EnsureTTSJobParams{
+		ID:          jobID,
+		UserID:      userID,
+		Engine:      engine,
+		Voice:       voice,
+		Speed:       audio.Speed,
+		Pitch:       audio.PitchColumn(),
+		Emotion:     audio.EmotionColumn(),
+		TotalChunks: int32(totalChunks),
+		Text:        text,
+	}); err != nil {
+		return err
 	}
 
-	_, err = Queries.CreateTTSChunk(ctx, sqlc.CreateTTSChunkParams{
+	_, err := Queries.CreateTTSChunk(ctx, sqlc.CreateTTSChunkParams{
 		ID:         taskID,
 		JobID:      jobID,
 		ChunkIndex: int32(chunkIndex),

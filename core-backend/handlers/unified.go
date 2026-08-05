@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,8 +12,8 @@ import (
 	"core-backend/client"
 	"core-backend/db"
 	"core-backend/db/sqlc"
-	"core-backend/middleware"
 	"core-backend/state"
+	"core-backend/storage"
 
 	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
@@ -21,14 +22,16 @@ import (
 
 // UnifiedSynthesizeRequest là cấu trúc DTO duy nhất đại diện cho bất kỳ yêu cầu tổng hợp tiếng nói nào.
 type UnifiedSynthesizeRequest struct {
-	Text        string  `json:"text"`
-	Voice       string  `json:"voice"`
-	Engine      string  `json:"engine"` // "standard" | "fast" | "clone"
-	Speed       float64 `json:"speed"`
-	JobID       *string `json:"job_id"`
-	ChunkIndex  *int    `json:"chunk_index"`
-	TotalChunks *int    `json:"total_chunks"`
-	TaskID      *string `json:"task_id"`
+	Text        string   `json:"text"`
+	Voice       string   `json:"voice"`
+	Engine      string   `json:"engine"` // "standard" | "fast" | "clone"
+	Speed       float64  `json:"speed"`
+	Pitch       *float64 `json:"pitch"`
+	Emotion     *string  `json:"emotion"`
+	JobID       *string  `json:"job_id"`
+	ChunkIndex  *int     `json:"chunk_index"`
+	TotalChunks *int     `json:"total_chunks"`
+	TaskID      *string  `json:"task_id"`
 }
 
 // UnifiedVoiceResponse cấu trúc gọn tối giản cho Frontend: ID, Name, Descriptions.
@@ -50,10 +53,8 @@ func NewUnifiedHandler(ttsClient *client.CoreTTSClient) *UnifiedHandler {
 // GetVoices lấy danh sách giọng đọc đơn giản hóa theo model_id
 func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	user, ok := middleware.GetCurrentUser(r)
+	user, ok := currentUser(w, r)
 	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
@@ -72,16 +73,11 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	m := state.GlobalManifestState.Get()
 	supportsPreset := true
 	if m != nil && modelID != "" && modelID != "all" {
-		for _, mode := range m.SupportedModes {
-			if strings.EqualFold(mode.ID, modelID) {
-				supportsPreset = mode.SupportsPresetVoices
-				break
-			}
-		}
+		supportsPreset = m.ResolveCapabilities(modelID).SupportsPresetVoices
 	}
 
 	if supportsPreset {
-		presetVoices, err := h.TTSClient.GetVoices()
+		presetVoices, err := h.TTSClient.GetVoices(modelID)
 		if err == nil {
 			for _, v := range presetVoices {
 				unifiedList = append(unifiedList, UnifiedVoiceResponse{
@@ -139,10 +135,8 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 // Synthesize là Universal Gateway Endpoint xử lý mọi yêu cầu sinh âm thanh bất đồng bộ có Validate Manifest tự động.
 func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	user, ok := middleware.GetCurrentUser(r)
+	user, ok := currentUser(w, r)
 	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
@@ -179,12 +173,29 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := state.GlobalManifestState.ValidatePitch(req.Pitch, req.Engine); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
+		return
+	}
+
+	if err := state.GlobalManifestState.ValidateEmotion(req.Emotion, req.Engine); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
+		return
+	}
+
 	taskID := uuid.NewString()
 	if req.TaskID != nil && *req.TaskID != "" {
+		if !safeTaskID(*req.TaskID) {
+			writeError(w, http.StatusBadRequest, "Invalid task ID")
+			return
+		}
 		taskID = *req.TaskID
 	}
 
 	taskItem := state.GlobalTaskManager.GetOrCreate(taskID)
+	taskItem.SetOwner(user.ID)
 
 	jobID := taskID
 	if req.JobID != nil && *req.JobID != "" {
@@ -201,31 +212,83 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		totalChunks = *req.TotalChunks
 	}
 
-	_ = db.RegisterJobAndChunk(context.Background(), user.ID, jobID, req.Engine, req.Voice, req.Speed, totalChunks, taskID, chunkIndex, req.Text)
+	audioParams := db.JobAudioParams{
+		Speed:   req.Speed,
+		Pitch:   req.Pitch,
+		Emotion: req.Emotion,
+	}
+
+	// Bản ghi job/chunk là thứ khiến task này về sau truy vấn lại được: lịch sử đọc từ đây, và
+	// ownsTask dựa vào nó để biết chủ sở hữu khi task không còn trong RAM. Bỏ lỗi ở đây nghĩa
+	// là job vẫn chạy, âm thanh vẫn sinh, nhưng không có gì ghi lại — người dùng mất nó khỏi
+	// lịch sử, và sau một lần khởi động lại thì không ai chứng minh được task đó của mình.
+	//
+	// Dừng luôn thay vì chạy tiếp: một lượt tổng hợp không ai lấy lại được chỉ tiêu tốn GPU.
+	if err := db.RegisterJobAndChunk(context.Background(), user.ID, jobID, req.Engine, req.Voice, audioParams, totalChunks, taskID, chunkIndex, req.Text); err != nil {
+		log.Printf("Không ghi được job %s / chunk %s: %v", jobID, taskID, err)
+		writeError(w, http.StatusInternalServerError, "Không khởi tạo được yêu cầu tổng hợp")
+		return
+	}
 
 	// Async Task Worker Goroutine
 	go func() {
 		bgCtx := context.Background()
-		audioBytes, err := h.TTSClient.Synthesize(req.Text, req.Voice, req.Speed, req.Engine)
+		audioBytes, err := h.TTSClient.Synthesize(req.Text, req.Voice, req.Speed, req.Engine, req.Pitch, req.Emotion)
 		if err != nil {
+			_, _, progress, _ := taskItem.Snapshot()
 			taskItem.Notify(state.TaskUpdate{
 				Status:   "error",
-				Progress: taskItem.Progress,
+				Progress: progress,
 				Error:    err.Error(),
 			})
 			errMsg := err.Error()
-			_ = db.UpdateChunkStatus(bgCtx, taskID, "error", nil, &errMsg)
+			if dbErr := db.UpdateChunkStatus(bgCtx, taskID, "error", nil, &errMsg); dbErr != nil {
+				log.Printf("Chunk %s lỗi nhưng không ghi được trạng thái vào DB: %v", taskID, dbErr)
+			}
 			return
 		}
 
-		taskItem.AudioWAV = audioBytes
-		taskItem.AudioMP3 = audioBytes
+		// Định dạng do Mode quyết định: Edge TTS trả MP3, mô hình cục bộ trả WAV. Ghi lại
+		// để GetTaskAudio biết mình đang giữ gì thay vì đoán, và chỉ chuyển mã khi client
+		// hỏi định dạng khác.
+		sourceFormat := state.GlobalManifestState.Get().ResolveAudioSpec(req.Engine).DefaultFormat
+		taskItem.SetSourceFormat(sourceFormat)
 
-		_ = os.MkdirAll("storage/temp", 0755)
-		filePath := filepath.Join("storage/temp", fmt.Sprintf("%s.wav", taskID))
-		_ = os.WriteFile(filePath, audioBytes, 0644)
+		// Ghi ra đĩa thất bại không phải lỗi chí tử — bản trong RAM là phương án dự phòng ngay
+		// dưới đây — nhưng nó cần để lại dấu vết: đĩa đầy biểu hiện thành RSS tăng dần thay vì
+		// một lỗi, và không có dòng log này thì nguyên nhân không thể truy ra từ triệu chứng.
+		filePath := filepath.Join(storage.TempDir(), fmt.Sprintf("%s.%s", taskID, sourceFormat))
+		wroteToDisk := false
+		if err := os.MkdirAll(storage.TempDir(), 0755); err != nil {
+			log.Printf("Không tạo được thư mục tạm %s: %v — giữ âm thanh trong RAM", storage.TempDir(), err)
+		} else if err := os.WriteFile(filePath, audioBytes, 0644); err != nil {
+			log.Printf("Không ghi được âm thanh task %s ra %s: %v — giữ trong RAM", taskID, filePath, err)
+		} else {
+			wroteToDisk = true
+		}
 
-		_ = db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil)
+		// Đĩa là nơi giữ âm thanh; RAM chỉ giữ khi chưa ghi được ra đĩa.
+		//
+		// Trước đây cùng một đoạn âm thanh nằm đồng thời trong RAM, trên đĩa và trên Redis,
+		// mà bộ dọn RAM lại chỉ theo thời gian (10 phút, quét mỗi 5 phút) và không có trần
+		// theo số lượng hay dung lượng. Một job mười chunk giữ khoảng 29 MB trong mười lăm
+		// phút SAU KHI đã xong, mỗi định dạng tải thêm là thêm một bản nữa — nên một đợt tải
+		// đồng thời là RSS tăng không phanh. GetTaskAudio đã biết đọc từ đĩa, nên bỏ bản
+		// trong RAM không mất chức năng nào.
+		if wroteToDisk {
+			taskItem.ReleaseAudio()
+		} else {
+			taskItem.SetAudio(audioBytes)
+		}
+		taskItem.CacheAudio(bgCtx, sourceFormat, audioBytes)
+
+		// Không có client nào để báo ở đây — công việc đã xong và âm thanh đã có. Nhưng lịch
+		// sử đọc trạng thái từ DB, nên một lượt ghi thất bại trong im lặng để chunk mãi ở
+		// "processing": giao diện hiển thị một job không bao giờ hoàn thành dù tệp đã nằm sẵn
+		// trên đĩa.
+		if err := db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil); err != nil {
+			log.Printf("Chunk %s đã xong nhưng không ghi được trạng thái vào DB: %v", taskID, err)
+		}
 
 		taskItem.Notify(state.TaskUpdate{
 			Status:   "done",

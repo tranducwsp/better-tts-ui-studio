@@ -2,93 +2,6 @@ import { createServer } from 'vite';
 import fs from 'fs/promises';
 import path from 'path';
 
-// Fallback manifest matching core-tts-test microservice
-const FALLBACK_MANIFEST = {
-  engine_id: "core-tts-test-v1",
-  engine_name: "Mock Test AI Engine",
-  version: "1.0.0-mock",
-  provider: "Universal AI Testbed",
-  supported_modes: [
-    { id: "fast", name: "Mock Fast", description: "Instant mock audio generator", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
-    { id: "express", name: "Mock Express", description: "Ultra-low latency streaming model", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
-    { id: "zero_shot_clone", name: "Mock Instant Zero-Shot Clone", description: "Instant voice cloning from uploaded reference audio with voice saving support", supports_preset_voices: true, supports_cloning: true, supports_voice_saving: true, supports_streaming: true },
-    { id: "multilingual", name: "Mock Multilingual", description: "Cross-lingual multi-accent voice engine", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
-    { id: "emotion_v2", name: "Mock Emotion & Style", description: "Dynamic prosody & pitch control model", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
-    { id: "standard", name: "Mock Standard", description: "Fast mock audio generator", supports_preset_voices: true, supports_cloning: false, supports_voice_saving: false, supports_streaming: true },
-    { id: "clone", name: "Mock Voice Cloning", description: "Simulated speaker cloning", supports_preset_voices: true, supports_cloning: true, supports_voice_saving: true, supports_streaming: true }
-  ],
-  capabilities: { supports_preset_voices: true, supports_cloning: true, supports_streaming: true, supports_speed: true, supports_pitch: false, supports_emotion: false },
-  constraints: {
-    max_text_length: 3000,
-    speed_range: { min: 0.5, max: 2.0, default: 1.0, step: 0.1 },
-    pitch_range: { min: -10.0, max: 10.0, default: 0.0, step: 0.5 },
-    supported_emotions: []
-  },
-  audio_spec: {
-    supported_formats: ["wav", "mp3"],
-    supported_sample_rates: [16000, 22050, 24000, 44100],
-    default_format: "wav",
-    default_sample_rate: 24000
-  },
-  ui_schema: {
-    ui_mode: process.env.VITE_UI_MODE || "beauty",
-    input_panel: {
-      file_serve: true,
-      closeable: false,
-      find_mode: "expert",
-      replace_tool: true,
-      enable_chunk_box: true,
-      max_chunk_size: 1000,
-      chunk_delimiters: ["(?<=\\.\\s*\\n)", "(?<=[.!?]\\s+)"]
-    },
-    model_sort: ["fast", "express", "zero_shot_clone", "multilingual", "emotion_v2", "standard", "clone"],
-    option_panel: {
-      fast: {
-        notice_banner: { level: "info", message: "⚡ Cloud Fast: Ultra-fast simulated TTS responses." },
-        voice_type: "radio",
-        speed_type: "slider",
-        preset_voices: [
-          { id: "Mock Voice A (Female)", name: "Mock Voice A (Female)", gender: "female" },
-          { id: "Mock Voice B (Male)", name: "Mock Voice B (Male)", gender: "male" }
-        ]
-      },
-      express: {
-        notice_banner: { level: "success", message: "✅ Express Real-Time: Low-latency streaming test engine ready." },
-        voice_type: "select",
-        speed_type: "slider"
-      },
-      zero_shot_clone: {
-        notice_banner: { level: "info", message: "⚡ Instant Zero-Shot Clone: Supports temporary audio upload without saving voice profiles to account." },
-        voice_type: "select",
-        speed_type: "slider"
-      },
-      multilingual: {
-        notice_banner: { level: "warning", message: "⚠️ Multilingual: Cross-lingual synthesis with regional accent selection." },
-        voice_type: "select",
-        speed_type: "slider"
-      },
-      emotion_v2: {
-        notice_banner: { level: "danger", message: "🚨 Emotion & Style: Experimental model - dynamic pitch controls active." },
-        voice_type: "select",
-        speed_type: "slider",
-        pitch_type: "slider",
-        emotion_type: "select"
-      },
-      standard: { voice_type: "select", speed_type: "slider" },
-      clone: {
-        voice_type: "select",
-        speed_type: "slider",
-        voice_metadata_schema: [
-          { key: "name", label: "Voice Name", type: "text", required: true, placeholder: "e.g. Test Voice..." },
-          { key: "gender", label: "Gender", type: "select", options: ["Male", "Female", "Other"] },
-          { key: "region", label: "Accent / Region", type: "select", options: ["North American", "British", "Australian", "Other"] },
-          { key: "style", label: "Style", type: "select", options: ["Expressive", "News / Broadcast", "Audiobook / Reading", "Dramatic", "Natural / Conversational", "Commercial", "Other"] }
-        ]
-      }
-    }
-  }
-};
-
 async function prerender() {
   console.log('🚀 Starting SSG Pre-rendering build process with Manifest pre-fetch...');
   const vite = await createServer({
@@ -96,16 +9,22 @@ async function prerender() {
     appType: 'custom'
   });
 
-  let manifest = FALLBACK_MANIFEST;
+  // The engine's manifest has exactly one definition — core-tts/schemas.py — so there is
+  // no hand-written copy here to drift out of sync with it. When the backend is
+  // unreachable at build time we prerender without one: App.svelte renders the shell and
+  // fetches the manifest on hydrate, which is the path a cold client already takes.
+  let manifest = null;
   try {
     const backendUrl = process.env.VITE_BACKEND_URL || 'http://localhost:8000';
     const res = await fetch(`${backendUrl}/api/info`);
     if (res.ok) {
       manifest = await res.json();
       console.log('📡 Successfully fetched live Manifest from backend for build-time SSG!');
+    } else {
+      console.log(`⚠️  Backend answered ${res.status} for /api/info. Prerendering without a manifest.`);
     }
   } catch (e) {
-    console.log('ℹ️ Backend offline during build stage. Used Core TTS Test Manifest for build-time SSG.');
+    console.log('ℹ️  Backend unreachable at build time. Prerendering without a manifest; the client fetches it at runtime.');
   }
 
   try {
@@ -118,8 +37,12 @@ async function prerender() {
     const indexPath = path.resolve('dist/index.html');
     let template = await fs.readFile(indexPath, 'utf-8');
 
-    const ssgScript = `<script>window.__SSG_MANIFEST__ = ${JSON.stringify(manifest)};</script>`;
-    template = template.replace('</head>', `${ssgScript}</head>`);
+    // Only inject the global when there is something to inject; main.ts already reads a
+    // missing __SSG_MANIFEST__ as "fetch at runtime".
+    if (manifest) {
+      const ssgScript = `<script>window.__SSG_MANIFEST__ = ${JSON.stringify(manifest)};</script>`;
+      template = template.replace('</head>', `${ssgScript}</head>`);
+    }
     template = template.replace('<div id="app"></div>', `<div id="app">${htmlContent}</div>`);
     
     await fs.writeFile(indexPath, template);
@@ -137,7 +60,7 @@ async function prerender() {
             'fa-bolt', 'fa-wave-square', 'fa-users-viewfinder', 'fa-users-gear',
             'fa-xmark', 'fa-check', 'fa-clock', 'fa-user-check', 'fa-clock-rotate-left',
             'fa-microphone-lines', 'fa-cloud-arrow-up', 'fa-bookmark', 'fa-scissors',
-            'fa-right-from-bracket', 'fa-right-to-bracket', 'fa-file-lines', 'fa-lock',
+            'fa-right-from-bracket', 'fa-right-to-bracket', 'fa-file-lines',
             'fa-file-import', 'fa-wand-magic-sparkles', 'fa-chevron-down', 'fa-chevron-up',
             'fa-code', 'fa-font', 'fa-magnifying-glass', 'fa-arrow-down', 'fa-layer-group',
             'fa-user-lock', 'fa-user-plus', 'fa-box-open', 'fa-rotate-right', 'fa-circle-check',
@@ -175,7 +98,10 @@ async function prerender() {
       finalHtml = finalHtml.replace(/<link [^>]*rel="stylesheet"[^>]*>/g, '');
       finalHtml = finalHtml.replace(/<noscript>[\s\S]*?<\/noscript>/g, '');
 
-      const activeUiMode = manifest?.ui_schema?.ui_mode || process.env.VITE_UI_MODE || 'beauty';
+      // UI mode is an engine decision: it is published in the manifest, the backend
+      // forwards a rebuild webhook when the manifest changes, and the bundle is rebuilt
+      // against the new value.
+      const activeUiMode = manifest?.ui_schema?.ui_mode ?? 'beauty';
       console.log(`🎯 Active Build UI Mode: "${activeUiMode.toUpperCase()}"`);
 
       if (activeUiMode === 'fast') {

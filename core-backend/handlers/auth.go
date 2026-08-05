@@ -170,12 +170,15 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Send secure HttpOnly cookie to browser client
+	//
+	// Secure lấy từ cấu hình, không viết cứng: cờ này từng là false cố định, nên một triển
+	// khai có TLS vẫn để token phiên đi qua HTTP thường nếu có ai hạ giao thức.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
 		Value:    "Bearer " + accessToken,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   h.Config.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   h.Config.AccessTokenExpireMinutes * 60,
 	})
@@ -194,11 +197,15 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 // Logout clears the access_token cookie in browser.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	// Thuộc tính phải trùng với cookie lúc đặt, nếu không trình duyệt coi đây là một cookie
+	// khác và cookie phiên cũ vẫn nằm lại.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   h.Config.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Logged out successfully"})
@@ -207,10 +214,8 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 // Me trả về thông tin chi tiết của người dùng đang đăng nhập dựa trên JWT Token.
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	user, ok := middleware.GetCurrentUser(r)
+	user, ok := currentUser(w, r)
 	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Not authenticated"})
 		return
 	}
 
@@ -257,6 +262,10 @@ func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "User not found"})
 		return
 	}
+
+	// Xoá bản ghi đã cache, nếu không tài khoản vừa duyệt vẫn bị chặn cho tới khi TTL hết
+	// và người dùng không hiểu vì sao mình vẫn chưa vào được.
+	middleware.InvalidateUser(user.Username)
 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"message": "User " + user.Username + " approved!",

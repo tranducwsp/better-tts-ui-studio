@@ -12,8 +12,8 @@ import (
 )
 
 const createUserVoice = `-- name: CreateUserVoice :one
-INSERT INTO user_voices (id, user_id, model_id, name, gender, region, style, file_path)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO user_voices (id, user_id, model_id, name, gender, region, style, file_path, metadata)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, user_id, model_id, name, gender, region, style, file_path, metadata, created_at
 `
 
@@ -26,6 +26,7 @@ type CreateUserVoiceParams struct {
 	Region   pgtype.Text `json:"region"`
 	Style    pgtype.Text `json:"style"`
 	FilePath string      `json:"file_path"`
+	Metadata []byte      `json:"metadata"`
 }
 
 func (q *Queries) CreateUserVoice(ctx context.Context, arg CreateUserVoiceParams) (UserVoice, error) {
@@ -38,6 +39,7 @@ func (q *Queries) CreateUserVoice(ctx context.Context, arg CreateUserVoiceParams
 		arg.Region,
 		arg.Style,
 		arg.FilePath,
+		arg.Metadata,
 	)
 	var i UserVoice
 	err := row.Scan(

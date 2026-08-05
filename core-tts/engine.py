@@ -58,9 +58,16 @@ DEFAULT_PRESET_VOICES = [
     {"id": "Ngọc Trân", "name": "Ngọc Trân", "descriptions": ["Female", "Southern", "Clear"]}
 ]
 
-def get_preset_voices():
+def get_preset_voices(model_id: str | None = None):
+    """Preset voices for one mode, or every voice when model_id is None.
+
+    The two groups run on different backends — Edge TTS for `fast`, the local neural model
+    for `standard` and `clone` — so a voice from one is unusable in the other. Filtering
+    here rather than in the platform is deliberate: only the engine knows the split.
+    """
     voices = []
-    # 1. Fast Edge TTS voices
+
+    # 1. Fast Edge TTS voices — only reachable through the streaming mode.
     for k, v in FAST_VOICES.items():
         if not any(x["id"] == v for x in voices):
             gender = "Female" if "Nữ" in k or "Female" in k else "Male"
@@ -68,14 +75,18 @@ def get_preset_voices():
             voices.append({
                 "id": v,
                 "name": k,
-                "descriptions": [gender, region, "Natural"]
+                "descriptions": [gender, region, "Natural"],
+                "modes": ["fast"]
             })
 
-    # 2. Standard voices
+    # 2. Neural voices — the local model. Not offered to `clone`: that mode synthesises
+    # from a reference clip the user supplies, so a preset speaker has nothing to do there.
     for p in DEFAULT_PRESET_VOICES:
-        voices.append(p)
+        voices.append({**p, "modes": ["standard"]})
 
-    return voices
+    if not model_id:
+        return voices
+    return [v for v in voices if model_id in v["modes"]]
 
 def synthesize_standard_sync(text: str, voice: str, speed: float = 1.0) -> bytes:
     if not text.strip().endswith(('.', '?', '!')):

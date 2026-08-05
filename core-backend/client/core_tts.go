@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"core-backend/types"
@@ -27,6 +29,26 @@ func NewCoreTTSClient(baseURL string, timeoutSeconds int) *CoreTTSClient {
 		BaseURL: baseURL,
 		HTTPClient: &http.Client{
 			Timeout: timeout,
+			// Transport khai riêng vì mặc định của thư viện chuẩn chỉ giữ 2 kết nối rỗi
+			// cho mỗi host. Mọi lượt tổng hợp đều đi tới cùng một Engine, nên từ lượt thứ
+			// ba đồng thời trở đi mỗi request phải bắt tay TCP mới rồi bỏ kết nối ngay sau
+			// đó — một đợt 50 lượt là 48 lần bắt tay và 48 socket rơi vào TIME_WAIT.
+			//
+			// ResponseHeaderTimeout tách riêng khỏi Timeout tổng: Engine im lặng hoàn toàn
+			// thì biết sớm, còn tổng hợp một đoạn dài vẫn được phép chạy hết thời gian.
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				MaxIdleConns:          100,
+				MaxIdleConnsPerHost:   100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+				ResponseHeaderTimeout: timeout,
+				DialContext: (&net.Dialer{
+					Timeout:   10 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+			},
 		},
 	}
 }
@@ -38,10 +60,12 @@ type CoreVoice struct {
 }
 
 type SynthesizeRequest struct {
-	Text    string  `json:"text"`
-	VoiceID string  `json:"voice_id"`
-	Speed   float64 `json:"speed"`
-	Engine  string  `json:"engine"`
+	Text    string   `json:"text"`
+	VoiceID string   `json:"voice_id"`
+	Speed   float64  `json:"speed"`
+	Engine  string   `json:"engine"`
+	Pitch   *float64 `json:"pitch,omitempty"`
+	Emotion *string  `json:"emotion,omitempty"`
 }
 
 func (c *CoreTTSClient) GetInfo() (*types.UniversalManifest, error) {
@@ -58,8 +82,20 @@ func (c *CoreTTSClient) GetInfo() (*types.UniversalManifest, error) {
 	return &result, nil
 }
 
-func (c *CoreTTSClient) GetVoices() ([]CoreVoice, error) {
-	resp, err := c.HTTPClient.Get(c.BaseURL + "/voices")
+// GetVoices lấy danh sách giọng cho một Mode.
+//
+// Việc lọc thuộc về Engine: chỉ nó biết giọng nào chạy được ở Mode nào, vì các Mode có thể
+// dùng những backend khác nhau. Nền tảng không lọc lại — nếu Engine trả về một giọng thì
+// nền tảng tin rằng Mode đó dùng được.
+//
+// modelID rỗng hoặc "all" nghĩa là hỏi toàn bộ, dùng cho màn hình quản lý.
+func (c *CoreTTSClient) GetVoices(modelID string) ([]CoreVoice, error) {
+	endpoint := c.BaseURL + "/voices"
+	if modelID != "" && modelID != "all" {
+		endpoint += "?model_id=" + url.QueryEscape(modelID)
+	}
+
+	resp, err := c.HTTPClient.Get(endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -76,12 +112,14 @@ func (c *CoreTTSClient) GetVoices() ([]CoreVoice, error) {
 	return voices, nil
 }
 
-func (c *CoreTTSClient) Synthesize(text, voice string, speed float64, engine string) ([]byte, error) {
+func (c *CoreTTSClient) Synthesize(text, voice string, speed float64, engine string, pitch *float64, emotion *string) ([]byte, error) {
 	payload := SynthesizeRequest{
 		Text:    text,
 		VoiceID: voice,
 		Speed:   speed,
 		Engine:  engine,
+		Pitch:   pitch,
+		Emotion: emotion,
 	}
 
 	bodyBytes, err := sonic.Marshal(payload)

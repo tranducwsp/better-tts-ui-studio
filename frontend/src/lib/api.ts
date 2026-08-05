@@ -100,7 +100,7 @@ export function parseVoiceItem(v: Record<string, unknown> | string): VoiceOption
   };
 }
 
-export async function fetchVoices(modelId: string = 'standard'): Promise<VoiceOption[]> {
+export async function fetchVoices(modelId: string): Promise<VoiceOption[]> {
   try {
     const res = await fetch(`/api/voices/${modelId}`, { credentials: 'include' });
     if (!res.ok) throw new Error('Failed to load voices');
@@ -164,15 +164,22 @@ export async function extractTextFromFile(file: File): Promise<string> {
   return data.text || '';
 }
 
+export interface SynthesizeOptions {
+  jobId?: string;
+  chunkIndex?: number;
+  totalChunks?: number;
+  pitch?: number;
+  emotion?: string;
+}
+
 export async function synthesize(
   text: string,
   voice: string,
   speed: number,
-  engine: string = 'standard',
-  jobId?: string,
-  chunkIndex: number = 0,
-  totalChunks: number = 1
+  engine: string,
+  options: SynthesizeOptions = {}
 ): Promise<string> {
+  const { jobId, chunkIndex = 0, totalChunks = 1, pitch, emotion } = options;
   const res = await fetch(`/api/synthesize/${engine}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -184,6 +191,9 @@ export async function synthesize(
       job_id: jobId,
       chunk_index: chunkIndex,
       total_chunks: totalChunks,
+      // Only sent when the manifest declares the engine supports them
+      ...(pitch !== undefined ? { pitch } : {}),
+      ...(emotion ? { emotion } : {}),
     }),
     credentials: 'include',
   });
@@ -194,14 +204,29 @@ export async function synthesize(
 
 
 
-export async function cloneVoice(file: File, name: string, gender = 'Male', region = 'Northern', style = 'Expressive', modelId = 'clone'): Promise<string> {
+/**
+ * Upload a reference clip and save it as a named voice.
+ *
+ * `fields` is whatever the engine's voice_metadata_schema asked for, passed through as-is.
+ * gender/region/style land in dedicated columns because the platform filters and displays
+ * them; anything else the engine declares goes into a JSONB column. Sending a fixed three
+ * would silently drop the rest — an engine declaring five fields would see two vanish.
+ */
+export async function cloneVoice(
+  file: File,
+  name: string,
+  fields: Record<string, string>,
+  modelId: string
+): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('name', name);
-  formData.append('gender', gender);
-  formData.append('region', region);
-  formData.append('style', style);
   formData.append('model_id', modelId);
+  for (const [key, value] of Object.entries(fields)) {
+    if (key === 'name' || value === '') continue;
+    formData.append(key, value);
+  }
+
   const res = await fetch('/api/clone/upload', {
     method: 'POST',
     body: formData,
@@ -212,7 +237,8 @@ export async function cloneVoice(file: File, name: string, gender = 'Male', regi
   return data.id || data.clone_id || '';
 }
 
-export async function cloneVoiceTemp(file: File, modelId = 'clone'): Promise<string> {
+/** modelId identifies which mode the reference audio belongs to; callers pass activeMode.id. */
+export async function cloneVoiceTemp(file: File, modelId = ''): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('model_id', modelId);

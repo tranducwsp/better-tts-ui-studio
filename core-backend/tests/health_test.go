@@ -43,7 +43,7 @@ func TestReadinessCheck_DatabaseNil(t *testing.T) {
 }
 
 func TestGetEngineInfo_NotLoaded(t *testing.T) {
-	state.GlobalManifestState.Set(nil)
+	state.GlobalManifestState.Clear()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/info", nil)
 	rec := httptest.NewRecorder()
@@ -57,12 +57,15 @@ func TestGetEngineInfo_NotLoaded(t *testing.T) {
 
 func TestGetEngineInfo_LoadedSuccess(t *testing.T) {
 	mockManifest := &types.UniversalManifest{
-		EngineID:   "unit-test-engine",
-		EngineName: "Unit Test Engine",
-		Version:    "1.0.0",
-		Provider:   "Test Provider",
+		EngineID:       "unit-test-engine",
+		EngineName:     "Unit Test Engine",
+		Version:        "1.0.0",
+		Provider:       "Test Provider",
+		SupportedModes: []types.EngineModeSpec{{ID: "standard", Name: "Standard"}},
 	}
-	state.GlobalManifestState.Set(mockManifest)
+	if err := state.GlobalManifestState.Set(mockManifest); err != nil {
+		t.Fatalf("manifest hợp lệ mà bị từ chối: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/info", nil)
 	rec := httptest.NewRecorder()

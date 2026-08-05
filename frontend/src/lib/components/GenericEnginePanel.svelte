@@ -1,34 +1,60 @@
 <script lang="ts">
   import type { VoiceOption, UniversalManifest, EngineModeSpec, Preset, JobDetailResponse } from '../types';
   import VoiceSelect from './VoiceSelect.svelte';
-  import StreamingPanel from './StreamingPanel.svelte';
   import WaveformTrimmer from './WaveformTrimmer.svelte';
   import CreateVoiceModal from './CreateVoiceModal.svelte';
-  import { synthesize, subscribeTaskStream, fetchVoices, fetchPresets, cloneVoiceTemp } from '../api';
+  import { fetchVoices, fetchPresets, cloneVoiceTemp, deleteCloneVoice } from '../api';
+  import { acceptedUploadFormats, maxUploadBytes, maxUploadLabel, referenceSizeError, supportedFormatsLabel } from '../audioSpec';
+  import { resolveCapabilities } from '../capabilities';
+  import { pitchRange, speedRange } from '../ranges';
+  import { resolveStreamingThreshold } from '../textLimits';
   import { toast } from '../toast.svelte';
 
   interface Props {
     text: string;
     activeMode: EngineModeSpec;
     manifest: UniversalManifest | null;
-    voices?: VoiceOption[];
     reloadedJob?: JobDetailResponse | null;
+    /**
+     * Asks the parent to open the streaming panel with these settings. The panel is a
+     * sibling of this one rather than a child, so a long job is not nested inside the
+     * settings card it was started from.
+     */
+    onStartStreaming?: (params: {
+      engine: string;
+      voice: string;
+      speed: number;
+      pitch?: number;
+      emotion?: string;
+    }) => void;
   }
 
-  let { text, activeMode, manifest, voices = $bindable([]), reloadedJob = null }: Props = $props();
+  let { text, activeMode, manifest, reloadedJob = null, onStartStreaming }: Props = $props();
 
   // Mode option spec derived from manifest ui_schema
   let modelOption = $derived(manifest?.ui_schema?.option_panel?.[activeMode.id] || null);
 
-  // Per-mode capabilities derived from activeMode with manifest fallbacks
-  let supportsCloning = $derived(activeMode?.supports_cloning ?? false);
-  let supportsVoiceSaving = $derived(activeMode?.supports_voice_saving ?? false);
-  let supportsPresetVoices = $derived(
-    activeMode?.supports_preset_voices ?? manifest?.capabilities?.supports_preset_voices ?? true
+  // Every capability question goes through one resolver, so the mode-over-engine
+  // precedence rule exists in a single place rather than as ?? chains here.
+  let caps = $derived(resolveCapabilities(manifest, activeMode));
+
+  let supportsCloning = $derived(caps.supports_cloning);
+  let supportsVoiceSaving = $derived(caps.supports_voice_saving);
+  let supportsPresetVoices = $derived(caps.supports_preset_voices);
+  let supportsStreaming = $derived(caps.supports_streaming);
+  let supportsSpeed = $derived(caps.supports_speed);
+  let supportsPitch = $derived(caps.supports_pitch);
+  // An engine claiming emotion support without a vocabulary has nothing to offer.
+  let supportsEmotion = $derived(
+    caps.supports_emotion && (manifest?.constraints?.supported_emotions?.length || 0) > 0
   );
-  let supportsStreaming = $derived(
-    activeMode?.supports_streaming ?? manifest?.capabilities?.supports_streaming ?? true
-  );
+
+  let availableEmotions = $derived(manifest?.constraints?.supported_emotions ?? []);
+
+  // Slider bounds resolved once, so the slider and number variants of each control can
+  // never disagree about min/max/step.
+  let speedBounds = $derived(speedRange(manifest));
+  let pitchBounds = $derived(pitchRange(manifest));
 
   let modeVoices = $state<VoiceOption[]>([]);
 
@@ -40,9 +66,6 @@
     return modeVoices;
   });
 
-  // Default derived constraints
-  let defaultSpeed = $derived(manifest?.constraints?.speed_range?.default ?? 1.0);
-  let defaultPitch = $derived(manifest?.constraints?.pitch_range?.default ?? 0.0);
 
   // States
   let selectedVoice = $state('');
@@ -53,16 +76,19 @@
 
   let isCloningTemp = $state(false);
   let isCreateModalOpen = $state(false);
-  let fileInput = $state<HTMLInputElement | null>(null);
   let selectedFile = $state<File | null>(null);
 
-  // Streaming / Loading States
-  let isLoading = $state(false);
-  let isStreaming = $state(false);
-  let progress = $state(0);
-  let wavBlobUrl = $state<string | null>(null);
-  let mp3AudioUrl = $state<string | null>(null);
-  let unsubscribeStream = $state<(() => void) | null>(null);
+
+  // Hands the current settings to the parent, which owns the streaming panel.
+  function requestStreaming() {
+    onStartStreaming?.({
+      engine: activeMode.id,
+      voice: referenceAudioPath || selectedVoice,
+      speed,
+      pitch: supportsPitch ? pitch : undefined,
+      emotion: supportsEmotion ? selectedEmotion : undefined,
+    });
+  }
 
   // Load engine voices & user custom saved clone voices from DB
   async function loadVoicesForMode(modeId: string) {
@@ -83,12 +109,13 @@
       }
 
       // 3. Fetch custom saved voices if mode supports voice saving
-      if (activeMode?.supports_voice_saving) {
+      if (resolveCapabilities(manifest, modeId).supports_voice_saving) {
         const userPresets = await fetchPresets(modeId);
         if (userPresets && userPresets.length > 0) {
           const userVoices: VoiceOption[] = userPresets.map((p) => ({
             id: p.id,
             name: p.name,
+            deletable: true,
             descriptions: [p.gender, p.region, p.style].filter((d): d is string => typeof d === 'string' && d.trim() !== '')
           }));
           combined = [...userVoices, ...combined];
@@ -115,13 +142,18 @@
     }
   }
 
-  let lastModeId = $state('');
+  // Plain (non-reactive) guard: this is written by the effect that reads it, so it must
+  // not be $state or the effect would depend on its own write.
+  let lastModeId = '';
 
   $effect(() => {
     if (activeMode && activeMode.id && activeMode.id !== lastModeId) {
       lastModeId = activeMode.id;
-      speed = manifest?.constraints?.speed_range?.default ?? 1.0;
-      pitch = manifest?.constraints?.pitch_range?.default ?? 0.0;
+      speed = speedBounds.default;
+      pitch = pitchBounds.default;
+      // Emotion vocabularies are per-engine; a value carried over from another mode
+      // may not exist in this one, so always reset it.
+      selectedEmotion = '';
       selectedVoice = '';
       loadVoicesForMode(activeMode.id);
     }
@@ -132,8 +164,12 @@
     if (reloadedJob && reloadedJob.engine === activeMode.id) {
       if (reloadedJob.voice) selectedVoice = reloadedJob.voice;
       if (reloadedJob.speed) speed = reloadedJob.speed;
+      // Absent means the engine had no such control for that job; keep the mode default.
+      // Compared against undefined so a stored pitch of 0 still restores.
+      if (reloadedJob.pitch !== undefined) pitch = reloadedJob.pitch;
+      if (reloadedJob.emotion) selectedEmotion = reloadedJob.emotion;
       if (reloadedJob.chunks && reloadedJob.chunks.length > 0) {
-        isStreaming = true;
+        requestStreaming();
       }
     }
   });
@@ -142,10 +178,21 @@
     const target = e.target as HTMLInputElement;
     if (!target.files?.length) return;
     const file = target.files[0];
+
+    // Check here as well as on the server: rejecting a 200 MB file after uploading it
+    // wastes the user's bandwidth to reach the same answer.
+    const ceiling = maxUploadBytes(manifest, activeMode);
+    if (file.size > ceiling) {
+      toast.show(`File is ${(file.size / 1048576).toFixed(1)} MB; the engine accepts up to ${maxUploadLabel(manifest, activeMode)}.`, 'error');
+      target.value = '';
+      return;
+    }
+
+    selectedFile = file;
     isCloningTemp = true;
     toast.show('Processing reference audio file...', 'info');
     try {
-      const tempPath = await cloneVoiceTemp(file);
+      const tempPath = await sendReference(file);
       referenceAudioPath = tempPath;
       toast.show('Reference audio file loaded successfully!', 'success');
     } catch (err: unknown) {
@@ -157,11 +204,39 @@
     }
   }
 
+  // Both reference uploads go through here so the engine's clip ceiling is enforced once.
+  // The trimmer path needs it most: trimming is exactly what a user does to get under the
+  // limit, so failing there must say so rather than surface a generic upload error.
+  async function sendReference(file: File): Promise<string> {
+    const tooBig = referenceSizeError(file.size, manifest, activeMode);
+    if (tooBig) throw new Error(tooBig);
+    return cloneVoiceTemp(file, activeMode.id);
+  }
+
+  // Deleting a saved voice needs a confirm: the reference clip goes with it on the server,
+  // so there is nothing to undo from. Only voices marked deletable reach here — engine
+  // presets share the list but have no route to delete.
+  async function handleDeleteVoice(v: VoiceOption) {
+    if (!confirm(`Delete the saved voice "${v.name}"? This cannot be undone.`)) return;
+
+    try {
+      await deleteCloneVoice(v.id);
+      // Clear the selection before reloading, otherwise the panel keeps synthesising
+      // against an id the backend no longer knows.
+      if (selectedVoice === v.id) selectedVoice = '';
+      toast.show(`Deleted voice "${v.name}".`, 'success');
+      await loadVoicesForMode(activeMode.id);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.show('Error deleting voice: ' + errMsg, 'error');
+    }
+  }
+
   function handleTrimmedAudio(blob: Blob) {
     const file = new File([blob], 'trimmed_reference.wav', { type: 'audio/wav' });
     isCloningTemp = true;
     toast.show('Uploading trimmed audio sample...', 'info');
-    cloneVoiceTemp(file)
+    sendReference(file)
       .then((path) => {
         referenceAudioPath = path;
         toast.show('Reference audio updated from trimmer!', 'success');
@@ -174,7 +249,6 @@
       });
   }
 
-  let isStreamingPanelOpen = $state(false);
 
   async function handleSynthesize() {
     if (!text.trim()) {
@@ -187,67 +261,14 @@
       return;
     }
 
-    const maxLimit = manifest?.constraints?.max_text_length || 3000;
+    // Every job goes through the streaming panel, including short text that fits in one
+    // request — it simply becomes a one-chunk job. One code path means one place for
+    // progress, cancellation, history and playback to be correct.
+    const maxLimit = resolveStreamingThreshold(manifest);
     if (text.length > maxLimit) {
-      isStreamingPanelOpen = true;
       toast.show(`Text length (${text.length} chars) exceeds single request limit (${maxLimit} chars). Automatically processing via Chunk Streaming!`, 'info');
-      return;
     }
-
-    isLoading = true;
-    isStreaming = false;
-    progress = 0;
-    wavBlobUrl = null;
-    mp3AudioUrl = null;
-
-    try {
-      const voiceParam = referenceAudioPath || selectedVoice;
-      const taskId = await synthesize(text, voiceParam, speed, activeMode.id);
-
-      if (supportsStreaming) {
-        isStreaming = true;
-        unsubscribeStream = subscribeTaskStream(
-          taskId,
-          (prog) => {
-            progress = prog;
-          },
-          (doneWavBlob: Blob | string, mp3Url?: string) => {
-            isLoading = false;
-            isStreaming = false;
-            if (doneWavBlob instanceof Blob) {
-              wavBlobUrl = URL.createObjectURL(doneWavBlob);
-            } else if (typeof doneWavBlob === 'string') {
-              wavBlobUrl = doneWavBlob;
-            }
-            if (mp3Url) {
-              mp3AudioUrl = mp3Url;
-            }
-            toast.show('Audio synthesis completed!', 'success');
-          },
-          (err) => {
-            isLoading = false;
-            isStreaming = false;
-            toast.show('Process error: ' + err, 'error');
-          }
-        );
-      } else {
-        toast.show('Request submitted successfully!', 'success');
-        isLoading = false;
-      }
-    } catch (err: unknown) {
-      isLoading = false;
-      const errMsg = err instanceof Error ? err.message : String(err);
-      toast.show('Synthesis error: ' + errMsg, 'error');
-    }
-  }
-
-  function handleCancel() {
-    if (unsubscribeStream) {
-      unsubscribeStream();
-      unsubscribeStream = null;
-    }
-    isLoading = false;
-    toast.show('Process cancelled', 'info');
+    requestStreaming();
   }
 </script>
 
@@ -310,9 +331,9 @@
                 bind:group={selectedVoice}
                 style="accent-color: var(--primary); transform: scale(1.2);"
               />
-              {#if (v as Record<string, unknown>).gender === 'female'}
+              {#if v.gender === 'female'}
                 <i class="fa-solid fa-venus" style="color: #ff75a0;"></i>
-              {:else if (v as Record<string, unknown>).gender === 'male'}
+              {:else if v.gender === 'male'}
                 <i class="fa-solid fa-mars" style="color: #4da6ff;"></i>
               {/if}
               <span>{v.name}</span>
@@ -324,6 +345,7 @@
           voices={activeVoices}
           selectedVoiceId={selectedVoice}
           onSelect={(v) => selectedVoice = v.id || v.name}
+          onDelete={handleDeleteVoice}
         />
       {/if}
     </div>
@@ -348,31 +370,31 @@
           <div style="color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 6px;">
             <i class="fa-solid fa-cloud-arrow-up" style="font-size: 1.8rem; color: var(--primary);"></i>
             <span>Drag & drop audio file here or <strong style="color: var(--primary);">click to browse</strong></span>
-            <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: WAV (Max 10MB)</span>
+            <span style="font-size: 0.8rem; opacity: 0.7;">Supported formats: {supportedFormatsLabel(manifest, activeMode)}</span>
           </div>
         {/if}
-        <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" bind:this={fileInput} onchange={handleFileUpload} accept=".wav,audio/wav" style="display: none;" />
+        <input id="temp-voice-dropzone" aria-label="Upload reference audio file" type="file" onchange={handleFileUpload} accept={acceptedUploadFormats(manifest, activeMode)} style="display: none;" />
       </label>
 
       {#if selectedFile}
         <div style="margin-top: 10px;">
-          <WaveformTrimmer file={selectedFile} onTrimmed={handleTrimmedAudio} />
+          <WaveformTrimmer file={selectedFile} onTrimmed={handleTrimmedAudio} {manifest} mode={activeMode} />
         </div>
       {/if}
     </div>
   {/if}
 
   <!-- Speed Control Widget -->
-  {#if manifest?.capabilities?.supports_speed ?? true}
+  {#if supportsSpeed}
     <div class="form-group">
       <label for="generic-speed">Speed: <span>{speed.toFixed(1)}x</span></label>
       {#if modelOption?.speed_type === 'number'}
         <input
           type="number"
           id="generic-speed"
-          min={manifest?.constraints?.speed_range?.min || 0.5}
-          max={manifest?.constraints?.speed_range?.max || 2.0}
-          step={manifest?.constraints?.speed_range?.step || 0.1}
+          min={speedBounds.min}
+          max={speedBounds.max}
+          step={speedBounds.step}
           bind:value={speed}
           style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
         />
@@ -380,9 +402,9 @@
         <input
           type="range"
           id="generic-speed"
-          min={manifest?.constraints?.speed_range?.min || 0.5}
-          max={manifest?.constraints?.speed_range?.max || 2.0}
-          step={manifest?.constraints?.speed_range?.step || 0.1}
+          min={speedBounds.min}
+          max={speedBounds.max}
+          step={speedBounds.step}
           bind:value={speed}
         />
       {/if}
@@ -390,95 +412,67 @@
   {/if}
 
   <!-- Pitch Control Widget (Dynamic) -->
-  {#if manifest?.capabilities?.supports_pitch}
+  {#if supportsPitch}
     <div class="form-group">
       <label for="generic-pitch">Pitch: <span>{pitch.toFixed(1)}</span></label>
-      <input
-        type="range"
-        id="generic-pitch"
-        min={manifest?.constraints?.pitch_range?.min || -10}
-        max={manifest?.constraints?.pitch_range?.max || 10}
-        step={manifest?.constraints?.pitch_range?.step || 0.5}
-        bind:value={pitch}
-      />
+      {#if modelOption?.pitch_type === 'number'}
+        <input
+          type="number"
+          id="generic-pitch"
+          min={pitchBounds.min}
+          max={pitchBounds.max}
+          step={pitchBounds.step}
+          bind:value={pitch}
+          style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
+        />
+      {:else}
+        <input
+          type="range"
+          id="generic-pitch"
+          min={pitchBounds.min}
+          max={pitchBounds.max}
+          step={pitchBounds.step}
+          bind:value={pitch}
+        />
+      {/if}
     </div>
   {/if}
 
   <!-- Emotion Control Widget (Dynamic) -->
-  {#if manifest?.capabilities?.supports_emotion && (manifest?.constraints?.supported_emotions?.length || 0) > 0}
+  {#if supportsEmotion}
     <div class="form-group">
       <label for="generic-emotion">Emotion</label>
-      <select
-        id="generic-emotion"
-        bind:value={selectedEmotion}
-        style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
-      >
-        <option value="">Default (Natural)</option>
-        {#each manifest.constraints.supported_emotions as em}
-          <option value={em}>{em}</option>
-        {/each}
-      </select>
+      {#if modelOption?.emotion_type === 'radio'}
+        <div style="display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap;">
+          {#each availableEmotions as em (em)}
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; background: {selectedEmotion === em ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)'}; padding: 8px 14px; border-radius: 8px; border: 1px solid {selectedEmotion === em ? 'var(--primary)' : 'rgba(255,255,255,0.15)'}; font-weight: 500;">
+              <input type="radio" name="generic-emotion-radio" value={em} bind:group={selectedEmotion} style="accent-color: var(--primary);" />
+              <span>{em}</span>
+            </label>
+          {/each}
+        </div>
+      {:else}
+        <select
+          id="generic-emotion"
+          bind:value={selectedEmotion}
+          style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: white;"
+        >
+          <option value="">Default (Natural)</option>
+          {#each availableEmotions as em (em)}
+            <option value={em}>{em}</option>
+          {/each}
+        </select>
+      {/if}
     </div>
   {/if}
 
   <!-- Synthesize Actions -->
   <div class="action-buttons">
-    {#if isLoading}
-      <button onclick={handleCancel} class="btn secondary-btn" style="flex: 1; border-color: var(--danger); color: var(--danger);">
-        <i class="fa-solid fa-ban"></i> Cancel Process
-      </button>
-    {:else}
-      <button onclick={handleSynthesize} class="btn primary-btn">
-        <i class="fa-solid fa-play"></i> Synthesize Audio
-      </button>
-    {/if}
+    <button onclick={handleSynthesize} class="btn primary-btn">
+      <i class="fa-solid fa-play"></i> Synthesize Audio
+    </button>
   </div>
-
-  <!-- Loading / Streaming Panel -->
-  {#if isLoading}
-    <div class="loading-indicator">
-      <div class="spinner"></div>
-      <p>Processing AI Audio ({progress}%)...</p>
-      <div class="progress-wrapper">
-        <div class="progress-bar" style="width: {progress}%;"></div>
-      </div>
-    </div>
-  {/if}
-
-  <!-- Audio Result Player Card -->
-  {#if wavBlobUrl}
-    <div class="audio-result-card" style="margin-top: 1.5rem; padding: 1.25rem; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); border-radius: 14px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
-        <h4 style="margin: 0; display: flex; align-items: center; gap: 8px; color: var(--primary);">
-          <i class="fa-solid fa-circle-play"></i> Synthesized Audio Ready
-        </h4>
-        <span style="font-size: 0.82em; opacity: 0.7;">WAV 24kHz</span>
-      </div>
-      <audio controls autoplay src={wavBlobUrl} style="width: 100%; margin-bottom: 1rem; border-radius: 8px; outline: none;"></audio>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <a href={wavBlobUrl} download="synthesized_audio.wav" class="btn btn-primary" style="text-decoration: none; padding: 8px 16px; font-size: 0.9em; display: inline-flex; align-items: center; gap: 6px;">
-          <i class="fa-solid fa-download"></i> Download WAV
-        </a>
-        {#if mp3AudioUrl}
-          <a href={mp3AudioUrl} download="synthesized_audio.mp3" class="btn btn-secondary" style="text-decoration: none; padding: 8px 16px; font-size: 0.9em; display: inline-flex; align-items: center; gap: 6px;">
-            <i class="fa-solid fa-file-audio"></i> Download MP3
-          </a>
-        {/if}
-      </div>
-    </div>
-  {/if}
 </div>
-
-{#if isStreamingPanelOpen}
-  <StreamingPanel
-    {text}
-    engine={activeMode.id}
-    voice={referenceAudioPath || selectedVoice}
-    {speed}
-    {reloadedJob}
-    onClose={() => isStreamingPanelOpen = false}
-  />
-{/if}
 
 <!-- Modal Tạo Giọng Clone Mới -->
 {#if isCreateModalOpen}
@@ -486,6 +480,8 @@
     isOpen={isCreateModalOpen}
     modelId={activeMode.id}
     metadataSchema={modelOption?.voice_metadata_schema}
+    {manifest}
+    mode={activeMode}
     onClose={() => isCreateModalOpen = false}
     onSaved={(voiceId, voiceName) => {
       isCreateModalOpen = false;

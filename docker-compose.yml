@@ -4,15 +4,18 @@ services:
     image: postgres:16-alpine
     container_name: app-postgres
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=ai_studio
-    ports:
-      - "5432:5432"
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD chưa được đặt trong .env}
+      - POSTGRES_DB=${POSTGRES_DB:-ai_studio}
+    # Không publish 5432 ra host: core-backend nói chuyện với Postgres qua network nội bộ của
+    # compose theo tên service. Mở ra host là đưa cơ sở dữ liệu lên mọi giao diện mạng của máy.
+    # Cần psql từ ngoài thì dùng `docker compose exec postgres psql`.
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_studio"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ai_studio}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,10 +25,11 @@ services:
   redis:
     image: redis:alpine
     container_name: app-redis
-    ports:
-      - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD chưa được đặt trong .env}
+    expose:
+      - "6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -37,14 +41,26 @@ services:
       context: ./core-tts
       dockerfile: Dockerfile
     container_name: ai-core-engine
-    ports:
-      - "8001:8001"
+    # Engine không có lớp xác thực nào: mọi endpoint (/synthesize, /voices/clone) và cả gRPC
+    # đều mở cho bất kỳ ai gọi được tới nó. Nó chỉ nên tiếp nhận traffic từ core-backend qua
+    # network nội bộ, nên cổng không ra host.
+    expose:
+      - "8001"
+      - "50051"
     environment:
       - CORE_PORT=8001
       - CORE_HOST=0.0.0.0
+      # The engine owns the UI mode: it publishes this as ui_schema.ui_mode, the backend
+      # forwards a rebuild webhook on manifest reload, and the frontend rebuilds against
+      # the new value. "beauty" (default) or "fast" — the latter strips icons, webfonts
+      # and GPU filters from the prerendered bundle.
+      - UI_MODE=${UI_MODE:-beauty}
     volumes:
       - ./core-tts:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    # Không có --reload: nó theo dõi /app, mà /app là một bind mount từ host. Bất kỳ lỗi nào
+    # cho phép ghi một tệp .py vào cây nguồn sẽ được uvicorn tự nạp — biến một lỗi ghi tệp
+    # thành thực thi mã. Phát triển cục bộ thì thêm --reload trong compose override riêng.
+    command: uvicorn main:app --host 0.0.0.0 --port 8001
     restart: unless-stopped
 
   # 2. Control Plane Web Backend (Go Chi - Auth, DB, Management, Dynamic Gateway)
@@ -58,8 +74,11 @@ services:
     environment:
       - PORT=8000
       - HOST=0.0.0.0
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ai_studio?sslmode=disable
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY chưa được đặt trong .env}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
       - REDIS_URL=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - COOKIE_SECURE=${COOKIE_SECURE:-0}
       - CORE_ENGINE_URL=http://core-engine:8001
       - CORE_ENGINE_GRPC_URL=core-engine:50051
       - FE_BUILDER_URL=http://frontend-builder:3001
@@ -80,15 +99,15 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.builder
-      args:
-        - VITE_UI_MODE=beauty
     container_name: ai-studio-frontend-builder
-    ports:
-      - "3001:3001"
+    # /rebuild không có xác thực và mỗi lần gọi là một lượt build tốn CPU, nên nó chỉ nhận
+    # webhook từ core-backend trong network nội bộ.
+    expose:
+      - "3001"
     environment:
       - PORT=3001
-      - VITE_BACKEND_URL=http://core-backend:8000
-      - VITE_UI_MODE=beauty
+      # Nửa còn lại của liên kết với FE_BUILDER_URL; xem core-backend/config/settings.go.
+      - VITE_BACKEND_URL=${VITE_BACKEND_URL:-http://core-backend:8000}
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -102,8 +121,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        - VITE_UI_MODE=beauty
     container_name: ai-studio-frontend
     ports:
       - "5173:5173"

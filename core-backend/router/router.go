@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+	"time"
 
 	"core-backend/client"
 	"core-backend/config"
@@ -53,11 +54,17 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 	r.Route("/api", func(r chi.Router) {
 		// Public Auth & Engine Info routes
 		r.Get("/info", handlers.GetEngineInfo)
-		r.Get("/manifest", handlers.GetEngineInfo)
-		r.Post("/internal/engine/reload", engineSyncHandler.ReloadManifest)
-		r.Post("/internal/manifest/reload", engineSyncHandler.ReloadManifest)
-		r.Post("/register", authHandler.Register)
-		r.Post("/login", authHandler.Login)
+
+		// Chỉ hai route này bị giới hạn nhịp: chúng là nơi một vòng lặp có giá trị với người
+		// ngoài (dò mật khẩu, tạo tài khoản rác, và mỗi lượt là một lần bcrypt). Các route đã
+		// đăng nhập không cần lớp này vì đã có danh tính để truy vết.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RateLimit(10, time.Minute))
+
+			r.Post("/register", authHandler.Register)
+			r.Post("/login", authHandler.Login)
+		})
+
 		r.Post("/logout", authHandler.Logout)
 
 		// Protected routes (Require active/approved user)
@@ -81,7 +88,6 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 			r.Get("/clone/voices", cloneHandler.GetUserVoices)
 			r.Delete("/clone/voices/{clone_id}", cloneHandler.DeleteUserVoice)
 
-
 			// Tasks
 			r.Get("/tasks/{task_id}", tasksHandler.GetTaskStatus)
 			r.Post("/tasks/{task_id}/cancel", tasksHandler.CancelTask)
@@ -95,6 +101,14 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 		// Admin routes
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdmin)
+
+			// Reload Manifest nằm ở đây, không ở nhóm public.
+			//
+			// Tiền tố "internal" chỉ là quy ước đặt tên, không phải một lớp bảo vệ: route này
+			// từng mở cho mọi người, và mỗi lần gọi vừa thay Manifest đang dùng vừa bắn một
+			// webhook rebuild sang FE Builder — nên gọi nó trong vòng lặp là hạ cả engine lẫn
+			// builder mà không cần đăng nhập.
+			r.Post("/internal/engine/reload", engineSyncHandler.ReloadManifest)
 
 			r.Get("/admin/users", authHandler.GetUsers)
 			r.Post("/admin/users/{user_id}/approve", authHandler.ApproveUser)

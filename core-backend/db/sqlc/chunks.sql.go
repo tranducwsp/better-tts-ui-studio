@@ -50,24 +50,17 @@ func (q *Queries) CreateTTSChunk(ctx context.Context, arg CreateTTSChunkParams) 
 	return i, err
 }
 
-const getTTSChunkByID = `-- name: GetTTSChunkByID :one
-SELECT id, job_id, chunk_index, text, audio_path, status, error_msg FROM tts_chunks
-WHERE id = $1 LIMIT 1
+const getTaskOwner = `-- name: GetTaskOwner :one
+SELECT j.user_id FROM tts_chunks c
+JOIN tts_jobs j ON j.id = c.job_id
+WHERE c.id = $1
 `
 
-func (q *Queries) GetTTSChunkByID(ctx context.Context, id string) (TtsChunk, error) {
-	row := q.db.QueryRow(ctx, getTTSChunkByID, id)
-	var i TtsChunk
-	err := row.Scan(
-		&i.ID,
-		&i.JobID,
-		&i.ChunkIndex,
-		&i.Text,
-		&i.AudioPath,
-		&i.Status,
-		&i.ErrorMsg,
-	)
-	return i, err
+func (q *Queries) GetTaskOwner(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, getTaskOwner, id)
+	var user_id string
+	err := row.Scan(&user_id)
+	return user_id, err
 }
 
 const listTTSChunksByJobID = `-- name: ListTTSChunksByJobID :many

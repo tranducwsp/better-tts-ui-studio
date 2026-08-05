@@ -117,3 +117,96 @@ func TestExtractText_MissingFile(t *testing.T) {
 		t.Errorf("Expected status 400 when file is missing, got %d", rec.Code)
 	}
 }
+
+// buildZipBomb dựng một tệp zip mà entry name giải nén ra size byte.
+//
+// Nội dung lặp một ký tự nên deflate nén cực tốt: đây đúng là hình dạng của một tệp được
+// dựng riêng để phình ra, chứ không phải một tài liệu thật.
+func buildZipBomb(t *testing.T, name string, size int) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	f, err := zw.Create(name)
+	if err != nil {
+		t.Fatalf("không tạo được entry zip: %v", err)
+	}
+
+	chunk := bytes.Repeat([]byte("A"), 1<<20)
+	for written := 0; written < size; written += len(chunk) {
+		n := len(chunk)
+		if remain := size - written; remain < n {
+			n = remain
+		}
+		if _, err := f.Write(chunk[:n]); err != nil {
+			t.Fatalf("không ghi được nội dung zip: %v", err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("không đóng được zip: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// TestExtractText_RejectsZipBomb khoá lại trần giải nén cho DOCX và ODT.
+//
+// MaxBytesReader chỉ chặn kích thước tệp NÉN, mà cả hai định dạng đều là zip — nên trước khi
+// có trần này, một tệp dưới một megabyte giải nén thành hàng trăm megabyte trong RAM, và vài
+// request song song là đủ hạ tiến trình.
+func TestExtractText_RejectsZipBomb(t *testing.T) {
+	cases := []struct {
+		filename string
+		entry    string
+	}{
+		{"bomb.docx", "word/document.xml"},
+		{"bomb.odt", "content.xml"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.filename, func(t *testing.T) {
+			// 80 MB giải nén, trên trần 64 MB. Nén lại chỉ còn khoảng vài chục KB.
+			payload := buildZipBomb(t, c.entry, 80<<20)
+			if len(payload) > 4<<20 {
+				t.Fatalf("tệp nén %d byte — quá lớn, ca kiểm thử không còn mô tả zip bomb", len(payload))
+			}
+
+			h := handlers.NewUtilsHandler()
+			req := createMultipartRequest(t, c.filename, payload)
+			rec := httptest.NewRecorder()
+
+			h.ExtractText(rec, req)
+
+			if rec.Code == http.StatusOK {
+				t.Errorf("zip bomb %s phải bị từ chối, nhưng nhận được 200", c.filename)
+			}
+		})
+	}
+}
+
+// TestExtractText_AcceptsLargeButSaneDocument xác nhận trần không chạm tài liệu thật.
+//
+// Một tệp Word rất dài vẫn chỉ có vài megabyte văn bản, nên nó phải đi qua bình thường —
+// nếu không, bản vá đã đổi một lỗ hổng lấy một lỗi từ chối người dùng hợp lệ.
+func TestExtractText_AcceptsLargeButSaneDocument(t *testing.T) {
+	var zipBuf bytes.Buffer
+	zw := zip.NewWriter(&zipBuf)
+	f, err := zw.Create("word/document.xml")
+	if err != nil {
+		t.Fatalf("không tạo được entry zip: %v", err)
+	}
+	body := bytes.Repeat([]byte("<w:p><w:r><w:t>xin chao</w:t></w:r></w:p>"), 20000)
+	_, _ = f.Write([]byte(`<?xml version="1.0"?><w:document><w:body>`))
+	_, _ = f.Write(body)
+	_, _ = f.Write([]byte(`</w:body></w:document>`))
+	_ = zw.Close()
+
+	h := handlers.NewUtilsHandler()
+	req := createMultipartRequest(t, "long.docx", zipBuf.Bytes())
+	rec := httptest.NewRecorder()
+
+	h.ExtractText(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("tài liệu dài nhưng hợp lệ phải được nhận, got %d: %s", rec.Code, rec.Body.String())
+	}
+}

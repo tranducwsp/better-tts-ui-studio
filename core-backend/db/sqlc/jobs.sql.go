@@ -12,19 +12,21 @@ import (
 )
 
 const createTTSJob = `-- name: CreateTTSJob :one
-INSERT INTO tts_jobs (id, user_id, engine, voice, speed, total_chunks, text)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, engine, voice, speed, total_chunks, text, created_at
+INSERT INTO tts_jobs (id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text, created_at
 `
 
 type CreateTTSJobParams struct {
-	ID          string  `json:"id"`
-	UserID      string  `json:"user_id"`
-	Engine      string  `json:"engine"`
-	Voice       string  `json:"voice"`
-	Speed       float64 `json:"speed"`
-	TotalChunks int32   `json:"total_chunks"`
-	Text        string  `json:"text"`
+	ID          string        `json:"id"`
+	UserID      string        `json:"user_id"`
+	Engine      string        `json:"engine"`
+	Voice       string        `json:"voice"`
+	Speed       float64       `json:"speed"`
+	Pitch       pgtype.Float8 `json:"pitch"`
+	Emotion     pgtype.Text   `json:"emotion"`
+	TotalChunks int32         `json:"total_chunks"`
+	Text        string        `json:"text"`
 }
 
 func (q *Queries) CreateTTSJob(ctx context.Context, arg CreateTTSJobParams) (TtsJob, error) {
@@ -34,6 +36,8 @@ func (q *Queries) CreateTTSJob(ctx context.Context, arg CreateTTSJobParams) (Tts
 		arg.Engine,
 		arg.Voice,
 		arg.Speed,
+		arg.Pitch,
+		arg.Emotion,
 		arg.TotalChunks,
 		arg.Text,
 	)
@@ -44,6 +48,8 @@ func (q *Queries) CreateTTSJob(ctx context.Context, arg CreateTTSJobParams) (Tts
 		&i.Engine,
 		&i.Voice,
 		&i.Speed,
+		&i.Pitch,
+		&i.Emotion,
 		&i.TotalChunks,
 		&i.Text,
 		&i.CreatedAt,
@@ -51,8 +57,46 @@ func (q *Queries) CreateTTSJob(ctx context.Context, arg CreateTTSJobParams) (Tts
 	return i, err
 }
 
+const ensureTTSJob = `-- name: EnsureTTSJob :exec
+INSERT INTO tts_jobs (id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (id) DO NOTHING
+`
+
+type EnsureTTSJobParams struct {
+	ID          string        `json:"id"`
+	UserID      string        `json:"user_id"`
+	Engine      string        `json:"engine"`
+	Voice       string        `json:"voice"`
+	Speed       float64       `json:"speed"`
+	Pitch       pgtype.Float8 `json:"pitch"`
+	Emotion     pgtype.Text   `json:"emotion"`
+	TotalChunks int32         `json:"total_chunks"`
+	Text        string        `json:"text"`
+}
+
+// EnsureTTSJob tạo job nếu chưa có, và không làm gì nếu đã có.
+//
+// Thay cho cặp GetTTSJobByID-rồi-CreateTTSJob: hai chunk đầu tiên của cùng một job tới song
+// song đều thấy "chưa tồn tại" rồi cùng chèn, và cái thua bị bỏ lỗi âm thầm. Một câu lệnh
+// vừa hết đua vừa bớt một lượt đi lại tới cơ sở dữ liệu trên đường đi của mỗi chunk.
+func (q *Queries) EnsureTTSJob(ctx context.Context, arg EnsureTTSJobParams) error {
+	_, err := q.db.Exec(ctx, ensureTTSJob,
+		arg.ID,
+		arg.UserID,
+		arg.Engine,
+		arg.Voice,
+		arg.Speed,
+		arg.Pitch,
+		arg.Emotion,
+		arg.TotalChunks,
+		arg.Text,
+	)
+	return err
+}
+
 const getTTSJobByID = `-- name: GetTTSJobByID :one
-SELECT id, user_id, engine, voice, speed, total_chunks, text, created_at FROM tts_jobs
+SELECT id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text, created_at FROM tts_jobs
 WHERE id = $1 LIMIT 1
 `
 
@@ -65,110 +109,17 @@ func (q *Queries) GetTTSJobByID(ctx context.Context, id string) (TtsJob, error) 
 		&i.Engine,
 		&i.Voice,
 		&i.Speed,
+		&i.Pitch,
+		&i.Emotion,
 		&i.TotalChunks,
 		&i.Text,
 		&i.CreatedAt,
 	)
 	return i, err
-}
-
-const getTTSJobByIDAndUser = `-- name: GetTTSJobByIDAndUser :one
-SELECT id, user_id, engine, voice, speed, total_chunks, text, created_at FROM tts_jobs
-WHERE id = $1 AND user_id = $2 LIMIT 1
-`
-
-type GetTTSJobByIDAndUserParams struct {
-	ID     string `json:"id"`
-	UserID string `json:"user_id"`
-}
-
-func (q *Queries) GetTTSJobByIDAndUser(ctx context.Context, arg GetTTSJobByIDAndUserParams) (TtsJob, error) {
-	row := q.db.QueryRow(ctx, getTTSJobByIDAndUser, arg.ID, arg.UserID)
-	var i TtsJob
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Engine,
-		&i.Voice,
-		&i.Speed,
-		&i.TotalChunks,
-		&i.Text,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const listAllTTSJobs = `-- name: ListAllTTSJobs :many
-SELECT id, user_id, engine, voice, speed, total_chunks, text, created_at FROM tts_jobs
-ORDER BY created_at DESC
-`
-
-func (q *Queries) ListAllTTSJobs(ctx context.Context) ([]TtsJob, error) {
-	rows, err := q.db.Query(ctx, listAllTTSJobs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TtsJob{}
-	for rows.Next() {
-		var i TtsJob
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.Engine,
-			&i.Voice,
-			&i.Speed,
-			&i.TotalChunks,
-			&i.Text,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listTTSJobsByUserID = `-- name: ListTTSJobsByUserID :many
-SELECT id, user_id, engine, voice, speed, total_chunks, text, created_at FROM tts_jobs
-WHERE user_id = $1
-ORDER BY created_at DESC
-`
-
-func (q *Queries) ListTTSJobsByUserID(ctx context.Context, userID string) ([]TtsJob, error) {
-	rows, err := q.db.Query(ctx, listTTSJobsByUserID, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TtsJob{}
-	for rows.Next() {
-		var i TtsJob
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.Engine,
-			&i.Voice,
-			&i.Speed,
-			&i.TotalChunks,
-			&i.Text,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listUserHistorySummaries = `-- name: ListUserHistorySummaries :many
-SELECT 
+SELECT
     j.id AS job_id,
     j.engine,
     j.voice,
@@ -184,7 +135,13 @@ LEFT JOIN tts_chunks c ON j.id = c.job_id
 WHERE j.user_id = $1
 GROUP BY j.id
 ORDER BY j.created_at DESC
+LIMIT $2
 `
+
+type ListUserHistorySummariesParams struct {
+	UserID string `json:"user_id"`
+	Limit  int32  `json:"limit"`
+}
 
 type ListUserHistorySummariesRow struct {
 	JobID             string             `json:"job_id"`
@@ -199,8 +156,12 @@ type ListUserHistorySummariesRow struct {
 	FirstChunkText    string             `json:"first_chunk_text"`
 }
 
-func (q *Queries) ListUserHistorySummaries(ctx context.Context, userID string) ([]ListUserHistorySummariesRow, error) {
-	rows, err := q.db.Query(ctx, listUserHistorySummaries, userID)
+// ListUserHistorySummaries lấy một trang lịch sử, mới nhất trước.
+//
+// Có LIMIT vì trước đây truy vấn trả về mọi job của người dùng: ai dùng nhiều thì mỗi lần
+// mở lịch sử là tổng hợp rồi truyền về hàng nghìn dòng mà giao diện chỉ hiển thị một phần.
+func (q *Queries) ListUserHistorySummaries(ctx context.Context, arg ListUserHistorySummariesParams) ([]ListUserHistorySummariesRow, error) {
+	rows, err := q.db.Query(ctx, listUserHistorySummaries, arg.UserID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
