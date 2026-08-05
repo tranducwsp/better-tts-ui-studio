@@ -192,7 +192,12 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state.GlobalTaskManager.CacheTranscoded(taskID, format, converted)
-	_ = os.WriteFile(transcodePath(taskID, format), converted, 0644)
+	// Bản trên đĩa chỉ là bộ nhớ đệm cho lần tải sau; ghi thất bại chỉ có nghĩa là lần sau
+	// chạy lại ffmpeg, nên không cần làm hỏng phản hồi đang thành công. Vẫn log để đĩa đầy
+	// không biểu hiện thành "sao dạo này tải chậm".
+	if err := os.WriteFile(transcodePath(taskID, format), converted, 0644); err != nil {
+		log.Printf("Không cất được bản chuyển mã %s.%s: %v", taskID, format, err)
+	}
 	writeAudio(w, converted, format)
 }
 

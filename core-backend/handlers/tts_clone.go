@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -117,7 +118,11 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Save reference audio file under storage tier
 	userDir := storage.ModeDir(upload.ModelID, user.ID)
-	_ = os.MkdirAll(userDir, 0755)
+	if err := os.MkdirAll(userDir, 0755); err != nil {
+		log.Printf("Không tạo được thư mục giọng %s: %v", userDir, err)
+		writeError(w, http.StatusInternalServerError, "Không lưu được giọng lên đĩa")
+		return
+	}
 
 	cloneID := uuid.NewString()
 	ext := "wav"
@@ -125,11 +130,23 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		ext = upload.Filename[idx+1:]
 	}
 	filePath := filepath.Join(userDir, fmt.Sprintf("%s.%s", cloneID, ext))
-	_ = os.WriteFile(filePath, upload.Data, 0644)
+
+	// Đĩa đầy hay hết quota trước đây vẫn đi tiếp và báo "Nhân bản giọng thành công!", đồng
+	// thời ghi một bản ghi trỏ tới tệp không tồn tại — người dùng chỉ phát hiện khi chọn dùng
+	// giọng đó, ở một lần khác và một thông báo lỗi không liên quan.
+	if err := os.WriteFile(filePath, upload.Data, 0644); err != nil {
+		log.Printf("Không ghi được tệp giọng %s: %v", filePath, err)
+		writeError(w, http.StatusInternalServerError, "Không lưu được giọng lên đĩa")
+		return
+	}
 
 	// 2. Send file to Core TTS Service to extract feature embeddings
+	//
+	// Tệp vừa ghi được dọn nếu các bước sau thất bại: không có bản ghi nào trỏ tới nó, nên để
+	// lại thì nó là rác vô hình mà bộ quét dọn (chỉ nhìn storage/temp) không bao giờ thu hồi.
 	res, err := h.TTSClient.CloneVoice(upload.Data, upload.Filename, name)
 	if err != nil {
+		_ = os.Remove(filePath)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -160,6 +177,8 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 
 	_, err = db.Queries.CreateUserVoice(r.Context(), params)
 	if err != nil {
+		_ = os.Remove(filePath)
+		log.Printf("Không lưu được bản ghi giọng %s: %v", coreCloneID, err)
 		writeError(w, http.StatusInternalServerError, "Không lưu được giọng vào cơ sở dữ liệu")
 		return
 	}
@@ -290,13 +309,25 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if voice.FilePath != "" && os.Getenv("PRESERVE_FILES") == "" {
-		_ = os.Remove(voice.FilePath)
-	}
-
-	_ = db.Queries.DeleteUserVoice(r.Context(), sqlc.DeleteUserVoiceParams{
+	// Xoá bản ghi TRƯỚC tệp: nếu câu lệnh này lỗi thì tệp vẫn còn và người dùng thử lại được.
+	// Thứ tự ngược lại — xoá tệp trước rồi bỏ qua lỗi DB — để lại một bản ghi trỏ tới tệp
+	// không tồn tại, mà giao diện vẫn liệt kê như một giọng dùng được.
+	if err := db.Queries.DeleteUserVoice(r.Context(), sqlc.DeleteUserVoiceParams{
 		ID:     cloneID,
 		UserID: user.ID,
-	})
+	}); err != nil {
+		log.Printf("Không xoá được bản ghi giọng %s: %v", cloneID, err)
+		writeError(w, http.StatusInternalServerError, "Không xoá được giọng")
+		return
+	}
+
+	// Tệp không xoá được chỉ còn là rác trên đĩa, không còn ảnh hưởng tới người dùng — nên
+	// ghi log rồi báo thành công, vì với họ giọng đó đã biến mất thật.
+	if voice.FilePath != "" && os.Getenv("PRESERVE_FILES") == "" {
+		if err := os.Remove(voice.FilePath); err != nil && !os.IsNotExist(err) {
+			log.Printf("Bản ghi giọng %s đã xoá nhưng còn tệp %s: %v", cloneID, voice.FilePath, err)
+		}
+	}
+
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã xóa giọng"})
 }

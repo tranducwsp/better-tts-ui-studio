@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -217,7 +218,17 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		Emotion: req.Emotion,
 	}
 
-	_ = db.RegisterJobAndChunk(context.Background(), user.ID, jobID, req.Engine, req.Voice, audioParams, totalChunks, taskID, chunkIndex, req.Text)
+	// Bản ghi job/chunk là thứ khiến task này về sau truy vấn lại được: lịch sử đọc từ đây, và
+	// ownsTask dựa vào nó để biết chủ sở hữu khi task không còn trong RAM. Bỏ lỗi ở đây nghĩa
+	// là job vẫn chạy, âm thanh vẫn sinh, nhưng không có gì ghi lại — người dùng mất nó khỏi
+	// lịch sử, và sau một lần khởi động lại thì không ai chứng minh được task đó của mình.
+	//
+	// Dừng luôn thay vì chạy tiếp: một lượt tổng hợp không ai lấy lại được chỉ tiêu tốn GPU.
+	if err := db.RegisterJobAndChunk(context.Background(), user.ID, jobID, req.Engine, req.Voice, audioParams, totalChunks, taskID, chunkIndex, req.Text); err != nil {
+		log.Printf("Không ghi được job %s / chunk %s: %v", jobID, taskID, err)
+		writeError(w, http.StatusInternalServerError, "Không khởi tạo được yêu cầu tổng hợp")
+		return
+	}
 
 	// Async Task Worker Goroutine
 	go func() {
@@ -231,7 +242,9 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 				Error:    err.Error(),
 			})
 			errMsg := err.Error()
-			_ = db.UpdateChunkStatus(bgCtx, taskID, "error", nil, &errMsg)
+			if dbErr := db.UpdateChunkStatus(bgCtx, taskID, "error", nil, &errMsg); dbErr != nil {
+				log.Printf("Chunk %s lỗi nhưng không ghi được trạng thái vào DB: %v", taskID, dbErr)
+			}
 			return
 		}
 
@@ -241,9 +254,18 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		sourceFormat := state.GlobalManifestState.Get().ResolveAudioSpec(req.Engine).DefaultFormat
 		taskItem.SetSourceFormat(sourceFormat)
 
-		_ = os.MkdirAll(storage.TempDir(), 0755)
+		// Ghi ra đĩa thất bại không phải lỗi chí tử — bản trong RAM là phương án dự phòng ngay
+		// dưới đây — nhưng nó cần để lại dấu vết: đĩa đầy biểu hiện thành RSS tăng dần thay vì
+		// một lỗi, và không có dòng log này thì nguyên nhân không thể truy ra từ triệu chứng.
 		filePath := filepath.Join(storage.TempDir(), fmt.Sprintf("%s.%s", taskID, sourceFormat))
-		wroteToDisk := os.WriteFile(filePath, audioBytes, 0644) == nil
+		wroteToDisk := false
+		if err := os.MkdirAll(storage.TempDir(), 0755); err != nil {
+			log.Printf("Không tạo được thư mục tạm %s: %v — giữ âm thanh trong RAM", storage.TempDir(), err)
+		} else if err := os.WriteFile(filePath, audioBytes, 0644); err != nil {
+			log.Printf("Không ghi được âm thanh task %s ra %s: %v — giữ trong RAM", taskID, filePath, err)
+		} else {
+			wroteToDisk = true
+		}
 
 		// Đĩa là nơi giữ âm thanh; RAM chỉ giữ khi chưa ghi được ra đĩa.
 		//
@@ -260,7 +282,13 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		}
 		taskItem.CacheAudio(bgCtx, sourceFormat, audioBytes)
 
-		_ = db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil)
+		// Không có client nào để báo ở đây — công việc đã xong và âm thanh đã có. Nhưng lịch
+		// sử đọc trạng thái từ DB, nên một lượt ghi thất bại trong im lặng để chunk mãi ở
+		// "processing": giao diện hiển thị một job không bao giờ hoàn thành dù tệp đã nằm sẵn
+		// trên đĩa.
+		if err := db.UpdateChunkStatus(bgCtx, taskID, "done", &filePath, nil); err != nil {
+			log.Printf("Chunk %s đã xong nhưng không ghi được trạng thái vào DB: %v", taskID, err)
+		}
 
 		taskItem.Notify(state.TaskUpdate{
 			Status:   "done",
