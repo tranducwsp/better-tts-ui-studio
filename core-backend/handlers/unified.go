@@ -194,6 +194,7 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	taskItem := state.GlobalTaskManager.GetOrCreate(taskID)
+	taskItem.SetOwner(user.ID)
 
 	jobID := taskID
 	if req.JobID != nil && *req.JobID != "" {

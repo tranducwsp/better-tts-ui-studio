@@ -15,3 +15,8 @@ RETURNING *;
 SELECT * FROM tts_chunks
 WHERE job_id = $1
 ORDER BY chunk_index ASC;
+
+-- name: GetTaskOwner :one
+SELECT j.user_id FROM tts_chunks c
+JOIN tts_jobs j ON j.id = c.job_id
+WHERE c.id = $1;

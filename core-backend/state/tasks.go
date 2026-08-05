@@ -72,6 +72,14 @@ type TaskItem struct {
 	Status   string `json:"status"`
 	Progress int    `json:"progress"`
 
+	// OwnerID là user đã tạo task này, dùng để kiểm quyền truy cập.
+	//
+	// Nằm ở đây thay vì phải join DB trên mỗi lượt hỏi: polling trạng thái và SSE là hai
+	// đường đi nóng nhất của một job đang chạy, nên một truy vấn cho mỗi lần hỏi tiến độ là
+	// cái giá không cần trả. Rỗng nghĩa là chưa biết — task được dựng lại từ Redis sau khi
+	// khởi động lại không mang theo trường này, và người kiểm quyền phải hỏi DB.
+	OwnerID string `json:"owner_id,omitempty"`
+
 	// Audio là dữ liệu Engine trả về, ở đúng định dạng SourceFormat khai. Trước đây trường
 	// này tên AudioWAV và mọi nơi coi nó là WAV — trong khi Mode chạy Edge TTS trả MP3, nên
 	// tệp tải xuống mang phần mở rộng .wav mà bên trong là MP3.
@@ -387,6 +395,28 @@ func (tm *TaskManager) GetOrCreate(taskID string) *TaskItem {
 	}
 
 	return item
+}
+
+// Owner trả về user sở hữu task, và false nếu task chưa ghi nhận chủ.
+func (t *TaskItem) Owner() (string, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.OwnerID, t.OwnerID != ""
+}
+
+// SetOwner gắn chủ sở hữu cho task nếu nó chưa có.
+//
+// Không ghi đè: task_id do client gửi lên, nên nếu một người gửi trùng task_id của người
+// khác thì lượt sau không được phép chiếm quyền sở hữu lượt trước.
+func (t *TaskItem) SetOwner(userID string) {
+	if userID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.OwnerID == "" {
+		t.OwnerID = userID
+	}
 }
 
 func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {

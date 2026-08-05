@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"core-backend/audio"
+	"core-backend/db"
 	"core-backend/state"
 	"core-backend/storage"
 
@@ -25,10 +26,56 @@ func NewTasksHandler() *TasksHandler {
 	return &TasksHandler{}
 }
 
+// ownsTask kiểm tra người gọi có quyền trên task này không, và đã ghi phản hồi lỗi nếu không.
+//
+// Trước đây bốn handler dưới đây chỉ tra task_id rồi trả kết quả. task_id là UUID nên khó
+// đoán, nhưng nó lộ ra trong lịch sử (ChunkItemResponse.TaskID) và do client tự gửi khi tổng
+// hợp, nên "khó đoán" không phải là kiểm soát truy cập.
+//
+// Chủ sở hữu lấy từ TaskItem trước, chỉ hỏi DB khi task trong RAM không mang theo trường đó
+// — tức task được dựng lại từ Redis sau một lần khởi động lại. Polling trạng thái và SSE là
+// hai đường đi nóng nhất của một job đang chạy; một truy vấn join cho mỗi lần hỏi tiến độ là
+// cái giá không cần trả cho thông tin mà tiến trình này đã biết.
+//
+// Task không tìm được chủ ở cả hai nơi bị từ chối: thà chặn một task hợp lệ còn hơn mở mọi
+// task cho mọi người vì một bản ghi thiếu.
+func ownsTask(w http.ResponseWriter, r *http.Request, taskID string) bool {
+	user, ok := currentUser(w, r)
+	if !ok {
+		return false
+	}
+
+	owner := ""
+	if task, found := state.GlobalTaskManager.Get(taskID); found {
+		if id, known := task.Owner(); known {
+			owner = id
+		}
+	}
+
+	if owner == "" {
+		id, err := db.Queries.GetTaskOwner(r.Context(), taskID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "Task not found")
+			return false
+		}
+		owner = id
+	}
+
+	if owner != user.ID && user.Role != "admin" {
+		writeError(w, http.StatusForbidden, "Forbidden")
+		return false
+	}
+	return true
+}
+
 // GetTaskStatus lấy trạng thái (status, progress) của một Task bất đồng bộ qua task_id.
 func (h *TasksHandler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	taskID := chi.URLParam(r, "task_id")
+
+	if !ownsTask(w, r, taskID) {
+		return
+	}
 
 	task, ok := state.GlobalTaskManager.Get(taskID)
 	if !ok {
@@ -49,6 +96,10 @@ func (h *TasksHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	taskID := chi.URLParam(r, "task_id")
 
+	if !ownsTask(w, r, taskID) {
+		return
+	}
+
 	state.GlobalTaskManager.Cancel(taskID)
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Cancellation requested"})
 }
@@ -67,6 +118,9 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	// <task>.to.<format> rồi đọc trước khi CanTranscode kịp từ chối.
 	if !safeTaskID(taskID) {
 		writeError(w, http.StatusBadRequest, "Invalid task ID")
+		return
+	}
+	if !ownsTask(w, r, taskID) {
 		return
 	}
 	if format != "" && !audio.CanTranscode(format) {
@@ -175,6 +229,10 @@ func writeAudio(w http.ResponseWriter, data []byte, format string) {
 // StreamTaskProgress truyền dữ liệu tiến độ thời gian thực (Real-time SSE Stream) qua kết nối HTTP Persistent/Event-Stream.
 func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "task_id")
+
+	if !ownsTask(w, r, taskID) {
+		return
+	}
 
 	task, ok := state.GlobalTaskManager.Get(taskID)
 	if !ok {
