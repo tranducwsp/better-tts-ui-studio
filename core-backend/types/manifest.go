@@ -243,6 +243,19 @@ func (m *UniversalManifest) ChunkSize() int {
 	return ceiling
 }
 
+// TextLimit trả về trần độ dài văn bản đang có hiệu lực.
+//
+// Engine khai 0 (hoặc số âm) nghĩa là "không nói", không phải "không giới hạn": validate.go
+// chỉ cảnh báo chứ không từ chối một manifest như vậy, nên nếu người kiểm tra đọc thẳng
+// Constraints.MaxTextLength và bỏ qua khi nó bằng 0 thì trần biến mất trong im lặng. Cùng một
+// mặc định với ChunkSize, để đoạn văn bản nền tảng cắt ra không bao giờ vượt trần nó áp.
+func (m *UniversalManifest) TextLimit() int {
+	if m == nil || m.Constraints.MaxTextLength <= 0 {
+		return DefaultMaxTextLength
+	}
+	return m.Constraints.MaxTextLength
+}
+
 // PlatformDefaultAudioSpec áp dụng khi cả Mode lẫn Engine đều không khai.
 //
 // Phải khớp các fallback trong frontend/src/lib/audioSpec.ts.

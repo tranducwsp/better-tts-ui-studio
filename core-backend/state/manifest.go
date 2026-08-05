@@ -106,8 +106,10 @@ func (s *EngineManifestState) ValidatePitch(pitch *float64, mode string) error {
 	m := s.manifest
 	s.mu.RUnlock()
 
+	// Không có Manifest thì không biết Mode này có nhận pitch không. Trước đây chỗ này trả
+	// nil — tức mặc định là "có hỗ trợ", đúng chiều nguy hiểm hơn trong hai chiều đoán sai.
 	if m == nil {
-		return nil
+		return errManifestUnavailable
 	}
 
 	if !m.ResolveCapabilities(mode).SupportsPitch {
@@ -136,7 +138,7 @@ func (s *EngineManifestState) ValidateEmotion(emotion *string, mode string) erro
 	s.mu.RUnlock()
 
 	if m == nil {
-		return nil
+		return errManifestUnavailable
 	}
 
 	if !m.ResolveCapabilities(mode).SupportsEmotion {
@@ -159,12 +161,14 @@ func (s *EngineManifestState) ValidateRequest(text string, speed float64, mode s
 	s.mu.RUnlock()
 
 	if m == nil {
-		return nil
+		return errManifestUnavailable
 	}
 
+	// Trần luôn có hiệu lực: TextLimit quay về mặc định nền tảng khi Engine khai 0, vì
+	// "không khai" không đồng nghĩa với "không giới hạn".
 	runeCount := len([]rune(text))
-	if m.Constraints.MaxTextLength > 0 && runeCount > m.Constraints.MaxTextLength {
-		return fmt.Errorf("text length (%d characters) exceeds maximum limit (%d characters)", runeCount, m.Constraints.MaxTextLength)
+	if limit := m.TextLimit(); runeCount > limit {
+		return fmt.Errorf("text length (%d characters) exceeds maximum limit (%d characters)", runeCount, limit)
 	}
 
 	if m.Constraints.SpeedRange.Min > 0 && speed < m.Constraints.SpeedRange.Min {
@@ -175,7 +179,10 @@ func (s *EngineManifestState) ValidateRequest(text string, speed float64, mode s
 		return fmt.Errorf("speed %.2f exceeds maximum limit (%.2f)", speed, m.Constraints.SpeedRange.Max)
 	}
 
-	if mode != "" && len(m.SupportedModes) > 0 {
+	// Mode luôn được kiểm: Set() từ chối manifest không khai mode nào, nên tới đây danh sách
+	// chắc chắn không rỗng. Điều kiện len(...) > 0 trước đây chỉ che được đúng trường hợp
+	// không nên che — một manifest rỗng thì mode nào cũng đi qua.
+	if mode != "" {
 		validMode := false
 		for _, sm := range m.SupportedModes {
 			if sm.ID == mode {

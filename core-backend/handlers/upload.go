@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -47,7 +48,13 @@ var audioSignatures = map[string]func([]byte) bool{
 // Thuộc tính accept của trình duyệt chỉ là gợi ý cho hộp chọn tệp; client nào cũng gửi được
 // thứ khác. Kiểm cả chữ ký vì đổi tên .mp3 thành .wav là việc dễ làm nhất.
 func checkReferenceAudio(filename string, data []byte, modeID string) error {
-	spec := state.GlobalManifestState.Get().ResolveAudioSpec(modeID)
+	// Không có Manifest thì allowlist định dạng sẽ là mặc định của nền tảng chứ không phải
+	// thứ Engine khai đọc được — một giới hạn trông như đang áp dụng nhưng nói về engine khác.
+	m := state.GlobalManifestState.Get()
+	if m == nil {
+		return errors.New("chưa có manifest từ AI Engine, tạm thời không nhận tệp tham chiếu")
+	}
+	spec := m.ResolveAudioSpec(modeID)
 
 	ext := ""
 	if i := strings.LastIndex(filename, "."); i != -1 {

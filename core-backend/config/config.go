@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"log"
 	"os"
 	"strconv"
@@ -50,26 +48,53 @@ type Config struct {
 	TTSClientTimeout   int
 }
 
-// resolveSecretKey lấy khoá ký JWT từ ENV, hoặc sinh ngẫu nhiên nếu không được cung cấp.
+// requireAll dừng tiến trình nếu bất kỳ biến nào đánh dấu Required bị bỏ trống.
+//
+// Trước đây cờ Required chỉ là trang trí: gen-env đọc nó để in dòng "BẮT BUỘC cho môi
+// trường thật" vào .env.example, còn lúc chạy thì không ai kiểm. Nên một triển khai thiếu
+// SECRET_KEY vẫn khởi động bình thường bằng khoá ngẫu nhiên, và người vận hành chỉ biết nếu
+// tình cờ đọc log — đúng kiểu hỏng ngầm mà bảng đặc tả này sinh ra để tránh.
+//
+// Gom mọi biến thiếu rồi báo một lần: sửa một biến, khởi động lại, phát hiện thiếu biến
+// tiếp theo là vòng lặp không cần thiết khi tất cả đều biết được ngay từ đầu.
+func requireAll() {
+	var missing []string
+	for _, s := range Settings {
+		if !s.Required {
+			continue
+		}
+		// Biến của dịch vụ khác không phải việc của tiến trình này. POSTGRES_PASSWORD chẳng
+		// hạn: docker-compose tự bắt buộc nó qua cú pháp `:?`, còn backend chỉ thấy
+		// DATABASE_URL đã dựng sẵn — nên đòi nó ở đây sẽ chặn khởi động vô cớ ở mọi triển
+		// khai không dùng compose, ví dụ k8s cấp thẳng DATABASE_URL.
+		if s.ReadBy != "" {
+			continue
+		}
+		if strings.TrimSpace(os.Getenv(s.Key)) == "" {
+			missing = append(missing, s.Key)
+		}
+	}
+
+	if len(missing) > 0 {
+		log.Fatalf("Thiếu biến môi trường bắt buộc: %s.\n"+
+			"Sao chép .env.example thành .env rồi điền chúng. Sinh giá trị ngẫu nhiên bằng:\n"+
+			"  openssl rand -hex 32",
+			strings.Join(missing, ", "))
+	}
+}
+
+// resolveSecretKey lấy khoá ký JWT từ ENV.
 //
 // Trước đây hàm này trả về một chuỗi mặc định cố định nằm sẵn trong mã nguồn. Bất kỳ ai
 // đọc được repo đều có thể tự ký một token admin hợp lệ mà không cần mật khẩu — nên một
 // giá trị mặc định dùng chung là lỗ hổng, không phải tiện ích.
 //
-// Khoá ngẫu nhiên khiến mọi phiên đăng nhập mất hiệu lực sau mỗi lần khởi động lại, và
-// không dùng được khi chạy nhiều replica. Đó là chủ ý: bất tiện nhưng an toàn, và log đã
-// nói rõ cách khắc phục.
+// Bước sau đó là sinh khoá ngẫu nhiên khi ENV bỏ trống. An toàn hơn giá trị cứng, nhưng vẫn
+// để hệ thống khởi động ở một trạng thái không ai chọn: phiên mất sau mỗi lần khởi động lại
+// và nhiều replica không dùng chung được phiên, chỉ báo bằng một dòng log dễ trôi. requireAll
+// đã chặn từ trước, nên tới đây khoá chắc chắn có.
 func resolveSecretKey() string {
-	if v := strings.TrimSpace(os.Getenv("SECRET_KEY")); v != "" {
-		return v
-	}
-
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		log.Fatalf("SECRET_KEY chưa được đặt và không thể sinh khoá ngẫu nhiên: %v", err)
-	}
-	log.Println("⚠️  SECRET_KEY chưa được đặt. Đã sinh khoá tạm thời: mọi người dùng sẽ bị đăng xuất sau mỗi lần khởi động lại, và nhiều replica sẽ không dùng chung được phiên. Hãy đặt SECRET_KEY cho môi trường thật.")
-	return hex.EncodeToString(buf)
+	return strings.TrimSpace(os.Getenv("SECRET_KEY"))
 }
 
 // LoadConfig đọc .env rồi nạp mọi biến theo bảng đặc tả trong settings.go.
@@ -79,6 +104,9 @@ func resolveSecretKey() string {
 // tạo.
 func LoadConfig() *Config {
 	_ = godotenv.Load()
+
+	// Trước mọi thứ khác: thiếu một biến bắt buộc thì không có cấu hình nào để nói tới.
+	requireAll()
 
 	corsOrigins := strings.Split(str("CORS_ALLOWED_ORIGINS"), ",")
 	for i := range corsOrigins {
@@ -138,11 +166,6 @@ func LoadConfig() *Config {
 // định và người vận hành không có cách nào đối chiếu ý định với thực tế. Bí mật chỉ hiện
 // trạng thái, không hiện giá trị.
 func (c *Config) logSummary() {
-	secretState := "đã đặt qua ENV"
-	if strings.TrimSpace(os.Getenv("SECRET_KEY")) == "" {
-		secretState = "SINH NGẪU NHIÊN (phiên đăng nhập mất sau mỗi lần khởi động lại)"
-	}
-
 	seeded := "không tạo tài khoản nào"
 	if c.DefaultAdminUsername != "" || c.DefaultUserUsername != "" {
 		seeded = "có tài khoản khởi tạo sẵn"
@@ -150,7 +173,7 @@ func (c *Config) logSummary() {
 
 	log.Printf("Cấu hình đang áp dụng:")
 	log.Printf("  server        %s:%s | token hết hạn sau %d phút", c.Host, c.Port, c.AccessTokenExpireMinutes)
-	log.Printf("  secret        %s | %s", secretState, seeded)
+	log.Printf("  secret        đã đặt qua ENV | %s", seeded)
 	log.Printf("  engine        %s (timeout %ds)", c.CoreTTSURL, c.TTSClientTimeout)
 	log.Printf("  db pool       max=%d min=%d lifetime=%dm idle=%dm retry=%dx%ds",
 		c.DBMaxConns, c.DBMinConns, c.DBMaxConnLifetimeMinutes, c.DBMaxConnIdleMinutes,

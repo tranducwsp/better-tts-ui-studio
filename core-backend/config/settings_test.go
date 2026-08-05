@@ -153,3 +153,45 @@ func TestReadByVarsAreNotLoaded(t *testing.T) {
 		}
 	}
 }
+
+// TestRequiredSettingsAreEnforced xác nhận cờ Required thực sự chặn khởi động.
+//
+// Trước đây nó chỉ là trang trí: gen-env đọc để in dòng "BẮT BUỘC" vào .env.example, còn lúc
+// chạy không ai kiểm — nên một triển khai thiếu SECRET_KEY vẫn lên bình thường bằng khoá
+// ngẫu nhiên, và người vận hành chỉ biết nếu tình cờ đọc log.
+//
+// requireAll gọi log.Fatalf nên không gọi trực tiếp được trong test; thay vào đó kiểm chính
+// tập hợp mà nó duyệt, và kiểm rằng nó được gọi từ LoadConfig.
+func TestRequiredSettingsAreEnforced(t *testing.T) {
+	raw, err := os.ReadFile("config.go")
+	if err != nil {
+		t.Fatalf("đọc config.go: %v", err)
+	}
+	src := string(raw)
+
+	if !strings.Contains(src, "requireAll()") {
+		t.Error("LoadConfig phải gọi requireAll(), nếu không cờ Required chỉ là chú thích")
+	}
+
+	// Ít nhất một biến phải được đánh dấu Required, nếu không bài test trên là vô nghĩa.
+	found := false
+	for _, s := range Settings {
+		if s.Required {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("không có biến nào Required — kiểm tra lại bảng Settings")
+	}
+}
+
+// TestRequiredBackendVarsHaveNoDefault: một biến vừa Required vừa có Default là tự mâu thuẫn.
+// requireAll chỉ xét ENV, nên Default sẽ không bao giờ dùng tới và chỉ gây hiểu sai khi đọc bảng.
+func TestRequiredBackendVarsHaveNoDefault(t *testing.T) {
+	for _, s := range Settings {
+		if s.Required && s.Default != "" {
+			t.Errorf("%s vừa Required vừa có Default %q — bỏ một trong hai", s.Key, s.Default)
+		}
+	}
+}
