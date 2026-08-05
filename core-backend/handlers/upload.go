@@ -126,6 +126,16 @@ func receiveReferenceAudio(w http.ResponseWriter, r *http.Request) (referenceUpl
 		modelID = firstCloningMode()
 	}
 
+	// model_id đi vào đường dẫn lưu tệp bên dưới (storage.ModeDir), nên nó phải là một Mode
+	// Engine thực sự khai — không phải chuỗi bất kỳ. Trước đây trường này được dùng nguyên
+	// văn: model_id=../../.. đưa os.WriteFile ra ngoài thư mục storage, với nội dung tệp do
+	// người gửi kiểm soát. ResolveAudioSpec không chắn được vì nó lặng lẽ quay về mặc định
+	// khi gặp mode lạ, nên chỗ chặn phải là ở đây.
+	if !state.GlobalManifestState.HasMode(modelID) {
+		writeError(w, http.StatusBadRequest, "model_id không phải là mode mà engine hỗ trợ")
+		return referenceUpload{}, false
+	}
+
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "Thiếu tệp âm thanh")

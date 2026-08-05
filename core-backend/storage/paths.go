@@ -24,6 +24,28 @@ func InitStorage(dir string) {
 func TempDir() string { return filepath.Join(baseDir, "temp") }
 
 // ModeDir là nơi chứa giọng người dùng đã lưu, tách theo mode rồi tới user.
+//
+// Cả hai thành phần đều đi qua safeSegment: người gọi được kỳ vọng đã kiểm modeID theo
+// Manifest, nhưng một hàm dựng đường dẫn không nên tin điều đó. Một lần quên kiểm ở tầng
+// handler là đủ để os.WriteFile ghi ra ngoài baseDir, nên chặn ở đây là chặn ở nơi hậu quả
+// xảy ra.
 func ModeDir(modeID, userID string) string {
-	return filepath.Join(baseDir, modeID, userID, "voice")
+	return filepath.Join(baseDir, safeSegment(modeID), safeSegment(userID), "voice")
+}
+
+// safeSegment thay mọi ký tự không nằm trong [A-Za-z0-9._-] bằng "_", và loại riêng ".."
+// vì nó chỉ gồm các ký tự được phép nhưng vẫn trèo lên một cấp.
+func safeSegment(s string) string {
+	if s == "" || s == "." || s == ".." {
+		return "_"
+	}
+	out := []rune(s)
+	for i, r := range out {
+		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '.' || r == '_' || r == '-'
+		if !ok {
+			out[i] = '_'
+		}
+	}
+	return string(out)
 }

@@ -68,6 +68,33 @@ func (s *EngineManifestState) IsLoaded() bool {
 	return s.manifest != nil
 }
 
+// HasMode cho biết Engine có thực sự khai Mode này không.
+//
+// ResolveAudioSpec và ResolveCapabilities đều lặng lẽ quay về giá trị mặc định khi gặp
+// mode lạ, nên chúng không dùng được để kiểm tra tính hợp lệ. Nơi nào lấy model_id từ
+// client rồi đem đi ghép đường dẫn phải hỏi hàm này trước: một mode không tồn tại vừa là
+// đường dẫn không truy vấn lại được, vừa là chỗ để chèn "../".
+func (s *EngineManifestState) HasMode(mode string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.manifest == nil {
+		return false
+	}
+	for i := range s.manifest.SupportedModes {
+		if s.manifest.SupportedModes[i].ID == mode {
+			return true
+		}
+	}
+	return false
+}
+
+// errManifestUnavailable là câu trả lời chung khi chưa có Manifest để đối chiếu.
+//
+// main.go đã bắt buộc phải có Manifest trước khi mở cổng, nên trạng thái này chỉ xảy ra nếu
+// có ai đó xoá nó lúc đang chạy. Khi đó từ chối là lựa chọn duy nhất đúng: không biết Engine
+// nhận gì thì không có cơ sở nào để nói một yêu cầu là hợp lệ.
+var errManifestUnavailable = errors.New("chưa có manifest từ AI Engine, tạm thời không nhận yêu cầu tổng hợp")
+
 // ValidatePitch kiểm tra Pitch theo đúng Mode được yêu cầu, vì cùng một Engine có thể có
 // Mode hỗ trợ và Mode không. Truyền nil khi client không gửi Pitch.
 func (s *EngineManifestState) ValidatePitch(pitch *float64, mode string) error {
