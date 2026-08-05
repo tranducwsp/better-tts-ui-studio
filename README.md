@@ -57,14 +57,24 @@ Ensure you have **Docker** and **Docker Compose** installed.
 git clone https://github.com/your-username/better-tts-ui-studio.git
 cd better-tts-ui-studio
 
-# 2. Launch services using Docker Compose
+# 2. Set the required secrets
+cp .env.example .env
+# Fill in at least SECRET_KEY, POSTGRES_PASSWORD and REDIS_PASSWORD —
+# docker compose refuses to start while any of them is empty.
+#   openssl rand -hex 32
+
+# 3. Launch services using Docker Compose
 docker compose up -d --build
 ```
 
 Access the application in your browser:
 - 🌐 **Web Studio UI**: [http://localhost:5173](http://localhost:5173)
 - ⚙️ **Control Plane API**: [http://localhost:8000](http://localhost:8000)
-- 🧠 **Core Compute Engine**: [http://localhost:8001](http://localhost:8001)
+
+Only those two ports are published. The compute engine, frontend builder, Postgres and Redis
+stay on the internal compose network: the engine has no authentication of its own, so anything
+that can reach it can spend your GPU and read other users' tasks. Reach them for debugging with
+`docker compose exec` (e.g. `docker compose exec core-engine curl localhost:8001/health`).
 
 ---
 

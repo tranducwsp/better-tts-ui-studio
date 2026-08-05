@@ -60,6 +60,18 @@ var Settings = []Setting{
 	},
 
 	{
+		Key: "POSTGRES_PASSWORD", Kind: KindSecret, Default: "", Required: true,
+		Group:  "Required in production",
+		ReadBy: "docker-compose (postgres, và DATABASE_URL của backend)",
+		Doc: "Mật khẩu Postgres. docker-compose.yml dựng DATABASE_URL từ biến này và sẽ từ chối\n" +
+			"khởi động nếu nó rỗng. Trước đây user/mật khẩu đều viết cứng là \"postgres\" ngay\n" +
+			"trong compose, đồng thời cổng 5432 mở ra host — tức bất kỳ ai tới được máy đều vào\n" +
+			"được cơ sở dữ liệu bằng thông tin đăng nhập ai cũng biết.\n" +
+			"  REDIS_PASSWORD nằm ở nhóm Redis bên dưới và giờ cũng là bắt buộc.\n" +
+			"  openssl rand -hex 24",
+	},
+
+	{
 		Key: "DEFAULT_ADMIN_USERNAME", Kind: KindString, Default: "",
 		Group: "Seed accounts",
 		Doc: "Tài khoản tạo sẵn ở lần khởi động đầu nếu chưa tồn tại. Để trống toàn bộ nhóm này thì\n" +
@@ -101,7 +113,14 @@ var Settings = []Setting{
 		Group: "Redis (optional)",
 		Doc:   "Không có Redis thì backend chạy chế độ in-memory, đủ dùng cho một replica.",
 	},
-	{Key: "REDIS_PASSWORD", Kind: KindSecret, Default: "", Group: "Redis (optional)"},
+	{
+		Key: "REDIS_PASSWORD", Kind: KindSecret, Default: "", Group: "Redis (optional)",
+		Doc: "Cũng được truyền vào redis-server --requirepass trong docker-compose.yml, nên để\n" +
+			"trống là chạy Redis không mật khẩu. Trước đây Redis vừa không mật khẩu vừa publish\n" +
+			"6379 ra host; giờ cổng chỉ còn trong network nội bộ, nhưng hãy đặt giá trị cho môi\n" +
+			"trường thật.\n" +
+			"  openssl rand -hex 24",
+	},
 
 	{
 		Key: "CORE_ENGINE_URL", Kind: KindString, Default: "http://localhost:8001",
