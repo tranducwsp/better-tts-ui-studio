@@ -1,14 +1,30 @@
 package handlers
 
 import (
+	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"core-backend/client"
 	"core-backend/state"
 
 	"github.com/bytedance/sonic"
 )
+
+// rebuildSignalTimeout giới hạn lượt gọi webhook sang frontend-builder.
+//
+// Builder chỉ cần NHẬN được tín hiệu; nó trả lời 202 ngay rồi dựng bundle ở nền, nên chỗ này
+// không bao giờ phải chờ một lượt build. Vài giây là quá đủ để biết tín hiệu đã tới.
+const rebuildSignalTimeout = 10 * time.Second
+
+// rebuildClient tách khỏi http.DefaultClient vì DefaultClient KHÔNG có timeout.
+//
+// Trước đây webhook dùng http.Post, tức là DefaultClient: nếu builder mở cổng nhưng không trả
+// lời — đúng trạng thái nó rơi vào khi đang bận build — goroutine dưới đây chờ vô hạn. Mỗi
+// lần reload manifest thêm một goroutine kẹt vĩnh viễn, và không có gì trong log nói rằng
+// chúng đang tích lại.
+var rebuildClient = &http.Client{Timeout: rebuildSignalTimeout}
 
 // EngineSyncHandler xử lý các yêu cầu đồng bộ cấu hình/manifest từ AI Engine nội bộ.
 type EngineSyncHandler struct {
@@ -65,11 +81,21 @@ func (h *EngineSyncHandler) ReloadManifest(w http.ResponseWriter, r *http.Reques
 	if h.FEBuilderURL != "" {
 		go func(url string) {
 			rebuildTarget := url + "/rebuild"
-			resp, err := http.Post(rebuildTarget, "application/json", nil)
+
+			req, err := http.NewRequest(http.MethodPost, rebuildTarget, nil)
+			if err != nil {
+				log.Printf("⚠️ Không dựng được yêu cầu tới FE Builder (%s): %v", rebuildTarget, err)
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := rebuildClient.Do(req)
 			if err != nil {
 				log.Printf("⚠️ Tín hiệu trigger FE Builder thất bại (%s): %v", rebuildTarget, err)
 				return
 			}
+			// Đọc cạn body trước khi đóng để kết nối được tái sử dụng thay vì bị bỏ đi.
+			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
 			log.Printf("⚡ Đã bắn tín hiệu kích hoạt re-build static HTML thành công sang FE Builder (%s)", rebuildTarget)
 		}(h.FEBuilderURL)

@@ -124,11 +124,23 @@ func main() {
 
 	addr := net.JoinHostPort(cfg.Host, cfg.Port)
 	server := &http.Server{
-		Addr:         addr,
-		Handler:      r,
-		ReadTimeout:  120 * time.Second,
-		WriteTimeout: 120 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:    addr,
+		Handler: r,
+
+		// ReadHeaderTimeout tách riêng khỏi ReadTimeout vì hai thứ này khác bản chất.
+		//
+		// ReadTimeout bao cả việc đọc body, mà trần upload là MAX_UPLOAD_SIZE_MB (mặc định
+		// 256 MB): một người mạng chậm gửi tệp tham chiếu hợp lệ cần tới hàng phút, nên hạ nó
+		// xuống là cắt ngang đúng những lượt tải hợp lệ nhất.
+		//
+		// Header thì ngược lại — nó phải tới trong vài giây với mọi client thật. Gộp hai thứ
+		// vào một con số 120 giây nghĩa là mỗi kết nối nhỏ giọt một byte header giữ được một
+		// goroutine suốt hai phút, và cách đó rẻ hơn nhiều so với dò mật khẩu mà rate limit
+		// đang canh.
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       120 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Graceful shutdown channel

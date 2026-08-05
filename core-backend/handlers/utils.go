@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -91,6 +92,48 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// maxDocumentXMLBytes là trần cho phần XML đã giải nén của một tệp DOCX/ODT.
+//
+// MaxBytesReader trong parseUpload chỉ chặn kích thước tệp NÉN, mà DOCX và ODT đều là zip:
+// một tệp 597 KB giải nén ra 600 MB (đã đo, khuếch đại ~1000x), nên trần đầu vào không nói
+// gì về lượng RAM việc bóc chữ sẽ dùng. Vài request song song là đủ hạ tiến trình, và người
+// gửi chỉ cần một tài khoản đã được duyệt.
+//
+// 64 MB rộng hơn mọi tài liệu văn bản thực tế nhiều lần — văn bản thuần trong một tệp Word
+// nghìn trang vẫn ở mức vài MB — nên trần này không chạm tới người dùng thật, chỉ chạm tệp
+// được dựng riêng để phình ra.
+const maxDocumentXMLBytes = 64 << 20
+
+// readZipEntry giải nén một entry trong zip với trần cố định.
+//
+// Kiểm hai lần, vì mỗi lần bắt một kiểu tệp khác nhau: UncompressedSize64 lấy từ header của
+// zip nên chặn được trước khi đọc byte nào, nhưng header do người tạo tệp ghi và nói dối
+// được. LimitReader là thứ thực sự chặn, đo trên dữ liệu đã giải nén. Đọc thêm một byte quá
+// trần để phân biệt "vừa đủ" với "vượt".
+func readZipEntry(f *zip.File) ([]byte, error) {
+	if f.UncompressedSize64 > maxDocumentXMLBytes {
+		return nil, fmtError(fmt.Sprintf(
+			"nội dung tài liệu sau giải nén (%d MB) vượt quá giới hạn %d MB",
+			f.UncompressedSize64>>20, maxDocumentXMLBytes>>20))
+	}
+
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	data, err := io.ReadAll(io.LimitReader(rc, maxDocumentXMLBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxDocumentXMLBytes {
+		return nil, fmtError(fmt.Sprintf(
+			"nội dung tài liệu sau giải nén vượt quá giới hạn %d MB", maxDocumentXMLBytes>>20))
+	}
+	return data, nil
+}
+
 // extractDOCXText đọc file DOCX (Zip archive) và parse XML word/document.xml để lấy toàn bộ chữ.
 func extractDOCXText(data []byte) (string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
@@ -109,13 +152,7 @@ func extractDOCXText(data []byte) (string, error) {
 		return "", fmtError("document.xml không tồn tại trong DOCX")
 	}
 
-	rc, err := docFile.Open()
-	if err != nil {
-		return "", err
-	}
-	defer rc.Close()
-
-	xmlBytes, err := io.ReadAll(rc)
+	xmlBytes, err := readZipEntry(docFile)
 	if err != nil {
 		return "", err
 	}
@@ -166,13 +203,7 @@ func extractODTText(data []byte) (string, error) {
 		return "", fmtError("content.xml không tồn tại trong ODT")
 	}
 
-	rc, err := contentFile.Open()
-	if err != nil {
-		return "", err
-	}
-	defer rc.Close()
-
-	xmlBytes, err := io.ReadAll(rc)
+	xmlBytes, err := readZipEntry(contentFile)
 	if err != nil {
 		return "", err
 	}
