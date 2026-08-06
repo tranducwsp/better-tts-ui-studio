@@ -82,6 +82,22 @@ services:
       - CORE_ENGINE_URL=http://core-engine:8001
       - CORE_ENGINE_GRPC_URL=core-engine:50051
       - FE_BUILDER_URL=http://frontend-builder:3001
+
+      # Kho lưu trữ. Mặc định local để `docker compose up` chạy được ngay mà không cần tài
+      # khoản nào; đặt STORAGE_BACKEND=s3 trong .env để chuyển sang MinIO/S3.
+      #
+      # Các biến S3_* truyền xuống vô điều kiện: khi backend chạy local nó không đọc chúng,
+      # nên để trống là vô hại — còn khai chúng có điều kiện thì compose sẽ cần hai khối
+      # environment và chúng sẽ trôi ra khỏi nhau.
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - STORAGE_DIR=/app/storage
+      - S3_BUCKET=${S3_BUCKET:-}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-0}
+      - S3_PREFIX=${S3_PREFIX:-}
     volumes:
       - ./core-backend/storage:/app/storage
     depends_on:
