@@ -140,7 +140,11 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	res, err := h.TTSClient.CloneVoice(upload.Data, upload.Filename, name)
 	if err != nil {
 		_ = storage.Global.Delete(r.Context(), voiceKey)
-		writeError(w, http.StatusInternalServerError, err.Error())
+		// Lỗi của Engine chỉ vào log. Trả err.Error() thẳng ra ngoài sẽ lộ tên máy, cổng và
+		// chi tiết nội bộ của một dịch vụ mà người dùng không gọi trực tiếp — phần còn lại
+		// của mã nguồn đã nhất quán trả thông báo chung, đây là chỗ sót.
+		log.Printf("Engine không nhân bản được giọng %q: %v", name, err)
+		writeError(w, http.StatusBadGateway, "Không nhân bản được giọng, vui lòng thử lại")
 		return
 	}
 
@@ -201,7 +205,8 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 
 	res, err := h.TTSClient.CloneVoice(upload.Data, upload.Filename, "temp_voice")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		log.Printf("Engine không nạp được giọng tạm: %v", err)
+		writeError(w, http.StatusBadGateway, "Không nạp được giọng, vui lòng thử lại")
 		return
 	}
 

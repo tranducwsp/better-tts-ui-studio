@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -81,6 +82,49 @@ func IsUserOnline(ctx context.Context, userID string) bool {
 		return err == nil && val > 0
 	}
 	return false
+}
+
+// OnlineUsers cho biết những ai trong danh sách đang Online, trong MỘT lượt đi lại.
+//
+// Tách khỏi IsUserOnline vì trang quản trị hỏi cho cả bảng người dùng: gọi hàm kia trong vòng
+// lặp là một round-trip cho mỗi hàng, và độ trễ của trang tỉ lệ thuận với số người dùng —
+// đúng lúc Redis nằm ở máy khác thì thấy rõ nhất.
+//
+// MGET thay vì nhiều EXISTS: một lệnh, một lượt chờ mạng. Khoá không tồn tại trả nil, nên
+// "có giá trị" chính là "đang online".
+//
+// Đóng khung thời gian như mọi lượt đọc Redis khác trên đường đi của request: trạng thái
+// online là thông tin trang trí, không đáng để giữ một request lại khi Redis chậm.
+func OnlineUsers(ctx context.Context, userIDs []string) map[string]bool {
+	online := make(map[string]bool, len(userIDs))
+	if RedisClient == nil || len(userIDs) == 0 {
+		return online
+	}
+
+	keys := make([]string, 0, len(userIDs))
+	for _, id := range userIDs {
+		if id != "" {
+			keys = append(keys, "user:online:"+id)
+		}
+	}
+	if len(keys) == 0 {
+		return online
+	}
+
+	opCtx, cancel := context.WithTimeout(ctx, taskRedisTimeout)
+	defer cancel()
+
+	vals, err := RedisClient.MGet(opCtx, keys...).Result()
+	if err != nil {
+		return online
+	}
+
+	for i, v := range vals {
+		if v != nil {
+			online[strings.TrimPrefix(keys[i], "user:online:")] = true
+		}
+	}
+	return online
 }
 
 type TaskUpdate struct {

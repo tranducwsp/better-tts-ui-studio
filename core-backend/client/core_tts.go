@@ -76,6 +76,13 @@ func (c *CoreTTSClient) GetInfo() (*types.UniversalManifest, error) {
 	}
 	defer resp.Body.Close()
 
+	// Kiểm mã trạng thái như GetVoices và Synthesize vẫn làm. Không kiểm thì một trang lỗi 5xx
+	// tình cờ hợp cú pháp JSON sẽ giải mã thành manifest rỗng, và người vận hành nhận báo
+	// "manifest không hợp lệ" cho một sự cố thật ra là Engine đang chết — chỉ sai chỗ cần sửa.
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Core TTS trả mã %d khi lấy manifest", resp.StatusCode)
+	}
+
 	var result types.UniversalManifest
 	if err := sonic.ConfigDefault.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err

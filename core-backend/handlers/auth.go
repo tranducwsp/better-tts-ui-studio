@@ -228,15 +228,30 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// usersPageSize là trần số người dùng trả về cho trang quản trị.
+//
+// Cùng lý do với historyPageSize: truy vấn không có trần nghĩa là một triển khai đông người
+// dùng phải tải toàn bộ bảng users cho mỗi lần mở trang.
+const usersPageSize = 500
+
 // GetUsers (Admin API) lấy danh sách tất cả người dùng trong hệ thống kèm trạng thái Online thời gian thực từ Redis.
 func (h *AuthHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	users, err := db.Queries.ListUsers(r.Context())
+	users, err := db.Queries.ListUsers(r.Context(), usersPageSize)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi lấy danh sách user"})
 		return
 	}
+
+	// Một lượt hỏi Redis cho cả bảng, không phải một lượt cho mỗi hàng: trước đây vòng lặp
+	// dưới đây gọi IsUserOnline cho từng người, nên độ trễ của trang tỉ lệ thuận với số người
+	// dùng và mỗi lượt lại không có hạn thời gian.
+	ids := make([]string, len(users))
+	for i, u := range users {
+		ids[i] = u.ID
+	}
+	online := state.OnlineUsers(r.Context(), ids)
 
 	res := make([]UserResponse, len(users))
 	for i, u := range users {
@@ -245,7 +260,7 @@ func (h *AuthHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 			Username:   u.Username,
 			Role:       u.Role,
 			IsApproved: u.IsApproved,
-			IsOnline:   state.IsUserOnline(r.Context(), u.ID),
+			IsOnline:   online[u.ID],
 		}
 	}
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(res)

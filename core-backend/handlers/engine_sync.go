@@ -47,6 +47,10 @@ func (h *EngineSyncHandler) ReloadManifest(w http.ResponseWriter, r *http.Reques
 
 	manifest, err := h.TTSClient.GetInfo()
 	if err != nil {
+		// Route này chỉ admin gọi được và mục đích của nó là chẩn đoán, nên nguyên nhân thật
+		// vẫn trả về — nhưng cũng phải vào log, vì người bấm reload không nhất thiết là người
+		// đang đọc log lúc sự cố xảy ra.
+		log.Printf("Không lấy được manifest từ Engine: %v", err)
 		w.WriteHeader(http.StatusBadGateway)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 			"status": "error",

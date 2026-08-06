@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -58,24 +59,33 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	case ".pdf":
 		extractedText, err = extractPDFText(content)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read PDF file: " + err.Error()})
+			// Lỗi của thư viện phân tích chỉ vào log: nó mang đường dẫn và chi tiết nội bộ,
+			// còn người tải tệp lên thì chỉ cần biết tệp này không đọc được.
+			log.Printf("Không đọc được tệp PDF: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Không đọc được nội dung tệp PDF"})
 			return
 		}
 
 	case ".docx":
 		extractedText, err = extractDOCXText(content)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read DOCX file: " + err.Error()})
+			// Lỗi của thư viện phân tích chỉ vào log: nó mang đường dẫn và chi tiết nội bộ,
+			// còn người tải tệp lên thì chỉ cần biết tệp này không đọc được.
+			log.Printf("Không đọc được tệp DOCX: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Không đọc được nội dung tệp DOCX"})
 			return
 		}
 
 	case ".odt":
 		extractedText, err = extractODTText(content)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read ODT file: " + err.Error()})
+			// Lỗi của thư viện phân tích chỉ vào log: nó mang đường dẫn và chi tiết nội bộ,
+			// còn người tải tệp lên thì chỉ cần biết tệp này không đọc được.
+			log.Printf("Không đọc được tệp ODT: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Không đọc được nội dung tệp ODT"})
 			return
 		}
 

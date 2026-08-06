@@ -86,10 +86,16 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 const listUsers = `-- name: ListUsers :many
 SELECT id, username, password_hash, role, is_approved, created_at FROM users
 ORDER BY created_at DESC
+LIMIT $1
 `
 
-func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := q.db.Query(ctx, listUsers)
+// ListUsers lấy một trang danh sách người dùng, mới nhất trước.
+//
+// Có LIMIT vì cùng lý do với ListUserHistorySummaries: trước đây truy vấn trả về mọi hàng
+// trong bảng users, nên một triển khai đông người dùng khiến mỗi lần mở trang quản trị phải
+// tải toàn bộ bảng về. Đây là truy vấn duy nhất còn sót lại không có trần.
+func (q *Queries) ListUsers(ctx context.Context, limit int32) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsers, limit)
 	if err != nil {
 		return nil, err
 	}

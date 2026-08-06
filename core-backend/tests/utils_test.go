@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"core-backend/handlers"
@@ -208,5 +209,31 @@ func TestExtractText_AcceptsLargeButSaneDocument(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("tài liệu dài nhưng hợp lệ phải được nhận, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestExtractText_DoesNotLeakParserError giữ cho thông báo lỗi không mang chi tiết nội bộ.
+//
+// Trước đây nhánh này trả nguyên err.Error() của thư viện phân tích, tức là đường dẫn tệp tạm
+// và cấu trúc nội bộ đi thẳng ra ngoài. Người tải tệp lên chỉ cần biết tệp không đọc được;
+// nguyên nhân thuộc về log.
+func TestExtractText_DoesNotLeakParserError(t *testing.T) {
+	h := handlers.NewUtilsHandler()
+
+	// Không phải DOCX thật: DOCX là một tệp zip, nên bytes rác làm thư viện báo lỗi.
+	req := createMultipartRequest(t, "broken.docx", []byte("đây không phải là zip"))
+	rec := httptest.NewRecorder()
+
+	h.ExtractText(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("tệp không đọc được là lỗi của đầu vào, muốn 400, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	for _, leak := range []string{"zip:", "/tmp/", "archive/", ".go:"} {
+		if strings.Contains(body, leak) {
+			t.Errorf("phản hồi mang chi tiết nội bộ %q: %s", leak, body)
+		}
 	}
 }
