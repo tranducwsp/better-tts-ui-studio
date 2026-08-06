@@ -419,6 +419,26 @@ func (t *TaskItem) SetOwner(userID string) {
 	}
 }
 
+// applyRemoteState cập nhật phần trạng thái điều khiển từ bản đọc được trên Redis.
+//
+// Chỉ chép những trường mà tiến trình khác có thẩm quyền hơn: tiến độ, kết quả, định dạng.
+// Không đụng subscribers hay OwnerID — người đăng ký SSE thuộc về tiến trình này, còn chủ sở
+// hữu đã được xác lập lúc tạo và không đổi.
+func (t *TaskItem) applyRemoteState(remote *TaskItem) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.Status = remote.Status
+	t.Progress = remote.Progress
+	t.Error = remote.Error
+	if remote.SourceFormat != "" {
+		t.SourceFormat = remote.SourceFormat
+	}
+	if remote.OwnerID != "" && t.OwnerID == "" {
+		t.OwnerID = remote.OwnerID
+	}
+}
+
 // Peek trả về task trong RAM tiến trình này, không nạp bù gì từ Redis.
 //
 // Get nạp âm thanh từ Redis vào RAM khi thấy RAM rỗng — đúng cho người gọi sắp phục vụ bytes,
@@ -438,9 +458,27 @@ func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {
 	tm.mu.RUnlock()
 
 	if ok {
+		status, sourceFormat, _, audio := item.Snapshot()
+
+		// Bản trong RAM có thể đã cũ: tiến trình web tạo task lúc nhận request rồi đẩy sang
+		// hàng đợi, nên bản của nó đứng yên ở "processing" trong khi worker ở tiến trình khác
+		// đã chạy xong. Không đọc lại thì trạng thái không bao giờ tiến, dù công việc đã hoàn
+		// tất và âm thanh đã nằm trong kho.
+		//
+		// Chỉ đọc lại khi chưa tới trạng thái cuối: task đã done/error/cancelled thì không đổi
+		// nữa, và hỏi Redis mỗi lần chỉ thêm một lượt đi lại cho một câu trả lời đã biết.
+		if RedisClient != nil && status != "done" && status != "error" && status != "cancelled" {
+			if val, err := RedisClient.Get(context.Background(), "task:"+taskID).Result(); err == nil && val != "" {
+				var fresh TaskItem
+				if err := sonic.Unmarshal([]byte(val), &fresh); err == nil {
+					item.applyRemoteState(&fresh)
+					status, sourceFormat, _, audio = item.Snapshot()
+				}
+			}
+		}
+
 		// Audio có thể do replica khác sinh ra, nên nạp bù từ Redis khi RAM rỗng. Ghi qua
 		// SetAudio: trường này bị Notify đọc đồng thời, gán trực tiếp là data race.
-		status, sourceFormat, _, audio := item.Snapshot()
 		if RedisClient != nil && len(audio) == 0 && sourceFormat != "" && status == "done" {
 			if b, err := RedisClient.Get(context.Background(), "task:audio:"+taskID+":"+sourceFormat).Bytes(); err == nil {
 				item.SetAudio(b)

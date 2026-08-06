@@ -119,7 +119,52 @@ services:
         condition: service_healthy
       core-engine:
         condition: service_started
-    command: ./main
+    command: ./main -mode=web
+    restart: unless-stopped
+
+  # 2.1 Synthesis Worker (cùng image với backend, khác chế độ)
+  #
+  # Tách khỏi web vì ba lý do: một lượt tổng hợp không còn chết khi deploy lại web, số lượt
+  # gọi Engine cùng lúc có trần thật thay vì bằng số request đang tới, và số worker tăng giảm
+  # độc lập với số web.
+  #
+  # Hàng đợi nằm trên Redis và KHÔNG bền: Redis ở đây chạy không có AOF/RDB, nên job đang chờ
+  # mất khi Redis khởi động lại. Đó là lựa chọn có chủ ý — một chunk chỉ tốn vài giây để tổng
+  # hợp lại, và giao diện đã tự thử lại ba lần cho mỗi chunk.
+  core-worker:
+    build:
+      context: ./core-backend
+      dockerfile: Dockerfile
+    container_name: ai-core-worker
+    environment:
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY chưa được đặt trong .env}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
+      - REDIS_URL=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - CORE_ENGINE_URL=http://core-engine:8001
+      - CORE_ENGINE_GRPC_URL=core-engine:50051
+
+      # Worker ghi âm thanh vào cùng kho mà web đọc ra. Với STORAGE_BACKEND=local, hai tiến
+      # trình phải nằm trên cùng một máy và cùng volume — dùng S3 khi tách ra nhiều node.
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - STORAGE_DIR=/app/storage
+      - S3_BUCKET=${S3_BUCKET:-}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-0}
+      - S3_PREFIX=${S3_PREFIX:-}
+    volumes:
+      - ./core-backend/storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      core-engine:
+        condition: service_started
+    command: ./main -mode=worker
     restart: unless-stopped
 
   # 3. Frontend Worker Builder (Node.js Sidecar for On-Demand Static HTML Re-prerendering)

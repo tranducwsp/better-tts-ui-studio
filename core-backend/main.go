@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -17,9 +19,11 @@ import (
 	"core-backend/db"
 	"core-backend/handlers"
 	"core-backend/middleware"
+	"core-backend/queue"
 	"core-backend/router"
 	"core-backend/state"
 	"core-backend/storage"
+	"core-backend/synth"
 )
 
 // manifestDiscoveryTimeout là thời gian chờ Engine trả về một Manifest hợp lệ lúc khởi động.
@@ -63,6 +67,18 @@ func discoverManifest(ttsClient *client.CoreTTSClient, engineURL string, timeout
 }
 
 func main() {
+	// Một binary, hai chế độ. Web nhận request và xếp job; worker nhặt job ra chạy.
+	//
+	// Cùng binary thay vì hai chương trình riêng: chuỗi khởi tạo bên dưới (kho, DB, Redis,
+	// manifest) phải giống hệt nhau ở cả hai, và tách ra hai main là tạo hai bản sao sẽ trôi
+	// khỏi nhau. Chúng vẫn scale độc lập được vì là hai service khác nhau trong compose.
+	mode := flag.String("mode", "web", `chế độ chạy: "web" hoặc "worker"`)
+	flag.Parse()
+
+	if *mode != "web" && *mode != "worker" {
+		log.Fatalf("-mode=%q không hợp lệ; chỉ nhận \"web\" hoặc \"worker\"", *mode)
+	}
+
 	cfg := config.LoadConfig()
 
 	// Kho lưu trữ phải sẵn sàng trước khi bất kỳ handler nào ghi tệp.
@@ -92,11 +108,17 @@ func main() {
 
 	// Xoá định kỳ âm thanh tạm. Mỗi lần tổng hợp ghi một đối tượng vào nhánh temp và trước
 	// đây không có gì dọn chúng, nên kho chỉ có thể phình lên.
-	storage.StartTempSweeper(
-		storage.Global,
-		time.Duration(cfg.TempRetentionHours)*time.Hour,
-		storage.DefaultSweepInterval,
-	)
+	//
+	// Chỉ chạy ở worker: bộ quét là việc nền, và để nó ở web nghĩa là mỗi replica web thêm
+	// một lượt quét toàn bộ nhánh temp mỗi giờ — với S3 thì đó là tiền và hạn mức API, đổi
+	// lại không có gì vì các lượt quét xoá đúng cùng một tập tệp.
+	if *mode == "worker" {
+		storage.StartTempSweeper(
+			storage.Global,
+			time.Duration(cfg.TempRetentionHours)*time.Hour,
+			storage.DefaultSweepInterval,
+		)
+	}
 
 	// Initialize Database with Connection Pool settings
 	db.InitDB(cfg)
@@ -125,6 +147,11 @@ func main() {
 			"Backend không khởi động khi thiếu Manifest, vì mọi giới hạn đầu vào (độ dài văn bản,\n"+
 			"khoảng speed/pitch, danh sách mode và emotion) đều do Manifest khai. Hãy kiểm tra\n"+
 			"CORE_ENGINE_URL và xem Engine đã sẵn sàng chưa.", err)
+	}
+
+	if *mode == "worker" {
+		runWorker(cfg, ttsClient)
+		return
 	}
 
 	// Create Router
@@ -173,4 +200,65 @@ func main() {
 	}
 
 	log.Println("Server exited successfully")
+}
+
+// runWorker nhặt job từ hàng đợi và chạy cho tới khi nhận tín hiệu dừng.
+//
+// Không mở cổng nào: worker không phục vụ request, và mở một listener chỉ để healthcheck sẽ
+// tạo ra một bề mặt không ai dùng. Trạng thái của nó nhìn được qua log và qua chính hàng đợi.
+func runWorker(cfg *config.Config, ttsClient *client.CoreTTSClient) {
+	if state.RedisClient == nil {
+		log.Fatal("Worker cần Redis để nhận job, nhưng REDIS_URL chưa cấu hình hoặc không kết nối được.\n" +
+			"Không có Redis thì chạy chế độ web là đủ: nó tự tổng hợp tại chỗ.")
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := queue.EnsureGroup(ctx); err != nil {
+		log.Fatalf("Không tạo được nhóm tiêu thụ hàng đợi: %v", err)
+	}
+
+	// Tên định danh worker trong nhóm. Hostname là tên container trong compose và tên pod
+	// trên k8s, nên nó vừa duy nhất vừa truy ngược được về tiến trình thật.
+	name, err := os.Hostname()
+	if err != nil || name == "" {
+		name = "worker"
+	}
+
+	// Trần số job chạy song song trong MỘT worker.
+	//
+	// Engine là nút cổ chai: nó bám GPU, nên đẩy nhiều lượt hơn số nó xử được chỉ làm mọi
+	// lượt chậm đi. Muốn nhiều hơn thì chạy thêm worker — đó là lý do tách tiến trình.
+	const maxInFlight = 2
+	slots := make(chan struct{}, maxInFlight)
+	var wg sync.WaitGroup
+
+	log.Printf("Worker %q sẵn sàng, tối đa %d job song song", name, maxInFlight)
+
+	err = queue.Consume(ctx, name, func(jobCtx context.Context, job queue.Job) {
+		select {
+		case slots <- struct{}{}:
+		case <-jobCtx.Done():
+			return
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+
+			// context.Background chứ không phải jobCtx: khi nhận tín hiệu dừng, job đang chạy
+			// được chạy nốt thay vì bị cắt giữa chừng. Vòng lặp Consume đã dừng nhận job mới,
+			// nên đây là phần đuôi hữu hạn.
+			synth.Run(context.Background(), ttsClient, job)
+		}()
+	})
+	if err != nil {
+		log.Printf("Vòng đọc hàng đợi dừng: %v", err)
+	}
+
+	log.Println("Đang chờ các job dở dang chạy nốt...")
+	wg.Wait()
+	log.Println("Worker đã dừng gọn.")
 }

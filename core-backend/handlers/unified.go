@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -9,8 +10,9 @@ import (
 	"core-backend/client"
 	"core-backend/db"
 	"core-backend/db/sqlc"
+	"core-backend/queue"
 	"core-backend/state"
-	"core-backend/storage"
+	"core-backend/synth"
 
 	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
@@ -227,68 +229,31 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Async Task Worker Goroutine
-	go func() {
-		bgCtx := context.Background()
-		audioBytes, err := h.TTSClient.Synthesize(req.Text, req.Voice, req.Speed, req.Engine, req.Pitch, req.Emotion)
-		if err != nil {
-			_, _, progress, _ := taskItem.Snapshot()
-			taskItem.Notify(state.TaskUpdate{
-				Status:   "error",
-				Progress: progress,
-				Error:    err.Error(),
-			})
-			errMsg := err.Error()
-			if dbErr := db.UpdateChunkStatus(bgCtx, taskID, "error", nil, &errMsg); dbErr != nil {
-				log.Printf("Chunk %s lỗi nhưng không ghi được trạng thái vào DB: %v", taskID, dbErr)
-			}
-			return
+	job := queue.Job{
+		TaskID:  taskID,
+		UserID:  user.ID,
+		Text:    req.Text,
+		Voice:   req.Voice,
+		Engine:  req.Engine,
+		Speed:   req.Speed,
+		Pitch:   req.Pitch,
+		Emotion: req.Emotion,
+	}
+
+	// Xếp hàng để worker nhặt. Không có Redis thì chạy ngay trong tiến trình này.
+	//
+	// Nhánh dự phòng giữ cho một triển khai chỉ có web vẫn tổng hợp được — cùng lý do
+	// TaskManager và rate limiter đều có bản chạy bằng RAM. Nó dùng chung đúng hàm synth.Run
+	// mà worker gọi, nên hai đường không thể trôi ra khỏi nhau.
+	//
+	// context.Background chứ không phải r.Context(): công việc này sống lâu hơn request đã
+	// khởi động nó, và request kết thúc ngay sau khi trả task_id.
+	if err := queue.Enqueue(r.Context(), job); err != nil {
+		if !errors.Is(err, queue.ErrNoRedis) {
+			log.Printf("Không xếp được job %s vào hàng đợi: %v — chạy tại chỗ", taskID, err)
 		}
-
-		// Định dạng do Mode quyết định: Edge TTS trả MP3, mô hình cục bộ trả WAV. Ghi lại
-		// để GetTaskAudio biết mình đang giữ gì thay vì đoán, và chỉ chuyển mã khi client
-		// hỏi định dạng khác.
-		sourceFormat := state.GlobalManifestState.Get().ResolveAudioSpec(req.Engine).DefaultFormat
-		taskItem.SetSourceFormat(sourceFormat)
-
-		// Ghi vào kho thất bại không phải lỗi chí tử — bản trong RAM là phương án dự phòng ngay
-		// dưới đây — nhưng nó cần để lại dấu vết: kho đầy biểu hiện thành RSS tăng dần thay vì
-		// một lỗi, và không có dòng log này thì nguyên nhân không thể truy ra từ triệu chứng.
-		audioKey := storage.TempKey(taskID, sourceFormat)
-		wroteToStore := true
-		if err := storage.Global.Put(bgCtx, audioKey, audioBytes); err != nil {
-			log.Printf("Không ghi được âm thanh task %s vào kho (%s): %v — giữ trong RAM", taskID, audioKey, err)
-			wroteToStore = false
-		}
-
-		// Kho là nơi giữ âm thanh; RAM chỉ giữ khi chưa ghi được vào kho.
-		//
-		// Trước đây cùng một đoạn âm thanh nằm đồng thời trong RAM, trên đĩa và trên Redis,
-		// mà bộ dọn RAM lại chỉ theo thời gian (10 phút, quét mỗi 5 phút) và không có trần
-		// theo số lượng hay dung lượng. Một job mười chunk giữ khoảng 29 MB trong mười lăm
-		// phút SAU KHI đã xong, mỗi định dạng tải thêm là thêm một bản nữa — nên một đợt tải
-		// đồng thời là RSS tăng không phanh. GetTaskAudio đã biết đọc từ đĩa, nên bỏ bản
-		// trong RAM không mất chức năng nào.
-		if wroteToStore {
-			taskItem.ReleaseAudio()
-		} else {
-			taskItem.SetAudio(audioBytes)
-		}
-		taskItem.CacheAudio(bgCtx, sourceFormat, audioBytes)
-
-		// Không có client nào để báo ở đây — công việc đã xong và âm thanh đã có. Nhưng lịch
-		// sử đọc trạng thái từ DB, nên một lượt ghi thất bại trong im lặng để chunk mãi ở
-		// "processing": giao diện hiển thị một job không bao giờ hoàn thành dù tệp đã nằm sẵn
-		// trên đĩa.
-		if err := db.UpdateChunkStatus(bgCtx, taskID, "done", &audioKey, nil); err != nil {
-			log.Printf("Chunk %s đã xong nhưng không ghi được trạng thái vào DB: %v", taskID, err)
-		}
-
-		taskItem.Notify(state.TaskUpdate{
-			Status:   "done",
-			Progress: 100,
-		})
-	}()
+		go synth.Run(context.Background(), h.TTSClient, job)
+	}
 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"task_id": taskID,
