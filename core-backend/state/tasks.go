@@ -419,6 +419,18 @@ func (t *TaskItem) SetOwner(userID string) {
 	}
 }
 
+// Peek trả về task trong RAM tiến trình này, không nạp bù gì từ Redis.
+//
+// Get nạp âm thanh từ Redis vào RAM khi thấy RAM rỗng — đúng cho người gọi sắp phục vụ bytes,
+// nhưng sai cho người chỉ muốn biết định dạng: nó kéo cả tệp vào RAM để trả lời một câu hỏi
+// vài ký tự, và làm hỏng nhánh chuyển hướng thẳng tới kho.
+func (tm *TaskManager) Peek(taskID string) (*TaskItem, bool) {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	item, ok := tm.tasks[taskID]
+	return item, ok
+}
+
 func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {
 	// 1. Kiểm tra RAM cục bộ trước
 	tm.mu.RLock()

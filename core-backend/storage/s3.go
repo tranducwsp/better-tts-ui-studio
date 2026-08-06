@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -29,9 +30,10 @@ type S3Config struct {
 
 // S3Store lưu đối tượng trên một kho tương thích S3.
 type S3Store struct {
-	client *s3.Client
-	bucket string
-	prefix string
+	client  *s3.Client
+	presign *s3.PresignClient
+	bucket  string
+	prefix  string
 }
 
 // NewS3Store dựng client và xác nhận bucket thật sự dùng được.
@@ -78,9 +80,10 @@ func NewS3Store(ctx context.Context, cfg S3Config) (*S3Store, error) {
 	})
 
 	store := &S3Store{
-		client: client,
-		bucket: cfg.Bucket,
-		prefix: strings.Trim(cfg.Prefix, "/"),
+		client:  client,
+		presign: s3.NewPresignClient(client),
+		bucket:  cfg.Bucket,
+		prefix:  strings.Trim(cfg.Prefix, "/"),
 	}
 
 	if _, err := client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(cfg.Bucket)}); err != nil {
@@ -221,4 +224,22 @@ func (s *S3Store) List(ctx context.Context, prefix string) ([]ObjectInfo, error)
 		}
 	}
 	return out, nil
+}
+
+// PresignGet ký một URL tải trực tiếp, để client lấy đối tượng không qua backend.
+//
+// Ký bằng chính client đang dùng cho mọi thao tác khác, nên URL mang tên miền trong
+// S3_ENDPOINT. Điều đó đúng khi tên miền ấy vừa gọi được từ backend vừa gọi được từ trình
+// duyệt — trường hợp của một bản ghi DNS-only. Nếu backend nói chuyện với kho qua một địa chỉ
+// chỉ nội bộ (minio.minio.svc.cluster.local, hay một IP đã ghim), URL ký ra sẽ trỏ vào chỗ
+// trình duyệt không tới được; lúc đó cần một endpoint công khai riêng để ký.
+func (s *S3Store) PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	req, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.full(key)),
+	}, s3.WithPresignExpires(ttl))
+	if err != nil {
+		return "", err
+	}
+	return req.URL, nil
 }

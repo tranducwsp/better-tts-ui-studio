@@ -126,6 +126,31 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Hỏi kho trước khi chạm tới RAM.
+	//
+	// Với kho phát được URL, đường nhanh nhất là chuyển hướng client sang thẳng đó — và lúc
+	// ấy tiến trình này không cần bytes chút nào. Đọc TaskManager trước sẽ phá đúng điều đó:
+	// Get() nạp bù âm thanh từ Redis vào RAM khi thấy RAM rỗng, nên tới đây source luôn khác
+	// nil và nhánh chuyển hướng không bao giờ chạy. Đó là lý do bản đầu của thay đổi này vẫn
+	// trả 200 kèm toàn bộ tệp thay vì 302.
+	if declared := taskSourceFormat(taskID); declared != "" && format == "" {
+		format = declared
+	}
+
+	if format != "" {
+		key := storage.TranscodeKey(taskID, format)
+		if ok, err := storage.Global.Exists(r.Context(), key); err == nil && ok {
+			if serveFromStore(w, r, key, format) {
+				return
+			}
+		}
+		if ok, err := storage.Global.Exists(r.Context(), storage.TempKey(taskID, format)); err == nil && ok {
+			if serveFromStore(w, r, storage.TempKey(taskID, format), format) {
+				return
+			}
+		}
+	}
+
 	var source []byte
 	sourceFormat := ""
 
@@ -152,16 +177,27 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Task có thể đã bị dọn khỏi RAM; đối tượng trong kho mang phần mở rộng là định dạng gốc.
+	//
+	// Dò bằng Exists trước khi tải: khi client hỏi đúng định dạng gốc — trường hợp thường gặp
+	// nhất — không cần nạp bytes vào tiến trình này chút nào.
 	if source == nil {
 		for _, ext := range audio.KnownFormats() {
-			b, err := storage.Global.Get(r.Context(), storage.TempKey(taskID, ext))
+			key := storage.TempKey(taskID, ext)
+			ok, err := storage.Global.Exists(r.Context(), key)
+			if err != nil || !ok {
+				continue
+			}
+			if format == "" {
+				format = ext
+			}
+			if format == ext && serveFromStore(w, r, key, ext) {
+				return
+			}
+			b, err := storage.Global.Get(r.Context(), key)
 			if err != nil || len(b) == 0 {
 				continue
 			}
 			source, sourceFormat = b, ext
-			if format == "" {
-				format = ext
-			}
 			break
 		}
 	}
@@ -193,10 +229,68 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	// Bản trong kho chỉ là bộ nhớ đệm cho lần tải sau; ghi thất bại chỉ có nghĩa là lần sau
 	// chạy lại ffmpeg, nên không cần làm hỏng phản hồi đang thành công. Vẫn log để đĩa đầy
 	// không biểu hiện thành "sao dạo này tải chậm".
-	if err := storage.Global.Put(r.Context(), storage.TranscodeKey(taskID, format), converted); err != nil {
+	transKey := storage.TranscodeKey(taskID, format)
+	if err := storage.Global.Put(r.Context(), transKey, converted); err != nil {
 		log.Printf("Không cất được bản chuyển mã %s.%s: %v", taskID, format, err)
+		// Không cất được thì không ký được: URL sẽ trỏ vào đối tượng không tồn tại.
+		writeAudio(w, converted, format)
+		return
+	}
+	if serveFromStore(w, r, transKey, format) {
+		return
 	}
 	writeAudio(w, converted, format)
+}
+
+// taskSourceFormat đọc định dạng Engine đã sinh, không kéo theo bytes.
+//
+// Tách khỏi TaskManager.Get vì hàm đó nạp bù âm thanh từ Redis vào RAM như một tác dụng phụ —
+// hữu ích cho đường phục vụ bytes, nhưng ở đây thì đúng là thứ cần tránh.
+func taskSourceFormat(taskID string) string {
+	task, ok := state.GlobalTaskManager.Peek(taskID)
+	if !ok {
+		return ""
+	}
+	status, format, _, _ := task.Snapshot()
+	if status != "done" {
+		return ""
+	}
+	return format
+}
+
+// presignTTL là thời hạn của URL tải trực tiếp.
+//
+// Ngắn có chủ ý. URL đã ký không đi qua ownsTask ở lần dùng lại — quyền được kiểm một lần lúc
+// phát, rồi bản thân URL là thứ cho phép tải. Sáu mươi giây đủ để trình duyệt bắt đầu tải
+// ngay sau khi nhận redirect, nhưng không đủ để một liên kết bị dán lại còn dùng được.
+const presignTTL = 60 * time.Second
+
+// serveFromStore trả âm thanh cho client, và cho biết đã trả được chưa.
+//
+// Với kho phát được URL (S3), gửi 302 tới URL đã ký: client tải thẳng từ kho, nên backend
+// không còn là ống dẫn. Đo được trước khi đổi: một tệp 563 KB đi qua backend 1180 KB — vào
+// một lần rồi ra một lần — và nằm trọn trong RAM suốt lượt tải.
+//
+// Với kho không phát được URL (đĩa cục bộ), trả về false để người gọi đi đường cũ: đọc bytes
+// rồi ghi vào response.
+func serveFromStore(w http.ResponseWriter, r *http.Request, key, format string) bool {
+	ps, ok := storage.Global.(storage.Presigner)
+	if !ok {
+		return false
+	}
+
+	url, err := ps.PresignGet(r.Context(), key, presignTTL)
+	if err != nil {
+		// Ký hỏng không phải lý do để từ chối người dùng: đường đọc bytes vẫn còn đó.
+		log.Printf("Không ký được URL cho %s: %v — trả về qua backend", key, err)
+		return false
+	}
+
+	// 302 chứ không phải 301: URL này hết hạn sau presignTTL, nên không được cache lại như
+	// một chỗ ở lâu dài.
+	w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.`+format+`"`)
+	http.Redirect(w, r, url, http.StatusFound)
+	return true
 }
 
 // safeTaskID chỉ cho phép các ký tự mà UUID/task ID của nền tảng sử dụng.

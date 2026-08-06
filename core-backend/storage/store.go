@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 )
 
 // ErrNotFound là câu trả lời chung khi một khoá không tồn tại.
@@ -45,6 +46,23 @@ type Store interface {
 	// List liệt kê các khoá bắt đầu bằng prefix, kèm thời điểm sửa và kích thước, để bộ quét
 	// dọn quyết định xoá gì mà không phải tải nội dung.
 	List(ctx context.Context, prefix string) ([]ObjectInfo, error)
+}
+
+// Presigner là một Store biết phát URL tải trực tiếp có thời hạn.
+//
+// Interface tuỳ chọn, tách khỏi Store vì không phải kho nào cũng làm được: bản đĩa cục bộ
+// không có URL nào để phát. Người gọi kiểm bằng type assertion, nên thêm một backend không
+// hỗ trợ presign về sau không phải viết một phương thức trả lỗi cho có.
+//
+// Kiểu này cũng là lý do handler không cần so sánh STORAGE_BACKEND với chuỗi "s3": nó hỏi
+// "kho này phát URL được không" thay vì "kho này tên gì", nên thêm backend mới không phải
+// sửa handler.
+type Presigner interface {
+	// PresignGet trả về URL tải trực tiếp, hết hiệu lực sau ttl.
+	//
+	// Không kiểm khoá có tồn tại: ký là phép tính cục bộ, còn kiểm tồn tại là một lượt gọi
+	// mạng. Người gọi biết rõ hơn liệu có cần kiểm hay không.
+	PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
 }
 
 // ObjectInfo là phần siêu dữ liệu bộ quét dọn cần.
