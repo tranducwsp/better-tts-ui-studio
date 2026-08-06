@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"embed"
+	"fmt"
 	"log"
 	"time"
 
@@ -51,21 +52,32 @@ func InitDB(cfg *config.Config) {
 	retryInterval := time.Duration(cfg.DBConnectRetryIntervalSec) * time.Second
 
 	// 2. Kết nối PostgreSQL với cơ chế Retry
+	//
+	// lastErr giữ nguyên nhân THẬT của lần thử cuối. Trước đây vòng lặp chỉ nhớ lỗi của
+	// pgxpool.NewWithConfig và bỏ rơi lỗi từ Ping — mà NewWithConfig gần như luôn thành công
+	// (nó chỉ dựng pool, chưa nối), nên mọi thất bại thực tế đều đến từ Ping và thông báo cuối
+	// cùng in ra "<nil>". Sai mật khẩu, sai tên cơ sở dữ liệu, hay máy chủ từ chối kết nối đều
+	// hiện ra như nhau: một dòng không nói gì. Chẩn đoán phải đi đọc log của chính Postgres.
 	for i := 1; i <= maxRetries; i++ {
 		log.Printf("Connecting to PostgreSQL pool [MaxConns: %d, MinConns: %d] (Attempt %d/%d)...",
 			cfg.DBMaxConns, cfg.DBMinConns, i, maxRetries)
 
+		var lastErr error
 		pool, err = pgxpool.NewWithConfig(ctx, poolConfig)
-		if err == nil {
-			if pingErr := pool.Ping(ctx); pingErr == nil {
-				log.Printf("Successfully connected to PostgreSQL via pgxpool (MaxConns: %d, MinConns: %d)!", cfg.DBMaxConns, cfg.DBMinConns)
-				break
-			}
+		if err != nil {
+			lastErr = fmt.Errorf("dựng pool: %w", err)
+		} else if pingErr := pool.Ping(ctx); pingErr != nil {
+			lastErr = fmt.Errorf("ping: %w", pingErr)
 			pool.Close()
+		} else {
+			log.Printf("Successfully connected to PostgreSQL via pgxpool (MaxConns: %d, MinConns: %d)!", cfg.DBMaxConns, cfg.DBMinConns)
+			break
 		}
 
+		log.Printf("  không kết nối được: %v", lastErr)
+
 		if i == maxRetries {
-			log.Fatalf("Failed to connect to PostgreSQL after %d attempts: %v", maxRetries, err)
+			log.Fatalf("Không kết nối được PostgreSQL sau %d lần thử: %v", maxRetries, lastErr)
 		}
 		time.Sleep(retryInterval)
 	}
