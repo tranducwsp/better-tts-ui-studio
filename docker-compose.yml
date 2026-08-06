@@ -109,6 +109,20 @@ services:
       - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
       - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-0}
       - S3_PREFIX=${S3_PREFIX:-}
+
+    # Ghim tên miền S3 về địa chỉ trong LAN.
+    #
+    # Container không dùng /etc/hosts của máy chủ: nó hỏi DNS công khai, nên một tên miền
+    # đứng sau Cloudflare giải ra IP của Cloudflare thay vì máy chủ nội bộ. Cloudflare từ
+    # chối request đã ký của S3 — chữ ký AWS phủ cả header, mà proxy thì thêm và sửa header —
+    # nên MỌI thao tác trả 403 dù khoá hoàn toàn hợp lệ. Triệu chứng dễ đọc nhầm thành thiếu
+    # quyền, vì mã lỗi giống hệt lỗi phân quyền thật.
+    #
+    # Định dạng: "s3.example.com:192.168.1.100". Bỏ trống khi kho S3 vốn ở ngoài internet
+    # (AWS thật, R2) — lúc đó đi qua DNS công khai mới đúng.
+    extra_hosts:
+      - "${S3_HOST_ENTRY:-s3.invalid:127.0.0.1}"
+
     volumes:
       - ./core-backend/storage:/app/storage
     depends_on:
