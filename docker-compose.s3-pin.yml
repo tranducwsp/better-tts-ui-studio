@@ -1,0 +1,20 @@
+# Ghim tên miền S3 về một địa chỉ cụ thể, bỏ qua DNS công khai.
+#
+# Chỉ cần khi tên miền của kho S3 nằm sau một reverse proxy làm hỏng chữ ký SigV4. AWS SDK v2
+# ký chữ ký phủ cả header, còn proxy như Cloudflare thì thêm và sửa header, nên thao tác API
+# qua đó trả về SignatureDoesNotMatch — do chính MinIO từ chối (phản hồi có X-Amz-Request-Id),
+# không phải proxy chặn. Phạm vi hẹp: mc, presigned URL và request tự ký với header tối thiểu
+# đều đi qua được; chỉ đường ký-bằng-header của SDK là hỏng.
+#
+# CÁCH TỐT HƠN: trỏ S3_ENDPOINT vào một tên miền DNS-only (Cloudflare tắt đám mây cam, hoặc
+# một bản ghi riêng trên cùng ingress). Lúc đó không cần tệp này, và /etc/hosts của container
+# không có dòng nào thừa. Chỉ dùng tệp này khi không thể có một tên miền như vậy.
+#
+# Cách dùng:
+#   S3_HOST_ENTRY=s3.example.com:192.168.1.100 \
+#     docker compose -f docker-compose.yml -f docker-compose.s3-pin.yml up -d
+
+services:
+  core-backend:
+    extra_hosts:
+      - "${S3_HOST_ENTRY:?cần đặt S3_HOST_ENTRY, định dạng ten-mien:dia-chi-ip}"

@@ -110,20 +110,6 @@ services:
       - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-0}
       - S3_PREFIX=${S3_PREFIX:-}
 
-    # Lối thoát khi tên miền S3 nằm sau một reverse proxy làm hỏng chữ ký.
-    #
-    # AWS SDK v2 ký chữ ký phủ cả header. Một proxy như Cloudflare thêm và sửa header, nên
-    # thao tác API đi qua đó trả về SignatureDoesNotMatch — do chính MinIO từ chối (phản hồi
-    # có X-Amz-Request-Id), không phải proxy chặn. Phạm vi hẹp: mc, presigned URL và request
-    # tự ký với header tối thiểu đều qua được; chỉ đường ký-bằng-header của SDK là hỏng.
-    #
-    # Cách sạch hơn là trỏ S3_ENDPOINT vào một tên miền DNS-only (không bật proxy) — lúc đó
-    # để trống biến này. Ghim ở đây chỉ dành cho trường hợp không có tên miền như vậy.
-    #
-    # Định dạng: "s3.example.com:192.168.1.100".
-    extra_hosts:
-      - "${S3_HOST_ENTRY:-s3.invalid:127.0.0.1}"
-
     volumes:
       - ./core-backend/storage:/app/storage
     depends_on:
