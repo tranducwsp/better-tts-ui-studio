@@ -110,21 +110,17 @@ services:
       - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-0}
       - S3_PREFIX=${S3_PREFIX:-}
 
-    # Ghim tên miền S3 về địa chỉ trong LAN, để traffic của SDK không đi qua Cloudflare.
+    # Lối thoát khi tên miền S3 nằm sau một reverse proxy làm hỏng chữ ký.
     #
-    # Container không dùng /etc/hosts của máy chủ: nó hỏi DNS công khai, nên một tên miền
-    # đứng sau Cloudflare giải ra IP của Cloudflare thay vì máy chủ nội bộ.
+    # AWS SDK v2 ký chữ ký phủ cả header. Một proxy như Cloudflare thêm và sửa header, nên
+    # thao tác API đi qua đó trả về SignatureDoesNotMatch — do chính MinIO từ chối (phản hồi
+    # có X-Amz-Request-Id), không phải proxy chặn. Phạm vi hẹp: mc, presigned URL và request
+    # tự ký với header tối thiểu đều qua được; chỉ đường ký-bằng-header của SDK là hỏng.
     #
-    # Đi qua proxy đó thì AWS SDK v2 nhận SignatureDoesNotMatch — lỗi do chính MinIO trả
-    # (phản hồi có X-Amz-Request-Id), không phải Cloudflare chặn. Phạm vi hẹp hơn vẻ ngoài
-    # của nó: mc, presigned URL, và một request tự ký với bộ header tối thiểu đều đi qua cùng
-    # tên miền này bình thường — đã đo cả ba. Chỉ thao tác ký-bằng-header của SDK v2 là hỏng,
-    # và backend dùng đúng SDK đó.
+    # Cách sạch hơn là trỏ S3_ENDPOINT vào một tên miền DNS-only (không bật proxy) — lúc đó
+    # để trống biến này. Ghim ở đây chỉ dành cho trường hợp không có tên miền như vậy.
     #
-    # Triệu chứng dễ đọc nhầm thành sai khoá hay thiếu quyền, vì đều là 403.
-    #
-    # Định dạng: "s3.example.com:192.168.1.100". Bỏ trống khi kho S3 vốn ở ngoài internet
-    # (AWS thật, R2) — lúc đó đi qua DNS công khai mới đúng.
+    # Định dạng: "s3.example.com:192.168.1.100".
     extra_hosts:
       - "${S3_HOST_ENTRY:-s3.invalid:127.0.0.1}"
 
