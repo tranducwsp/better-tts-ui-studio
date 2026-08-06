@@ -110,13 +110,18 @@ services:
       - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-0}
       - S3_PREFIX=${S3_PREFIX:-}
 
-    # Ghim tên miền S3 về địa chỉ trong LAN.
+    # Ghim tên miền S3 về địa chỉ trong LAN, để traffic của SDK không đi qua Cloudflare.
     #
     # Container không dùng /etc/hosts của máy chủ: nó hỏi DNS công khai, nên một tên miền
-    # đứng sau Cloudflare giải ra IP của Cloudflare thay vì máy chủ nội bộ. Cloudflare từ
-    # chối request đã ký của S3 — chữ ký AWS phủ cả header, mà proxy thì thêm và sửa header —
-    # nên MỌI thao tác trả 403 dù khoá hoàn toàn hợp lệ. Triệu chứng dễ đọc nhầm thành thiếu
-    # quyền, vì mã lỗi giống hệt lỗi phân quyền thật.
+    # đứng sau Cloudflare giải ra IP của Cloudflare thay vì máy chủ nội bộ.
+    #
+    # Đi qua proxy đó thì AWS SDK v2 nhận SignatureDoesNotMatch — lỗi do chính MinIO trả
+    # (phản hồi có X-Amz-Request-Id), không phải Cloudflare chặn. Phạm vi hẹp hơn vẻ ngoài
+    # của nó: mc, presigned URL, và một request tự ký với bộ header tối thiểu đều đi qua cùng
+    # tên miền này bình thường — đã đo cả ba. Chỉ thao tác ký-bằng-header của SDK v2 là hỏng,
+    # và backend dùng đúng SDK đó.
+    #
+    # Triệu chứng dễ đọc nhầm thành sai khoá hay thiếu quyền, vì đều là 403.
     #
     # Định dạng: "s3.example.com:192.168.1.100". Bỏ trống khi kho S3 vốn ở ngoài internet
     # (AWS thật, R2) — lúc đó đi qua DNS công khai mới đúng.
