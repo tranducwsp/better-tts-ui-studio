@@ -1,0 +1,9 @@
+# node_modules được cài lại trong image; gửi 168 MB qua build context chỉ làm chậm mọi lần
+# build mà không đổi kết quả.
+node_modules/
+dist/
+
+# Không bao giờ đưa tệp môi trường vào image — xem core-backend/.dockerignore.
+.env
+.env.*
+!.env.example

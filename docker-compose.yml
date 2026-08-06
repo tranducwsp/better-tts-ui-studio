@@ -79,6 +79,17 @@ services:
       - REDIS_URL=redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - COOKIE_SECURE=${COOKIE_SECURE:-0}
+
+      # Tài khoản tạo sẵn ở lần khởi động đầu, khi cơ sở dữ liệu còn trống. Để trống cả bốn
+      # thì không tài khoản nào được tạo và người dùng đầu tiên tự đăng ký qua giao diện.
+      #
+      # Trước đây compose không truyền chúng, mà image lại chứa sẵn một .env có tài khoản —
+      # nên tài khoản được tạo là tài khoản của người dựng image, và đặt biến trong .env của
+      # mình không có tác dụng gì.
+      - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME:-}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-}
+      - DEFAULT_USER_USERNAME=${DEFAULT_USER_USERNAME:-}
+      - DEFAULT_USER_PASSWORD=${DEFAULT_USER_PASSWORD:-}
       - CORE_ENGINE_URL=http://core-engine:8001
       - CORE_ENGINE_GRPC_URL=core-engine:50051
       - FE_BUILDER_URL=http://frontend-builder:3001

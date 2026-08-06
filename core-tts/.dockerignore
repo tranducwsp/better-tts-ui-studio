@@ -1,0 +1,11 @@
+# Thư mục ảo và bytecode của máy phát triển; image tự cài theo requirements.txt.
+venv/
+__pycache__/
+*.py[cod]
+
+# Âm thanh sinh ra lúc chạy, không phải thứ để dựng image.
+storage/
+
+# Không bao giờ đưa tệp môi trường vào image — xem core-backend/.dockerignore.
+.env
+.env.*
