@@ -162,6 +162,39 @@ var Settings = []Setting{
 	},
 	{Key: "STORAGE_DIR", Kind: KindString, Default: "storage", Group: "Storage",
 		Doc: "Gốc lưu trữ khi STORAGE_BACKEND=local. Bị bỏ qua với các backend khác."},
+
+	{
+		Key: "S3_BUCKET", Kind: KindString, Default: "", Group: "Storage (S3)",
+		Doc: "Bắt buộc khi STORAGE_BACKEND=s3. Bucket được kiểm ngay lúc khởi động, nên tên sai\n" +
+			"hay thiếu quyền làm backend dừng lại thay vì hỏng ở lần tổng hợp đầu tiên.",
+	},
+	{
+		Key: "S3_REGION", Kind: KindString, Default: "us-east-1", Group: "Storage (S3)",
+		Doc: "Vùng của bucket. Kho tự dựng như MinIO thường bỏ qua giá trị này, nhưng SDK vẫn\n" +
+			"đòi một giá trị nên cứ để mặc định.",
+	},
+	{
+		Key: "S3_ENDPOINT", Kind: KindString, Default: "", Group: "Storage (S3)",
+		Doc: "Để trống với AWS thật. Đặt khi dùng MinIO, Cloudflare R2 hay DigitalOcean Spaces,\n" +
+			"ví dụ https://s3.example.com.",
+	},
+	{
+		Key: "S3_ACCESS_KEY_ID", Kind: KindSecret, Default: "", Group: "Storage (S3)",
+		Doc: "Bỏ trống CẢ HAI khoá để dùng IAM role (IRSA trên k8s, instance profile trên EC2) —\n" +
+			"an toàn hơn khoá tĩnh vì không có gì để rò rỉ. Khai một trong hai là lỗi cấu hình\n" +
+			"và bị từ chối lúc khởi động.",
+	},
+	{Key: "S3_SECRET_ACCESS_KEY", Kind: KindSecret, Default: "", Group: "Storage (S3)"},
+	{
+		Key: "S3_FORCE_PATH_STYLE", Kind: KindInt, Default: "0", Min: 0, Max: 1, Group: "Storage (S3)",
+		Doc: "Đặt 1 cho MinIO và phần lớn kho tự dựng: chúng phục vụ theo đường dẫn\n" +
+			"(endpoint/bucket/key) thay vì theo tên miền con, vì tên miền con cần wildcard DNS.",
+	},
+	{
+		Key: "S3_PREFIX", Kind: KindString, Default: "", Group: "Storage (S3)",
+		Doc: "Tiền tố chung cho mọi khoá, để nhiều môi trường dùng chung một bucket mà không\n" +
+			"giẫm lên nhau. Ví dụ \"prod\" hoặc \"staging\".",
+	},
 	{
 		Key: "MAX_UPLOAD_SIZE_MB", Kind: KindInt, Default: "256", Min: 1, Max: 10240,
 		Group: "Storage",

@@ -1,9 +1,11 @@
 package storage
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
+	"time"
 )
 
 // Global là Store đang có hiệu lực, chốt một lần lúc khởi động qua Init.
@@ -23,7 +25,7 @@ var baseDir = "storage"
 // nói rõ giá trị nào hợp lệ, thay vì lặng lẽ rơi về local — một backend gõ sai mà vẫn khởi
 // động được nghĩa là tệp đi vào chỗ không ai đọc, và điều đó chỉ lộ ra khi có người cần lại
 // chúng.
-func Init(backend, dir string) error {
+func Init(backend, dir string, s3cfg S3Config) error {
 	switch strings.ToLower(strings.TrimSpace(backend)) {
 	case "", "local":
 		if dir != "" {
@@ -38,7 +40,27 @@ func Init(backend, dir string) error {
 		return nil
 
 	case "s3":
-		return fmt.Errorf("STORAGE_BACKEND=s3 chưa được cài đặt trong bản này")
+		// Thời hạn cho lượt kiểm bucket lúc khởi động. Có hạn để một endpoint sai địa chỉ
+		// biểu hiện thành lỗi rõ ràng thay vì một tiến trình treo mà không ai biết đang chờ gì.
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		s, err := NewS3Store(ctx, s3cfg)
+		if err != nil {
+			return fmt.Errorf("không khởi tạo được kho S3 (bucket %q): %w", s3cfg.Bucket, err)
+		}
+		Global = s
+
+		where := s3cfg.Endpoint
+		if where == "" {
+			where = "AWS " + s3cfg.Region
+		}
+		auth := "IAM role"
+		if s3cfg.AccessKey != "" {
+			auth = "khoá tĩnh"
+		}
+		log.Printf("Lưu trữ: S3 bucket %q tại %s (%s)", s3cfg.Bucket, where, auth)
+		return nil
 
 	default:
 		return fmt.Errorf("STORAGE_BACKEND=%q không hợp lệ; chỉ nhận \"local\" hoặc \"s3\"", backend)

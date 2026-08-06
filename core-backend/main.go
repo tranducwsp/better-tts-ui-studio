@@ -70,7 +70,15 @@ func main() {
 	// Dừng luôn nếu không khởi tạo được, thay vì để handler đầu tiên phát hiện: một backend
 	// nhận request mà không cất được âm thanh chỉ tiêu tốn GPU cho những tệp không ai lấy
 	// lại được.
-	if err := storage.Init(cfg.StorageBackend, cfg.StorageDir); err != nil {
+	if err := storage.Init(cfg.StorageBackend, cfg.StorageDir, storage.S3Config{
+		Bucket:         cfg.S3Bucket,
+		Region:         cfg.S3Region,
+		Endpoint:       cfg.S3Endpoint,
+		AccessKey:      cfg.S3AccessKey,
+		SecretKey:      cfg.S3SecretKey,
+		ForcePathStyle: cfg.S3ForcePathStyle,
+		Prefix:         cfg.S3Prefix,
+	}); err != nil {
 		log.Fatalf("Không khởi tạo được kho lưu trữ: %v", err)
 	}
 

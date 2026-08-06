@@ -41,6 +41,15 @@ type Config struct {
 	// Cấu hình Storage & Limit
 	StorageBackend string
 	StorageDir     string
+
+	// Cấu hình kho S3, chỉ có nghĩa khi StorageBackend là "s3".
+	S3Bucket         string
+	S3Region         string
+	S3Endpoint       string
+	S3AccessKey      string
+	S3SecretKey      string
+	S3ForcePathStyle bool
+	S3Prefix         string
 	// Số giờ giữ tập tin âm thanh tạm trước khi bị quét xoá.
 	TempRetentionHours int
 	MaxUploadMB        int
@@ -149,8 +158,16 @@ func LoadConfig() *Config {
 		DBConnectMaxRetries:       num("DB_CONNECT_MAX_RETRIES"),
 		DBConnectRetryIntervalSec: num("DB_CONNECT_RETRY_INTERVAL_SECONDS"),
 
-		StorageBackend:     str("STORAGE_BACKEND"),
-		StorageDir:         str("STORAGE_DIR"),
+		StorageBackend: str("STORAGE_BACKEND"),
+		StorageDir:     str("STORAGE_DIR"),
+
+		S3Bucket:           str("S3_BUCKET"),
+		S3Region:           str("S3_REGION"),
+		S3Endpoint:         str("S3_ENDPOINT"),
+		S3AccessKey:        str("S3_ACCESS_KEY_ID"),
+		S3SecretKey:        str("S3_SECRET_ACCESS_KEY"),
+		S3ForcePathStyle:   num("S3_FORCE_PATH_STYLE") == 1,
+		S3Prefix:           str("S3_PREFIX"),
 		TempRetentionHours: num("TEMP_AUDIO_RETENTION_HOURS"),
 		MaxUploadMB:        num("MAX_UPLOAD_SIZE_MB"),
 		CORSOrigins:        corsOrigins,

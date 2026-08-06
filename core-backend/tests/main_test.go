@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 		panic("không tạo được thư mục kho tạm cho kiểm thử: " + err.Error())
 	}
 
-	if err := storage.Init("local", dir); err != nil {
+	if err := storage.Init("local", dir, storage.S3Config{}); err != nil {
 		panic("không khởi tạo được kho cho kiểm thử: " + err.Error())
 	}
 
