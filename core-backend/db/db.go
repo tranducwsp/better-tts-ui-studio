@@ -31,8 +31,23 @@ var (
 	Queries *sqlc.Queries
 )
 
-// InitDB khởi tạo kết nối CSDL PostgreSQL với cấu hình Connection Pool linh hoạt và tự động thực thi golang-migrate.
-func InitDB(cfg *config.Config) {
+// InitOptions chọn những bước khởi tạo KHÔNG phải tiến trình nào cũng nên chạy.
+//
+// Kết nối pool thì mọi tiến trình đều cần. Migration và tài khoản khởi tạo thì không: chúng
+// thay đổi trạng thái dùng chung, nên để mỗi tiến trình tự chạy nghĩa là N tiến trình cùng
+// tranh nhau làm một việc chỉ cần làm một lần. golang-migrate có khoá riêng nên không hỏng
+// dữ liệu, nhưng bên thua khoá mà hết giờ thì chết cả tiến trình — với nhiều replica cùng
+// khởi động, đó là một vòng khởi động lại không ai giải thích được.
+type InitOptions struct {
+	// Migrate cho phép tiến trình này áp migration.
+	Migrate bool
+	// Seed cho phép tiến trình này tạo tài khoản mặc định.
+	Seed bool
+}
+
+// InitDB khởi tạo kết nối CSDL PostgreSQL với cấu hình Connection Pool linh hoạt, và tuỳ chọn
+// áp migration cùng tài khoản khởi tạo.
+func InitDB(cfg *config.Config, opts InitOptions) {
 	var pool *pgxpool.Pool
 	var err error
 
@@ -83,14 +98,22 @@ func InitDB(cfg *config.Config) {
 		time.Sleep(retryInterval)
 	}
 
-	// 3. Tự động thực thi Migration có đánh phiên bản qua golang-migrate
-	runDatabaseMigrations(cfg.DatabaseURL)
+	// 3. Migration có đánh phiên bản qua golang-migrate, nếu tiến trình này được giao việc đó.
+	if opts.Migrate {
+		runDatabaseMigrations(cfg.DatabaseURL)
+	} else {
+		// Nói ra thay vì im lặng bỏ qua: người vận hành thấy schema không khớp cần biết ngay
+		// rằng tiến trình này không phải nơi áp migration.
+		log.Println("Bỏ qua migration: tiến trình này không được giao việc đó.")
+	}
 
 	Pool = pool
 	Queries = sqlc.New(pool)
 
 	// 4. Khởi tạo các tài khoản mặc định (Admin & User)
-	seedDefaultAccounts(ctx, cfg)
+	if opts.Seed {
+		seedDefaultAccounts(ctx, cfg)
+	}
 	log.Println("Database initialization completed successfully (SQL-First sqlc & golang-migrate).")
 }
 

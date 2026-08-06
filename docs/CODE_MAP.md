@@ -30,7 +30,7 @@ tổng hợp giọng nói, và nó chạm vào mọi tầng:
 
 | # | Tệp | Vì sao đọc ở bước này |
 |---|-----|----------------------|
-| 1 | `core-backend/main.go` | Thứ tự khởi động: cái gì phải có trước khi cổng mở |
+| 1 | `core-backend/app/bootstrap.go` | Thứ tự khởi động: cái gì phải có trước khi cổng mở, và bước nào chỉ thuộc về một chế độ |
 | 2 | `core-backend/router/router.go` | Toàn bộ danh sách route và middleware của từng route — bản đồ bề mặt tấn công |
 | 3 | `core-backend/middleware/auth.go` | Danh tính được xác lập thế nào, và ba mức bảo vệ khác nhau ra sao |
 | 4 | `core-backend/state/manifest.go` | Mọi hạn mức được thi hành ở đây |
@@ -44,7 +44,10 @@ tổng hợp giọng nói, và nó chạm vào mọi tầng:
 
 | Tệp | Dòng | Chức năng |
 |-----|------|-----------|
-| `main.go` | 156 | Thứ tự khởi động, và **cổng gate**: manifest phải nạp được trước khi listener mở. Chứa `manifestDiscoveryTimeout` (90s) — con số vận hành đáng chất vấn nhất trong repo. |
+| `main.go` | 40 | Chọn chế độ rồi giao việc: `-mode=web` hay `-mode=worker`. Cố ý mỏng — trước đây tệp này trộn cả khởi tạo chung, vòng đời web và vòng lặp worker, nên đọc nó không trả lời được "worker thật ra chạy những gì". |
+| `app/bootstrap.go` | 167 | Chuỗi khởi tạo dùng chung cho cả hai chế độ, và **cổng gate**: manifest phải nạp được trước khi listener mở. Chứa `manifestDiscoveryTimeout` (90s) — con số vận hành đáng chất vấn nhất trong repo. Cũng là nơi khai bước nào KHÔNG dùng chung: migration và tài khoản khởi tạo chỉ chạy ở web, sweeper chỉ chạy ở worker. |
+| `web/server.go` | 78 | `http.Server` cùng bốn hạn thời gian của nó, và trình tự tắt gọn. |
+| `worker/worker.go` | 84 | Vòng lặp nhặt job: trần `maxInFlight` mỗi tiến trình, và `wg.Wait()` để job dở dang chạy nốt khi nhận tín hiệu dừng. |
 | `config/settings.go` | 194 | **Bảng đặc tả mọi biến môi trường**: tên, mặc định, khoảng hợp lệ, tài liệu. `.env.example` được sinh ra từ đây. Muốn biết biến X làm gì thì đọc đúng một chỗ này. |
 | `config/config.go` | 217 | Đọc bảng trên thành struct `Config`. `requireAll()` chặn khởi động khi thiếu biến bắt buộc. `logSummary()` in cấu hình đang có hiệu lực. |
 | `cmd/gen-env/main.go` | 91 | Sinh `.env.example` từ `config/settings.go`. Chạy bằng `go generate ./config`. |
@@ -88,14 +91,22 @@ Hai tệp này quyết định hành vi của phần lớn hệ thống. Đọc 
 
 | Tệp | Dòng | Chức năng |
 |-----|------|-----------|
-| `state/tasks.go` | 524 | Task bất đồng bộ: tiến độ, hủy, pub/sub cho SSE (fanout nội bộ + Redis khi có nhiều replica), cache audio. Có `GlobalTaskManager` — một trong hai singleton của repo. Tệp phức tạp nhất về đồng thời. |
-| `db/db.go` | 228 | Khởi tạo pool pgx, chạy migration (golang-migrate, embed), tạo tài khoản mặc định. `RegisterJobAndChunk` và `UpdateChunkStatus` là hai hàm ghi được handler dùng. |
+| `state/tasks.go` | 785 | Task bất đồng bộ: tiến độ, hủy, pub/sub cho SSE (fanout nội bộ + Redis khi có nhiều replica), cache audio. Có `GlobalTaskManager` — một trong hai singleton của repo. Tệp phức tạp nhất về đồng thời. |
+| `db/db.go` | 289 | Khởi tạo pool pgx; migration và tài khoản mặc định chạy theo `InitOptions` (chỉ web, để nhiều tiến trình không giành cùng một khoá migration). `RegisterJobAndChunk` và `UpdateChunkStatus` là hai hàm ghi được handler dùng — hàm đầu cũng là nơi kiểm job có thuộc người gọi không. |
 | `db/schema.sql` | 52 | 4 bảng: `users`, `user_voices`, `tts_jobs`, `tts_chunks` + index. Đọc để hiểu quan hệ `chunk → job → user` (nền tảng của kiểm quyền task). |
 | `db/query/*.sql` | 17 truy vấn | Nguồn thật của mọi câu SQL. `sqlc` sinh code Go từ đây → **không sửa `db/sqlc/` bằng tay**, sửa ở đây rồi chạy `sqlc generate`. |
 | `db/sqlc/*.go` | 708 | **Sinh tự động.** Bỏ qua khi review, trừ khi đang kiểm chính bản sinh. |
 | `storage/paths.go` | 51 | Dựng mọi đường dẫn lưu trữ (`TempDir`, `ModeDir`) từ một gốc duy nhất, kèm `safeSegment` làm sạch. Nhỏ, đáng đọc trọn. |
-| `storage/sweeper.go` | 81 | Dọn tệp audio tạm quá hạn, định kỳ và một lần lúc khởi động. |
+| `storage/sweeper.go` | 74 | Dọn tệp audio tạm quá hạn, định kỳ và một lần lúc khởi động. |
 | `audio/transcode.go` | 120 | Chuyển mã bằng ffmpeg qua pipe (không tệp tạm), có hàng đợi giới hạn theo số nhân CPU và timeout. Tham số ffmpeg là bảng cố định, không ghép từ đầu vào. |
+
+### Hàng đợi và tổng hợp
+
+| Tệp | Dòng | Chức năng |
+|-----|------|-----------|
+| `queue/queue.go` | 146 | Hàng đợi job trên Redis Stream: `Enqueue`, `EnsureGroup`, `Consume`. **Cố ý không bền** — không AOF/RDB, không `XAUTOCLAIM`: một chunk chỉ tốn vài giây để chạy lại và frontend đã tự retry, nên mất job là hành vi đã chọn chứ không phải sơ suất. |
+| `synth/synth.go` | 129 | Một lượt tổng hợp từ đầu tới cuối: gọi Engine → ghi kho → cập nhật DB → phát trạng thái. Dùng chung giữa worker và nhánh dự phòng của web, nên hai đường không thể trôi khỏi nhau. |
+| `synth/local.go` | 55 | Nhánh dự phòng khi không có Redis: chạy tổng hợp ngay trong tiến trình web, có ghi nhận để lúc tắt máy còn chờ chạy nốt. |
 
 ### Giao tiếp với Engine
 
