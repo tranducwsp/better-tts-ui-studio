@@ -106,6 +106,10 @@ func main() {
 	// cũng chỉ là một con số trong log, và mỗi request vẫn hỏi PostgreSQL một lần.
 	middleware.ConfigureUserCache(time.Duration(cfg.AuthUserCacheSeconds) * time.Second)
 
+	// Ai được phép đặt X-Forwarded-For. Không có dòng này thì hạn mức khoá theo địa chỉ TCP
+	// thật, tức là đúng nhưng gộp mọi người dùng sau một proxy vào chung một khoá.
+	middleware.SetTrustedProxies(cfg.TrustedProxies)
+
 	// Xoá định kỳ âm thanh tạm. Mỗi lần tổng hợp ghi một đối tượng vào nhánh temp và trước
 	// đây không có gì dọn chúng, nên kho chỉ có thể phình lên.
 	//
@@ -196,8 +200,15 @@ func main() {
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		// Không Fatalf: os.Exit bỏ qua mọi defer, và ngay dưới đây còn phải chờ các lượt tổng
+		// hợp chạy tại chỗ. Hết giờ đóng listener không phải lý do để vứt công việc đang chạy.
+		log.Printf("Server chưa đóng gọn trong hạn: %v", err)
 	}
+
+	// Chờ nhánh dự phòng không-Redis chạy nốt. Shutdown ở trên chỉ chờ kết nối HTTP, mà lượt
+	// tổng hợp đã trả task_id về từ lâu nên nó không nhìn thấy — thoát luôn ở đây sẽ để chunk
+	// mắc lại "processing" và người dùng thấy một job không bao giờ xong.
+	synth.WaitLocal(30 * time.Second)
 
 	log.Println("Server exited successfully")
 }

@@ -193,9 +193,6 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		taskID = *req.TaskID
 	}
 
-	taskItem := state.GlobalTaskManager.GetOrCreate(taskID)
-	taskItem.SetOwner(user.ID)
-
 	jobID := taskID
 	if req.JobID != nil && *req.JobID != "" {
 		jobID = *req.JobID
@@ -224,10 +221,25 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	//
 	// Dừng luôn thay vì chạy tiếp: một lượt tổng hợp không ai lấy lại được chỉ tiêu tốn GPU.
 	if err := db.RegisterJobAndChunk(context.Background(), user.ID, jobID, req.Engine, req.Voice, audioParams, totalChunks, taskID, chunkIndex, req.Text); err != nil {
+		if errors.Is(err, db.ErrJobNotOwned) {
+			writeError(w, http.StatusForbidden, "Forbidden")
+			return
+		}
 		log.Printf("Không ghi được job %s / chunk %s: %v", jobID, taskID, err)
 		writeError(w, http.StatusInternalServerError, "Không khởi tạo được yêu cầu tổng hợp")
 		return
 	}
+
+	// Chỉ dựng task trong RAM SAU khi DB đã nhận: task_id do client gửi lên, nên GetOrCreate
+	// trước lúc này cho phép một người gắn tên mình lên task_id của người khác. SetOwner không
+	// ghi đè, nhưng nó chỉ giữ được điều đó khi task còn trong RAM tiến trình này — task đã bị
+	// Cleanup thu hồi, hoặc đang nằm ở replica khác, sẽ dựng lại thành một bản không chủ và
+	// người gọi sau chiếm được. Chèn chunk ở trên đã hỏng vì trùng khoá chính, nhưng phần ghi
+	// vào RAM thì không có ai hoàn tác.
+	//
+	// Tới đây thì DB đã xác nhận taskID này là chunk mới của một job thuộc người gọi.
+	taskItem := state.GlobalTaskManager.GetOrCreate(taskID)
+	taskItem.SetOwner(user.ID)
 
 	job := queue.Job{
 		TaskID:  taskID,
@@ -246,13 +258,13 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	// TaskManager và rate limiter đều có bản chạy bằng RAM. Nó dùng chung đúng hàm synth.Run
 	// mà worker gọi, nên hai đường không thể trôi ra khỏi nhau.
 	//
-	// context.Background chứ không phải r.Context(): công việc này sống lâu hơn request đã
-	// khởi động nó, và request kết thúc ngay sau khi trả task_id.
+	// Qua GoLocal chứ không `go` trần: lượt này phải được ghi nhận để lúc tắt máy còn chờ nó
+	// chạy nốt, giống wg.Wait() bên worker.
 	if err := queue.Enqueue(r.Context(), job); err != nil {
 		if !errors.Is(err, queue.ErrNoRedis) {
 			log.Printf("Không xếp được job %s vào hàng đợi: %v — chạy tại chỗ", taskID, err)
 		}
-		go synth.Run(context.Background(), h.TTSClient, job)
+		synth.GoLocal(h.TTSClient, job)
 	}
 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{

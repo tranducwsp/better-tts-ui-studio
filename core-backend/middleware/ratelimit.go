@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -161,20 +162,95 @@ func (l *ipLimiter) reap() {
 	}
 }
 
-// clientIP lấy địa chỉ người gọi, ưu tiên X-Forwarded-For khi chạy sau proxy.
+// trustedProxies là các dải mạng được phép đặt X-Forwarded-For.
 //
-// Lấy phần tử ĐẦU của chuỗi X-Forwarded-For: đó là địa chỉ do proxy ngoài cùng ghi lại.
-// Header này do client đặt được, nên khi không có proxy phía trước thì nó là thứ giả mạo
-// được — hạn mức vẫn nên coi là lớp làm chậm, không phải lớp chặn tuyệt đối.
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.IndexByte(xff, ','); i != -1 {
-			return strings.TrimSpace(xff[:i])
+// Rỗng nghĩa là không tin header đó bao giờ. Đọc-nhiều-ghi-một-lần: SetTrustedProxies chạy
+// đúng một lần lúc khởi động, trước khi router nhận request đầu tiên.
+var trustedProxies []*net.IPNet
+
+// SetTrustedProxies nạp danh sách dải proxy tin cậy từ cấu hình.
+//
+// Mục không phân tích được sẽ làm dừng tiến trình: một dải viết sai chính tả âm thầm bị bỏ
+// qua nghĩa là hạn mức khoá theo địa chỉ của proxy — mọi người dùng chung một khoá — hoặc
+// theo một header giả mạo được. Cả hai đều là hỏng ngầm, và cấu hình sai thì phải thấy ngay
+// lúc khởi động.
+func SetTrustedProxies(cidrs []string) {
+	trustedProxies = nil
+	for _, c := range cidrs {
+		// IP trần cũng nhận: một proxy duy nhất không cần viết thành /32.
+		if !strings.Contains(c, "/") {
+			if ip := net.ParseIP(c); ip != nil {
+				bits := 32
+				if ip.To4() == nil {
+					bits = 128
+				}
+				c += "/" + strconv.Itoa(bits)
+			}
 		}
-		return strings.TrimSpace(xff)
+		_, network, err := net.ParseCIDR(c)
+		if err != nil {
+			log.Fatalf("TRUSTED_PROXIES: %q không phải CIDR hợp lệ: %v", c, err)
+		}
+		trustedProxies = append(trustedProxies, network)
 	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
+	if len(trustedProxies) > 0 {
+		log.Printf("Tin X-Forwarded-For từ %d dải proxy", len(trustedProxies))
 	}
-	return r.RemoteAddr
+}
+
+// clientIP lấy địa chỉ người gọi, chỉ tin X-Forwarded-For khi kết nối đến từ proxy tin cậy.
+//
+// X-Forwarded-For do client đặt được. Trước đây header này được tin vô điều kiện, nên khoá
+// hạn mức chính là một giá trị người gọi tự chọn: đổi header mỗi lần là hạn mức không còn tác
+// dụng — đo được 200/200 request lọt qua một hạn mức 10/phút, tức là vượt hoàn toàn chứ không
+// phải "một lớp làm chậm". Đó cũng là lớp duy nhất chắn việc dò mật khẩu và chắn việc bắt
+// máy chủ băm bcrypt liên tục.
+//
+// Lấy phần tử CUỐI CÙNG mà vẫn còn nằm ngoài dải tin cậy, duyệt từ phải sang: các phần tử
+// bên phải do proxy của ta ghi nên tin được, còn phần bên trái thì client đã có thể bịa sẵn
+// trước khi request tới proxy.
+func clientIP(r *http.Request) string {
+	remote := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(remote); err == nil {
+		remote = host
+	}
+
+	if len(trustedProxies) == 0 || !isTrustedProxy(remote) {
+		return remote
+	}
+
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff == "" {
+		return remote
+	}
+
+	parts := strings.Split(xff, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		hop := strings.TrimSpace(parts[i])
+		if hop == "" {
+			continue
+		}
+		if net.ParseIP(hop) == nil {
+			// Giá trị không phải IP thì mọi thứ bên trái nó cũng không tin được nữa.
+			break
+		}
+		if !isTrustedProxy(hop) {
+			return hop
+		}
+	}
+	return remote
+}
+
+// isTrustedProxy cho biết một địa chỉ có nằm trong dải proxy đã khai không.
+func isTrustedProxy(addr string) bool {
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return false
+	}
+	for _, network := range trustedProxies {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }

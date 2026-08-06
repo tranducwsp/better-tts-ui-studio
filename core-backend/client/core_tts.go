@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -112,7 +113,12 @@ func (c *CoreTTSClient) GetVoices(modelID string) ([]CoreVoice, error) {
 	return voices, nil
 }
 
-func (c *CoreTTSClient) Synthesize(text, voice string, speed float64, engine string, pitch *float64, emotion *string) ([]byte, error) {
+// Synthesize gọi Engine sinh âm thanh, huỷ được qua ctx.
+//
+// Nhận Context vì lượt gọi này là phần dài nhất của cả hệ thống — tới TTS_CLIENT_TIMEOUT_SECONDS
+// giây — và là thứ duy nhất đáng huỷ khi người dùng bấm dừng. Không có nó, cờ cancel chỉ đổi
+// được con số hiện trên giao diện còn GPU vẫn chạy hết lượt.
+func (c *CoreTTSClient) Synthesize(ctx context.Context, text, voice string, speed float64, engine string, pitch *float64, emotion *string) ([]byte, error) {
 	payload := SynthesizeRequest{
 		Text:    text,
 		VoiceID: voice,
@@ -127,7 +133,13 @@ func (c *CoreTTSClient) Synthesize(text, voice string, speed float64, engine str
 		return nil, err
 	}
 
-	resp, err := c.HTTPClient.Post(c.BaseURL+"/synthesize", "application/json", bytes.NewBuffer(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/synthesize", bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

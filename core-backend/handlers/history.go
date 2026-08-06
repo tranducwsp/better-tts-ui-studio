@@ -186,6 +186,9 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 		"processing": 3,
 		"pending":    2,
 		"error":      1,
+		// "cancelled" phải có mặt: thiếu nó thì map trả 0 và một chunk đã huỷ luôn thua
+		// "error" ở cùng chunk_index — người dùng huỷ rồi thử lại sẽ thấy job hiện ra là lỗi.
+		"cancelled": 1,
 	}
 
 	best := make([]*sqlc.TtsChunk, 0, len(chunks))
@@ -279,7 +282,7 @@ func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 	// Một câu lệnh upsert: hai request khởi tạo cùng một job đồng thời đều thấy "chưa có"
 	// rồi cùng chèn, và cái thua bị bỏ lỗi âm thầm.
 	audio := db.JobAudioParams{Speed: req.Speed, Pitch: req.Pitch, Emotion: req.Emotion}
-	if err := db.Queries.EnsureTTSJob(r.Context(), sqlc.EnsureTTSJobParams{
+	owner, err := db.Queries.EnsureTTSJob(r.Context(), sqlc.EnsureTTSJobParams{
 		ID:          req.JobID,
 		UserID:      user.ID,
 		Engine:      req.Engine,
@@ -289,8 +292,17 @@ func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 		Emotion:     audio.EmotionColumn(),
 		TotalChunks: int32(req.TotalChunks),
 		Text:        req.Text,
-	}); err != nil {
+	})
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Không khởi tạo được job")
+		return
+	}
+
+	// job_id do client gửi lên. Upsert giữ nguyên job đã có, nên không kiểm ở đây thì một
+	// người "khởi tạo" trúng job của người khác và nhận về thông báo thành công — rồi mọi
+	// chunk sau đó đi vào lịch sử của người kia.
+	if owner != user.ID {
+		writeError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
 

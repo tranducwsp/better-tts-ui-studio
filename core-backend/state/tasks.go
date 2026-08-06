@@ -20,6 +20,28 @@ var (
 // redisTaskTTL là thời gian sống của trạng thái task và bytes âm thanh trên Redis.
 const redisTaskTTL = 1 * time.Hour
 
+// taskRetention là tuổi tối thiểu trước khi một task đã kết thúc được thu hồi khỏi RAM.
+//
+// Giữ một lúc sau khi xong để lượt tải ngay sau đó còn đọc được định dạng và bytes từ RAM
+// thay vì phải đi Redis hay kho.
+const taskRetention = 10 * time.Minute
+
+// taskMaxLifetime là trần tuyệt đối cho một task ở trong RAM, kể cả khi chưa kết thúc.
+//
+// Tồn tại vì worker chết giữa chừng không để lại ai đặt task về trạng thái cuối: không có
+// trần thì những task đó ở lại vĩnh viễn. Rộng hơn hạn tổng hợp dài nhất
+// (TTS_CLIENT_TIMEOUT_SECONDS tối đa một giờ) để không cắt nhầm một job đang chạy thật.
+const taskMaxLifetime = 2 * time.Hour
+
+// taskRedisTimeout chặn thời gian một lượt đọc/ghi trạng thái task trên Redis.
+//
+// Get nằm trên đường đi của ownsTask, tức là mọi lượt hỏi tiến độ, mở SSE, huỷ và tải. Với
+// context.Background() không hạn, một Redis treo — còn mở TCP nhưng không trả lời — giữ mỗi
+// goroutine request lại vô hạn, và ReadTimeout của http.Server không cứu được vì nó không
+// đánh thức được một goroutine đang chờ đọc socket. Cùng lý do và cùng con số với
+// middleware.cacheOpTimeout.
+const taskRedisTimeout = 100 * time.Millisecond
+
 // InitRedis khởi tạo kết nối Redis Client từ cấu hình ENV.
 func InitRedis(cfg *config.Config) {
 	if cfg.RedisURL == "" {
@@ -306,10 +328,15 @@ func (t *TaskItem) marshalState() ([]byte, error) {
 	// Serialize only the small control-plane state. Audio and transcodes live in their own
 	// Redis keys and on disk; including them here would make every progress update grow with
 	// the audio payload and would also require copying it under the lock.
+	// OwnerID có mặt ở đây vì Notify là đường ghi duy nhất chạy sau khi chủ sở hữu được gắn:
+	// GetOrCreate ghi bản đầu trước khi handler kịp gọi SetOwner. Thiếu nó thì mỗi lượt ghi
+	// tiến độ lại xoá chủ sở hữu khỏi Redis, và replica nào đọc lại task cũng phải hỏi DB —
+	// đúng cái giá mà trường này tồn tại để không phải trả.
 	return sonic.Marshal(struct {
 		ID           string    `json:"id"`
 		Status       string    `json:"status"`
 		Progress     int       `json:"progress"`
+		OwnerID      string    `json:"owner_id,omitempty"`
 		SourceFormat string    `json:"source_format,omitempty"`
 		Cancel       bool      `json:"cancel"`
 		CreatedAt    time.Time `json:"created_at"`
@@ -318,6 +345,7 @@ func (t *TaskItem) marshalState() ([]byte, error) {
 		ID:           t.ID,
 		Status:       t.Status,
 		Progress:     t.Progress,
+		OwnerID:      t.OwnerID,
 		SourceFormat: t.SourceFormat,
 		Cancel:       t.Cancel,
 		CreatedAt:    t.CreatedAt,
@@ -385,12 +413,16 @@ func (tm *TaskManager) GetOrCreate(taskID string) *TaskItem {
 	}
 	tm.tasks[taskID] = item
 
-	// Đăng ký Key lên Redis nếu có kết nối
+	// Đăng ký Key lên Redis nếu có kết nối.
+	//
+	// Qua marshalState chứ không marshal cả struct: đó là đường ghi duy nhất, nên bản đầu và
+	// mọi bản cập nhật về sau mang cùng một tập trường. Marshal trực tiếp *TaskItem còn đọc
+	// các trường không giữ khoá, và ghi ra một payload khác hình dạng với mọi lượt ghi sau.
 	if RedisClient != nil {
-		ctx := context.Background()
-		taskStateData, err := sonic.Marshal(item)
-		if err == nil {
-			_ = RedisClient.Set(ctx, "task:"+taskID, string(taskStateData), 1*time.Hour).Err()
+		ctx, rcancel := context.WithTimeout(context.Background(), taskRedisTimeout)
+		defer rcancel()
+		if taskStateData, err := item.marshalState(); err == nil {
+			_ = RedisClient.Set(ctx, "task:"+taskID, taskStateData, redisTaskTTL).Err()
 		}
 	}
 
@@ -404,19 +436,37 @@ func (t *TaskItem) Owner() (string, bool) {
 	return t.OwnerID, t.OwnerID != ""
 }
 
-// SetOwner gắn chủ sở hữu cho task nếu nó chưa có.
+// SetOwner gắn chủ sở hữu cho task nếu nó chưa có, và đẩy lên Redis nếu vừa gắn.
 //
 // Không ghi đè: task_id do client gửi lên, nên nếu một người gửi trùng task_id của người
 // khác thì lượt sau không được phép chiếm quyền sở hữu lượt trước.
+//
+// Phải tự ghi Redis: GetOrCreate đã ghi bản đầu xong trước khi người gọi kịp biết chủ là ai,
+// nên nếu chỉ sửa trong RAM thì replica khác đọc lại task sẽ thấy một task không chủ. Chỉ ghi
+// khi thực sự có thay đổi — synth.Run cũng gọi hàm này trên task đã có chủ, và lượt đó không
+// cần một round-trip nào.
 func (t *TaskItem) SetOwner(userID string) {
 	if userID == "" {
 		return
 	}
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.OwnerID == "" {
+	changed := t.OwnerID == ""
+	if changed {
 		t.OwnerID = userID
 	}
+	t.mu.Unlock()
+
+	if !changed || RedisClient == nil {
+		return
+	}
+
+	taskStateData, err := t.marshalState()
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = RedisClient.Set(ctx, "task:"+t.ID, taskStateData, redisTaskTTL).Err()
 }
 
 // applyRemoteState cập nhật phần trạng thái điều khiển từ bản đọc được trên Redis.
@@ -468,7 +518,10 @@ func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {
 		// Chỉ đọc lại khi chưa tới trạng thái cuối: task đã done/error/cancelled thì không đổi
 		// nữa, và hỏi Redis mỗi lần chỉ thêm một lượt đi lại cho một câu trả lời đã biết.
 		if RedisClient != nil && status != "done" && status != "error" && status != "cancelled" {
-			if val, err := RedisClient.Get(context.Background(), "task:"+taskID).Result(); err == nil && val != "" {
+			rctx, rcancel := context.WithTimeout(context.Background(), taskRedisTimeout)
+			val, rerr := RedisClient.Get(rctx, "task:"+taskID).Result()
+			rcancel()
+			if err := rerr; err == nil && val != "" {
 				var fresh TaskItem
 				if err := sonic.Unmarshal([]byte(val), &fresh); err == nil {
 					item.applyRemoteState(&fresh)
@@ -480,7 +533,10 @@ func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {
 		// Audio có thể do replica khác sinh ra, nên nạp bù từ Redis khi RAM rỗng. Ghi qua
 		// SetAudio: trường này bị Notify đọc đồng thời, gán trực tiếp là data race.
 		if RedisClient != nil && len(audio) == 0 && sourceFormat != "" && status == "done" {
-			if b, err := RedisClient.Get(context.Background(), "task:audio:"+taskID+":"+sourceFormat).Bytes(); err == nil {
+			rctx, rcancel := context.WithTimeout(context.Background(), taskRedisTimeout)
+			b, err := RedisClient.Get(rctx, "task:audio:"+taskID+":"+sourceFormat).Bytes()
+			rcancel()
+			if err == nil {
 				item.SetAudio(b)
 			}
 		}
@@ -489,7 +545,8 @@ func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {
 
 	// 2. Nếu RAM rỗng và có kết nối Redis (Hit sang Node khác), nạp Task từ Redis
 	if RedisClient != nil {
-		ctx := context.Background()
+		ctx, rcancel := context.WithTimeout(context.Background(), taskRedisTimeout)
+		defer rcancel()
 		val, err := RedisClient.Get(ctx, "task:"+taskID).Result()
 		if err == nil && val != "" {
 			var fetchedItem TaskItem
@@ -539,6 +596,75 @@ func (tm *TaskManager) CacheTranscoded(taskID, format string, data []byte) {
 	}
 }
 
+// WatchCancel trả về một context bị huỷ khi task này được yêu cầu dừng.
+//
+// Phải đi qua Redis chứ không chỉ đọc cờ trong RAM: người bấm dừng nói chuyện với tiến trình
+// web, còn lượt tổng hợp chạy ở worker — hai tiến trình khác nhau, không nhìn thấy RAM của
+// nhau. Cancel phát "cancelled" lên channel:task:<id>, nên worker nghe chính kênh đó.
+//
+// Kiểm cờ cục bộ trước khi nghe: ở chế độ không Redis, cũng như khi lệnh dừng tới trước lúc
+// worker kịp nhặt job, trạng thái đã nằm sẵn trong RAM và không có bản tin nào để chờ nữa.
+//
+// Người gọi phải gọi stop để giải phóng subscription và goroutine.
+func (t *TaskItem) WatchCancel(parent context.Context) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(parent)
+
+	if t.IsCancelled() {
+		cancel()
+		return ctx, cancel
+	}
+
+	if RedisClient == nil {
+		// Không Redis nghĩa là một tiến trình duy nhất: RequestCancel đặt cờ trong cùng RAM
+		// này, nên hỏi định kỳ là đủ và không cần thêm hạ tầng nào.
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if t.IsCancelled() {
+						cancel()
+						return
+					}
+				}
+			}
+		}()
+		return ctx, cancel
+	}
+
+	pubsub := RedisClient.Subscribe(ctx, "channel:task:"+t.ID)
+	go func() {
+		defer pubsub.Close()
+		ch := pubsub.Channel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, open := <-ch:
+				if !open {
+					return
+				}
+				var update TaskUpdate
+				if err := sonic.Unmarshal([]byte(msg.Payload), &update); err != nil {
+					continue
+				}
+				if update.Status == "cancelled" {
+					t.RequestCancel()
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+
+	return ctx, func() {
+		cancel()
+	}
+}
+
 func (tm *TaskManager) Cancel(taskID string) bool {
 	item, ok := tm.Get(taskID)
 	if !ok {
@@ -554,16 +680,57 @@ func (tm *TaskManager) Cancel(taskID string) bool {
 	return true
 }
 
+// Cleanup thu hồi các task đã kết thúc và không còn ai theo dõi.
+//
+// Chỉ xoá task ở trạng thái cuối. Trước đây xoá theo tuổi bất kể trạng thái, mà
+// TTS_CLIENT_TIMEOUT_SECONDS cho phép tới một giờ: một job dài hơn ngưỡng này bị xoá giữa
+// chừng, rồi lượt Get kế tiếp dựng một TaskItem THỨ HAI từ Redis. Tiến trình tổng hợp vẫn giữ
+// con trỏ bản cũ, nên nó ghi âm thanh và trạng thái vào một đối tượng mà không handler nào
+// còn đọc — khi kho ghi hỏng và bản RAM là phương án dự phòng duy nhất, âm thanh có thật
+// nhưng người dùng nhận "Audio is not ready".
+//
+// Còn subscriber thì giữ lại: xoá khỏi map trong khi một luồng SSE đang mở khiến người xem
+// tiếp theo đăng ký lên một đối tượng khác, và hai bản cùng tồn tại cho một task.
 func (tm *TaskManager) Cleanup() {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
 	now := time.Now()
 	for id, t := range tm.tasks {
-		if now.Sub(t.CreatedAt) > 10*time.Minute {
-			delete(tm.tasks, id)
+		if now.Sub(t.CreatedAt) <= taskRetention {
+			continue
 		}
+		if !t.finishedAndIdle() {
+			// Task chưa kết thúc vẫn phải có trần: worker chết giữa chừng thì không ai đặt nó
+			// về trạng thái cuối, và giữ mãi là một chỗ rỉ bộ nhớ không bao giờ tự đóng. Trần
+			// này rộng hơn ngưỡng thường để không cắt một job dài đang chạy thật.
+			if now.Sub(t.CreatedAt) <= taskMaxLifetime {
+				continue
+			}
+			log.Printf("Task %s vẫn ở %q sau %s — thu hồi khỏi RAM", id, t.currentStatus(), taskMaxLifetime)
+		}
+		delete(tm.tasks, id)
 	}
+}
+
+// finishedAndIdle cho biết task đã tới trạng thái cuối và không còn ai theo dõi.
+func (t *TaskItem) finishedAndIdle() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	switch t.Status {
+	case "done", "error", "cancelled":
+	default:
+		return false
+	}
+	return len(t.subscribers) == 0
+}
+
+// currentStatus đọc trạng thái để ghi log.
+func (t *TaskItem) currentStatus() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.Status
 }
 
 func (tm *TaskManager) startCleanupRoutine() {

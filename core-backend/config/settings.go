@@ -222,6 +222,18 @@ var Settings = []Setting{
 		Default: "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173",
 		Group:   "CORS",
 	},
+
+	{
+		Key: "TRUSTED_PROXIES", Kind: KindList, Default: "",
+		Group: "Rate limiting",
+		Doc: "Các dải CIDR (hoặc IP) của proxy đứng trước backend, ví dụ \"10.0.0.0/8,172.16.0.0/12\".\n" +
+			"Chỉ khi kết nối đến từ một trong các dải này thì X-Forwarded-For mới được tin để lấy IP\n" +
+			"người gọi. Bỏ trống nghĩa là không tin header đó bao giờ — đúng cho triển khai không có\n" +
+			"proxy phía trước.\n" +
+			"Vì sao cần: header này do client đặt được. Không có danh sách tin cậy thì hạn mức bị\n" +
+			"khoá theo một giá trị người gọi tự chọn, nên đổi header mỗi lần là hạn mức không còn\n" +
+			"tác dụng — đo được 200/200 request lọt qua một hạn mức 10/phút.",
+	},
 }
 
 // lookup trả về đặc tả của một biến. Panic khi không tìm thấy: LoadConfig chỉ hỏi những

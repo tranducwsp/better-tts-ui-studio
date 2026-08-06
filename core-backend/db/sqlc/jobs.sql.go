@@ -57,10 +57,11 @@ func (q *Queries) CreateTTSJob(ctx context.Context, arg CreateTTSJobParams) (Tts
 	return i, err
 }
 
-const ensureTTSJob = `-- name: EnsureTTSJob :exec
+const ensureTTSJob = `-- name: EnsureTTSJob :one
 INSERT INTO tts_jobs (id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT (id) DO NOTHING
+ON CONFLICT (id) DO UPDATE SET id = tts_jobs.id
+RETURNING user_id
 `
 
 type EnsureTTSJobParams struct {
@@ -75,13 +76,18 @@ type EnsureTTSJobParams struct {
 	Text        string        `json:"text"`
 }
 
-// EnsureTTSJob tạo job nếu chưa có, và không làm gì nếu đã có.
+// EnsureTTSJob tạo job nếu chưa có, và trả về chủ sở hữu thật của nó.
 //
 // Thay cho cặp GetTTSJobByID-rồi-CreateTTSJob: hai chunk đầu tiên của cùng một job tới song
 // song đều thấy "chưa tồn tại" rồi cùng chèn, và cái thua bị bỏ lỗi âm thầm. Một câu lệnh
 // vừa hết đua vừa bớt một lượt đi lại tới cơ sở dữ liệu trên đường đi của mỗi chunk.
-func (q *Queries) EnsureTTSJob(ctx context.Context, arg EnsureTTSJobParams) error {
-	_, err := q.db.Exec(ctx, ensureTTSJob,
+//
+// DO UPDATE ... id = tts_jobs.id chứ không DO NOTHING: job_id do client gửi lên, nên người
+// gọi phải biết được job đã tồn tại là của ai. DO NOTHING không trả dòng nào khi trùng, nên
+// không phân biệt được "vừa tạo" với "đã có của người khác" — và người gọi chèn chunk của
+// mình vào job của người khác mà không hay. Ghi giả một trường để RETURNING luôn có dòng.
+func (q *Queries) EnsureTTSJob(ctx context.Context, arg EnsureTTSJobParams) (string, error) {
+	row := q.db.QueryRow(ctx, ensureTTSJob,
 		arg.ID,
 		arg.UserID,
 		arg.Engine,
@@ -92,7 +98,9 @@ func (q *Queries) EnsureTTSJob(ctx context.Context, arg EnsureTTSJobParams) erro
 		arg.TotalChunks,
 		arg.Text,
 	)
-	return err
+	var user_id string
+	err := row.Scan(&user_id)
+	return user_id, err
 }
 
 const getTTSJobByID = `-- name: GetTTSJobByID :one

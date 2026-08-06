@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -94,26 +95,36 @@ func InitDB(cfg *config.Config) {
 }
 
 // runDatabaseMigrations thực thi hệ thống quản lý phiên bản database schema (golang-migrate).
+//
+// Hỏng là dừng, không phải cảnh báo. Trước đây mọi nhánh lỗi ở đây chỉ log "Warning" rồi trả
+// về, và InitDB đi tiếp để phục vụ request trên một schema có thể thiếu cột — biểu hiện ra
+// thành lỗi truy vấn rải rác ở từng handler, xa chỗ thật sự hỏng. Mọi điều kiện khởi động
+// khác trong tiến trình này (manifest, biến bắt buộc, kết nối kho) đều fail-closed; đây là
+// chỗ duy nhất lệch ra, và schema thì không phải thứ đáng để đoán.
 func runDatabaseMigrations(dbURL string) {
 	log.Println("Executing database versioned migrations (golang-migrate)...")
 
 	driver, err := iofs.New(migrationFS, "migrations")
 	if err != nil {
-		log.Printf("Warning: Không thể đọc tập tin migrations nhúng trong binary: %v", err)
-		return
+		log.Fatalf("Không đọc được tập tin migrations nhúng trong binary: %v", err)
 	}
 
 	m, err := migrate.NewWithSourceInstance("iofs", driver, dbURL)
 	if err != nil {
-		log.Printf("Warning: Không thể khởi tạo golang-migrate instance: %v", err)
-		return
+		log.Fatalf("Không khởi tạo được golang-migrate: %v", err)
 	}
+	// migrate mở kết nối database/sql riêng, nằm ngoài pgxpool. Không đóng thì mỗi tiến trình
+	// giữ vĩnh viễn một kết nối thừa cùng phiên giữ khoá migration.
+	defer func() {
+		if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
+			log.Printf("Đóng golang-migrate: source=%v db=%v", srcErr, dbErr)
+		}
+	}()
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Printf("Warning khi thực thi golang-migrate up: %v", err)
-	} else {
-		log.Println("Database migrations applied successfully (Schema up-to-date)!")
+		log.Fatalf("Không áp dụng được migration: %v", err)
 	}
+	log.Println("Database migrations applied successfully (Schema up-to-date)!")
 }
 
 // seedDefaultAccounts tự động khởi tạo tài khoản Admin và User mặc định nếu chưa tồn tại trong PostgreSQL.
@@ -195,11 +206,17 @@ func (p JobAudioParams) EmotionColumn() pgtype.Text {
 	return pgtype.Text{String: *p.Emotion, Valid: true}
 }
 
+// ErrJobNotOwned nghĩa là job_id được gửi lên thuộc về người khác.
+//
+// Có kiểu lỗi riêng để handler trả 403 thay vì 500: đây là một yêu cầu bị từ chối, không phải
+// một sự cố của hệ thống.
+var ErrJobNotOwned = errors.New("db: job thuộc về người dùng khác")
+
 func RegisterJobAndChunk(ctx context.Context, userID, jobID, engine, voice string, audio JobAudioParams, totalChunks int, taskID string, chunkIndex int, text string) error {
 	// Một câu lệnh thay cho đọc-rồi-ghi: hai chunk đầu của cùng một job tới song song đều
 	// thấy job chưa tồn tại rồi cùng chèn, và cái thua bị bỏ lỗi âm thầm. Việc này nằm
 	// thẳng trên đường đi của mỗi chunk nên bớt một lượt đi lại là bớt độ trễ người dùng thấy.
-	if err := Queries.EnsureTTSJob(ctx, sqlc.EnsureTTSJobParams{
+	owner, err := Queries.EnsureTTSJob(ctx, sqlc.EnsureTTSJobParams{
 		ID:          jobID,
 		UserID:      userID,
 		Engine:      engine,
@@ -209,11 +226,20 @@ func RegisterJobAndChunk(ctx context.Context, userID, jobID, engine, voice strin
 		Emotion:     audio.EmotionColumn(),
 		TotalChunks: int32(totalChunks),
 		Text:        text,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
-	_, err := Queries.CreateTTSChunk(ctx, sqlc.CreateTTSChunkParams{
+	// job_id do client gửi lên và không có gì buộc nó là của người gọi. Không kiểm ở đây thì
+	// một người chèn được chunk — kèm text của mình — vào job của người khác, và đoạn đó hiện
+	// ra trong lịch sử của người kia. Chủ sở hữu lấy từ chính câu lệnh trên nên không thêm
+	// một lượt đi lại nào.
+	if owner != userID {
+		return ErrJobNotOwned
+	}
+
+	_, err = Queries.CreateTTSChunk(ctx, sqlc.CreateTTSChunkParams{
 		ID:         taskID,
 		JobID:      jobID,
 		ChunkIndex: int32(chunkIndex),

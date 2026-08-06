@@ -56,6 +56,12 @@ type Config struct {
 	CORSOrigins        []string
 	CookieSecure       bool
 	TTSClientTimeout   int
+
+	// TrustedProxies là các dải CIDR được phép đặt X-Forwarded-For.
+	//
+	// Rỗng nghĩa là không tin header đó: hạn mức khoá theo địa chỉ TCP thật. Xem
+	// middleware.SetTrustedProxies.
+	TrustedProxies []string
 }
 
 // requireAll dừng tiến trình nếu bất kỳ biến nào đánh dấu Required bị bỏ trống.
@@ -123,6 +129,16 @@ func LoadConfig() *Config {
 		corsOrigins[i] = strings.TrimSpace(corsOrigins[i])
 	}
 
+	// Bỏ phần tử rỗng: mặc định của TRUSTED_PROXIES là chuỗi rỗng, mà Split trả về một lát
+	// cắt một phần tử rỗng chứ không phải lát cắt rỗng — và một mục rỗng sẽ không phân tích
+	// được thành CIDR nào.
+	var trustedProxies []string
+	for _, p := range strings.Split(str("TRUSTED_PROXIES"), ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			trustedProxies = append(trustedProxies, p)
+		}
+	}
+
 	dbMaxConns := int32(num("DB_MAX_CONNS"))
 	dbMinConns := int32(num("DB_MIN_CONNS"))
 
@@ -173,6 +189,7 @@ func LoadConfig() *Config {
 		CORSOrigins:        corsOrigins,
 		CookieSecure:       num("COOKIE_SECURE") == 1,
 		TTSClientTimeout:   num("TTS_CLIENT_TIMEOUT_SECONDS"),
+		TrustedProxies:     trustedProxies,
 	}
 
 	cfg.logSummary()

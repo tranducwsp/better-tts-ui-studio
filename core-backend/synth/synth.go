@@ -24,8 +24,25 @@ func Run(ctx context.Context, tts *client.CoreTTSClient, job queue.Job) {
 	taskItem := state.GlobalTaskManager.GetOrCreate(job.TaskID)
 	taskItem.SetOwner(job.UserID)
 
-	audioBytes, err := tts.Synthesize(job.Text, job.Voice, job.Speed, job.Engine, job.Pitch, job.Emotion)
+	// Lệnh dừng tới từ tiến trình khác: người dùng bấm huỷ trên web, còn lượt này chạy ở
+	// worker. WatchCancel nghe kênh Redis của task nên cắt được lượt gọi Engine đang chạy —
+	// trước đây cờ cancel không có ai đọc, nên GPU vẫn chạy hết lượt rồi mới báo "done" đè
+	// lên trạng thái "cancelled" mà người dùng đã nhìn thấy.
+	synthCtx, stopWatch := taskItem.WatchCancel(ctx)
+	defer stopWatch()
+
+	audioBytes, err := tts.Synthesize(synthCtx, job.Text, job.Voice, job.Speed, job.Engine, job.Pitch, job.Emotion)
 	if err != nil {
+		// Bị huỷ không phải hỏng: trạng thái "cancelled" đã do người huỷ ghi, và ghi đè bằng
+		// "error" ở đây chỉ biến một hành động cố ý thành một sự cố trong lịch sử.
+		if taskItem.IsCancelled() {
+			errMsg := "Đã huỷ theo yêu cầu"
+			if dbErr := db.UpdateChunkStatus(ctx, job.TaskID, "cancelled", nil, &errMsg); dbErr != nil {
+				log.Printf("Chunk %s bị huỷ nhưng không ghi được trạng thái vào DB: %v", job.TaskID, dbErr)
+			}
+			return
+		}
+
 		_, _, progress, _ := taskItem.Snapshot()
 		taskItem.Notify(state.TaskUpdate{
 			Status:   "error",
@@ -35,6 +52,18 @@ func Run(ctx context.Context, tts *client.CoreTTSClient, job queue.Job) {
 		errMsg := err.Error()
 		if dbErr := db.UpdateChunkStatus(ctx, job.TaskID, "error", nil, &errMsg); dbErr != nil {
 			log.Printf("Chunk %s lỗi nhưng không ghi được trạng thái vào DB: %v", job.TaskID, dbErr)
+		}
+		return
+	}
+
+	// Huỷ có thể tới đúng lúc Engine vừa trả kết quả. Không kiểm lại ở đây thì lượt đó vẫn
+	// báo "done" đè lên "cancelled" — người dùng thấy task mình đã dừng lại hiện ra như đã
+	// chạy xong. Âm thanh đã sinh vẫn cất vào kho: nó đã tốn GPU rồi, và bộ quét dọn thu hồi
+	// theo cùng chính sách với mọi tệp tạm khác.
+	if taskItem.IsCancelled() {
+		errMsg := "Đã huỷ theo yêu cầu"
+		if dbErr := db.UpdateChunkStatus(ctx, job.TaskID, "cancelled", nil, &errMsg); dbErr != nil {
+			log.Printf("Chunk %s bị huỷ nhưng không ghi được trạng thái vào DB: %v", job.TaskID, dbErr)
 		}
 		return
 	}
@@ -71,8 +100,26 @@ func Run(ctx context.Context, tts *client.CoreTTSClient, job queue.Job) {
 	// đọc trạng thái từ DB, nên một lượt ghi thất bại trong im lặng để chunk mãi ở
 	// "processing": giao diện hiển thị một job không bao giờ hoàn thành dù tệp đã nằm sẵn
 	// trong kho.
-	if err := db.UpdateChunkStatus(ctx, job.TaskID, "done", &audioKey, nil); err != nil {
-		log.Printf("Chunk %s đã xong nhưng không ghi được trạng thái vào DB: %v", job.TaskID, err)
+	//
+	// audio_path chỉ ghi khi kho đã nhận thật. Ghi khoá của một đối tượng không tồn tại nghĩa
+	// là lịch sử báo "done" trỏ vào hư không: tiến trình web phục vụ lượt tải không thấy RAM
+	// của worker, nên bản dự phòng trong RAM không cứu được gì, và người dùng nhận 404 mãi mãi
+	// cho một chunk mà hệ thống khẳng định là đã xong.
+	if wroteToStore {
+		if err := db.UpdateChunkStatus(ctx, job.TaskID, "done", &audioKey, nil); err != nil {
+			log.Printf("Chunk %s đã xong nhưng không ghi được trạng thái vào DB: %v", job.TaskID, err)
+		}
+	} else {
+		errMsg := "Không lưu được âm thanh vào kho"
+		if err := db.UpdateChunkStatus(ctx, job.TaskID, "error", nil, &errMsg); err != nil {
+			log.Printf("Chunk %s hỏng khi lưu nhưng không ghi được trạng thái vào DB: %v", job.TaskID, err)
+		}
+		taskItem.Notify(state.TaskUpdate{
+			Status:   "error",
+			Progress: 100,
+			Error:    errMsg,
+		})
+		return
 	}
 
 	taskItem.Notify(state.TaskUpdate{

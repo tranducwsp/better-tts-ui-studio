@@ -3,15 +3,21 @@ INSERT INTO tts_jobs (id, user_id, engine, voice, speed, pitch, emotion, total_c
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
--- EnsureTTSJob tạo job nếu chưa có, và không làm gì nếu đã có.
+-- EnsureTTSJob tạo job nếu chưa có, và trả về chủ sở hữu thật của nó.
 --
 -- Thay cho cặp GetTTSJobByID-rồi-CreateTTSJob: hai chunk đầu tiên của cùng một job tới song
 -- song đều thấy "chưa tồn tại" rồi cùng chèn, và cái thua bị bỏ lỗi âm thầm. Một câu lệnh
 -- vừa hết đua vừa bớt một lượt đi lại tới cơ sở dữ liệu trên đường đi của mỗi chunk.
--- name: EnsureTTSJob :exec
+--
+-- DO UPDATE ... id = tts_jobs.id chứ không DO NOTHING: job_id do client gửi lên, nên người
+-- gọi phải biết được job đã tồn tại là của ai. DO NOTHING không trả dòng nào khi trùng, nên
+-- không phân biệt được "vừa tạo" với "đã có của người khác" — và người gọi chèn chunk của
+-- mình vào job của người khác mà không hay. Ghi giả một trường để RETURNING luôn có dòng.
+-- name: EnsureTTSJob :one
 INSERT INTO tts_jobs (id, user_id, engine, voice, speed, pitch, emotion, total_chunks, text)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET id = tts_jobs.id
+RETURNING user_id;
 
 -- name: GetTTSJobByID :one
 SELECT * FROM tts_jobs

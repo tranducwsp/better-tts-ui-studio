@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -129,7 +130,7 @@ func (s *S3Store) Put(ctx context.Context, key string, data []byte) error {
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.full(key)),
-		Body:   strings.NewReader(string(data)),
+		Body:   bytes.NewReader(data),
 	})
 	return err
 }
