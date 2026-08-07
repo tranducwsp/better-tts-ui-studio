@@ -15,53 +15,47 @@ import (
 	"core-backend/storage"
 )
 
-// Mode phân biệt hai vai trò mà cùng một binary đảm nhiệm.
-type Mode string
-
-const (
-	// ModeWeb nhận request và xếp job vào hàng đợi.
-	ModeWeb Mode = "web"
-	// ModeWorker nhặt job ra chạy, không mở cổng nào.
-	ModeWorker Mode = "worker"
-	// ModeCron chạy các tác vụ nền định kỳ (dọn âm thanh tạm).
-	//
-	// Tách khỏi worker vì sweeper là cron, không phải worker: nó kích hoạt bởi đồng hồ chứ
-	// không bởi hàng đợi, nên nhiều bản không chia được việc cho nhau. Giữ đúng 1 replica.
-	ModeCron Mode = "cron"
-)
-
-// ParseMode kiểm giá trị cờ -mode.
-func ParseMode(s string) (Mode, error) {
-	switch Mode(s) {
-	case ModeWeb, ModeWorker, ModeCron:
-		return Mode(s), nil
-	default:
-		return "", fmt.Errorf("-mode=%q không hợp lệ; chỉ nhận %q hoặc %q", s, ModeWeb, ModeWorker)
-	}
-}
-
 // manifestDiscoveryTimeout là thời gian chờ Engine trả về một Manifest hợp lệ lúc khởi động.
-//
-// Đủ rộng để Engine nạp xong mô hình khi cả hai cùng lên trong một lần `docker compose up`,
-// nhưng vẫn hữu hạn: một tiến trình treo mãi ở bước khởi tạo không báo cho ai biết, trong khi
-// một tiến trình thoát với thông báo rõ ràng thì mọi orchestrator đều thấy và khởi động lại.
 const manifestDiscoveryTimeout = 90 * time.Second
 
-// Bootstrap dựng mọi phụ thuộc dùng chung và trả về client Engine.
+// BootstrapWeb khởi tạo mọi thứ mà HTTP backend cần rồi trả về client Engine.
 //
-// Ở đây thay vì trong main vì cả hai chế độ đều cần đúng chuỗi này, theo đúng thứ tự này: kho
-// trước khi có ai ghi tệp, DB và Redis trước khi có ai đọc trạng thái, manifest trước khi có
-// ai nhận đầu vào. Hai bản chép tay của chuỗi này sẽ trôi khỏi nhau, và cách nó trôi là im
-// lặng — một chế độ áp giới hạn mà chế độ kia thì không.
+// Web là tiến trình duy nhất chạy migration, seed tài khoản và cấu hình auth middleware.
+// Worker dùng BootstrapWorker; cron dùng BootstrapCron — không có mode flag hay nhánh ẩn để
+// đoán một tiến trình đang làm vai trò nào.
+func BootstrapWeb(cfg *config.Config) *client.CoreTTSClient {
+	initStorage(cfg)
+
+	handlers.SetMaxUploadMB(cfg.MaxUploadMB)
+	middleware.ConfigureUserCache(time.Duration(cfg.AuthUserCacheSeconds) * time.Second)
+	middleware.SetTrustedProxies(cfg.TrustedProxies)
+
+	return bootstrapEngine(cfg, db.InitOptions{Migrate: true, Seed: true})
+}
+
+// BootstrapWorker khởi tạo những phụ thuộc worker cần để nhặt job và ghi kết quả.
 //
-// Những gì KHÔNG dùng chung thì nhận mode và tự bỏ qua: worker không xác thực ai và không
-// nhận multipart, nên cấu hình những tầng đó ở worker chỉ tạo ấn tượng sai rằng nó có chúng.
-func Bootstrap(cfg *config.Config, mode Mode) *client.CoreTTSClient {
-	// Kho lưu trữ phải sẵn sàng trước khi bất kỳ handler nào ghi tệp.
-	//
-	// Dừng luôn nếu không khởi tạo được, thay vì để handler đầu tiên phát hiện: một backend
-	// nhận request mà không cất được âm thanh chỉ tiêu tốn GPU cho những tệp không ai lấy
-	// lại được.
+// Worker không chạy migration/seed, không cấu hình auth và không nhận multipart request. DB
+// vẫn cần cho UpdateChunkStatus; Redis cần cho Stream và trạng thái liên tiến trình.
+func BootstrapWorker(cfg *config.Config) *client.CoreTTSClient {
+	initStorage(cfg)
+	return bootstrapEngine(cfg, db.InitOptions{})
+}
+
+// BootstrapCron chỉ khởi tạo storage rồi bắt đầu sweeper.
+//
+// Cron không cần DB, Redis hay Engine: nó chỉ LIST/DELETE các object temp. Giữ phụ thuộc của
+// nó nhỏ và rõ để một lỗi ở database không làm chết một bộ dọn rác không liên quan.
+func BootstrapCron(cfg *config.Config) {
+	initStorage(cfg)
+	storage.StartTempSweeper(
+		storage.Global,
+		time.Duration(cfg.TempRetentionHours)*time.Hour,
+		storage.DefaultSweepInterval,
+	)
+}
+
+func initStorage(cfg *config.Config) {
 	if err := storage.Init(cfg.StorageBackend, cfg.StorageDir, storage.S3Config{
 		Bucket:         cfg.S3Bucket,
 		Region:         cfg.S3Region,
@@ -73,70 +67,19 @@ func Bootstrap(cfg *config.Config, mode Mode) *client.CoreTTSClient {
 	}); err != nil {
 		log.Fatalf("Không khởi tạo được kho lưu trữ: %v", err)
 	}
+}
 
-	if mode == ModeWeb {
-		// Trần upload cho mọi handler multipart. Không có dòng này, MAX_UPLOAD_SIZE_MB chỉ là
-		// một con số trong log khởi động.
-		handlers.SetMaxUploadMB(cfg.MaxUploadMB)
-
-		// Cache người dùng cho tầng xác thực. Không có dòng này thì AUTH_USER_CACHE_SECONDS
-		// cũng chỉ là một con số trong log, và mỗi request vẫn hỏi PostgreSQL một lần.
-		middleware.ConfigureUserCache(time.Duration(cfg.AuthUserCacheSeconds) * time.Second)
-
-		// Ai được phép đặt X-Forwarded-For. Không có dòng này thì hạn mức khoá theo địa chỉ
-		// TCP thật, tức là đúng nhưng gộp mọi người dùng sau một proxy vào chung một khoá.
-		middleware.SetTrustedProxies(cfg.TrustedProxies)
-	}
-
-	// Xoá định kỳ âm thanh tạm. Mỗi lần tổng hợp ghi một đối tượng vào nhánh temp và trước
-	// đây không có gì dọn chúng, nên kho chỉ có thể phình lên.
-	//
-	// Chỉ chạy ở cron: sweeper là cron, không phải worker — nó kích hoạt bởi đồng hồ nên
-	// nhiều bản không chia được việc. Giữ đúng 1 replica.
-	if mode == ModeCron {
-		// Cron chỉ cần kho. DB, Redis, Manifest đều là phụ thuộc của web và worker — nối
-		// chúng ở đây chỉ để rồi không dùng, và làm người đọc tưởng cron cần chúng.
-		storage.StartTempSweeper(
-			storage.Global,
-			time.Duration(cfg.TempRetentionHours)*time.Hour,
-			storage.DefaultSweepInterval,
-		)
-		return nil
-	}
-
-	// Kết nối DB. Migration và tài khoản khởi tạo chỉ thuộc về web — xem db.InitOptions.
-	db.InitDB(cfg, db.InitOptions{
-		Migrate: mode == ModeWeb,
-		Seed:    mode == ModeWeb,
-	})
-
-	// Redis Cache & PubSub Broker.
+func bootstrapEngine(cfg *config.Config, dbOptions db.InitOptions) *client.CoreTTSClient {
+	db.InitDB(cfg, dbOptions)
 	state.InitRedis(cfg)
 
 	ttsClient := client.NewCoreTTSClient(cfg.CoreTTSURL, cfg.TTSClientTimeout)
-
-	// Manifest phải có TRƯỚC khi cổng mở, giống như biến môi trường bắt buộc.
-	//
-	// Trước đây việc này chạy trong một goroutine nền retry vô hạn, còn server nhận request
-	// ngay lập tức. Nên có một cửa sổ — từ lúc khởi động tới khi Engine trả lời, hoặc VĨNH
-	// VIỄN nếu Engine không bao giờ lên — mà mọi giới hạn khai trong Manifest đều không có
-	// hiệu lực: ValidateRequest/ValidatePitch/ValidateEmotion đều trả nil khi chưa có
-	// Manifest, tức max_text_length, speed_range, supported_emotions và cả danh sách mode
-	// hợp lệ đều không được áp. Giao diện tự giới hạn 3000 ký tự nên qua UI không thấy gì
-	// bất thường; chỉ ai gọi thẳng API mới đi qua được, và đó chính là người ta muốn chặn.
-	//
-	// Worker cũng cần: nó đọc ResolveAudioSpec để biết Engine trả định dạng gì.
-	//
-	// Chờ có giới hạn rồi bỏ cuộc, thay vì retry mãi: một backend chạy mà không phục vụ được
-	// gì là thứ mọi lớp giám sát đều báo, còn một backend chạy mà không áp giới hạn nào thì
-	// trông hoàn toàn khoẻ mạnh.
 	if err := discoverManifest(ttsClient, cfg.CoreTTSURL, manifestDiscoveryTimeout); err != nil {
 		log.Fatalf("Không lấy được Manifest từ AI Engine: %v.\n"+
 			"Backend không khởi động khi thiếu Manifest, vì mọi giới hạn đầu vào (độ dài văn bản,\n"+
 			"khoảng speed/pitch, danh sách mode và emotion) đều do Manifest khai. Hãy kiểm tra\n"+
 			"CORE_ENGINE_URL và xem Engine đã sẵn sàng chưa.", err)
 	}
-
 	return ttsClient
 }
 
@@ -153,8 +96,6 @@ func discoverManifest(ttsClient *client.CoreTTSClient, engineURL string, timeout
 		case manifest == nil:
 			lastErr = errors.New("engine trả về manifest rỗng")
 		default:
-			// Manifest tự mâu thuẫn cũng là chưa sẵn sàng: phục vụ bằng một bản khai mà
-			// resolver không diễn giải nổi thì các giới hạn cũng không đáng tin.
 			if setErr := state.GlobalManifestState.Set(manifest); setErr != nil {
 				lastErr = fmt.Errorf("manifest không hợp lệ: %w", setErr)
 				break

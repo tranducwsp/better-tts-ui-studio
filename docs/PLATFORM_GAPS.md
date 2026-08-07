@@ -66,7 +66,7 @@ theo tiến trình. Comment ở đó nói nó chặn "một người dùng ghim 
 nhân, mỗi tiến trình giữ cả đầu vào và đầu ra trong RAM. Thêm nữa `GOMAXPROCS` báo số nhân
 của MÁY, không phải phần cgroup được cấp, nên trần còn nở ra theo kích thước host.
 
-**Sweeper** — đã tách thành service riêng (`-mode=cron`), giữ đúng 1 replica.
+**Sweeper** — đã tách thành service riêng (`core-cron`, binary `cron`), giữ đúng 1 replica.
 Sweeper là cron chứ không phải worker: nó kích hoạt bởi đồng hồ nên nhiều bản không chia
 được việc. Tách ra khỏi worker vì N worker replica sẽ chạy N sweeper cùng quét cùng một tập
 tệp — không hỏng dữ liệu nhưng phí request S3. Cách tách thông thường: để orchestrator giữ

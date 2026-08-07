@@ -90,7 +90,7 @@ func (s *EngineManifestState) HasMode(mode string) bool {
 
 // errManifestUnavailable là câu trả lời chung khi chưa có Manifest để đối chiếu.
 //
-// main.go đã bắt buộc phải có Manifest trước khi mở cổng, nên trạng thái này chỉ xảy ra nếu
+// app.BootstrapWeb/BootstrapWorker bắt buộc phải có Manifest trước khi cổng web hoặc hàng đợi mở, nên trạng thái này chỉ xảy ra nếu
 // có ai đó xoá nó lúc đang chạy. Khi đó từ chối là lựa chọn duy nhất đúng: không biết Engine
 // nhận gì thì không có cơ sở nào để nói một yêu cầu là hợp lệ.
 var errManifestUnavailable = errors.New("chưa có manifest từ AI Engine, tạm thời không nhận yêu cầu tổng hợp")

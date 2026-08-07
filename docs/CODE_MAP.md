@@ -30,7 +30,7 @@ tổng hợp giọng nói, và nó chạm vào mọi tầng:
 
 | # | Tệp | Vì sao đọc ở bước này |
 |---|-----|----------------------|
-| 1 | `core-backend/app/bootstrap.go` | Thứ tự khởi động: cái gì phải có trước khi cổng mở, và bước nào chỉ thuộc về một chế độ |
+| 1 | `core-backend/cmd/web/main.go` | Entrypoint HTTP: nạp config, bootstrap web, mở server |
 | 2 | `core-backend/router/router.go` | Toàn bộ danh sách route và middleware của từng route — bản đồ bề mặt tấn công |
 | 3 | `core-backend/middleware/auth.go` | Danh tính được xác lập thế nào, và ba mức bảo vệ khác nhau ra sao |
 | 4 | `core-backend/state/manifest.go` | Mọi hạn mức được thi hành ở đây |
@@ -44,8 +44,10 @@ tổng hợp giọng nói, và nó chạm vào mọi tầng:
 
 | Tệp | Dòng | Chức năng |
 |-----|------|-----------|
-| `main.go` | 40 | Chọn chế độ rồi giao việc: `-mode=web` hay `-mode=worker`. Cố ý mỏng — trước đây tệp này trộn cả khởi tạo chung, vòng đời web và vòng lặp worker, nên đọc nó không trả lời được "worker thật ra chạy những gì". |
-| `app/bootstrap.go` | 167 | Chuỗi khởi tạo dùng chung cho cả hai chế độ, và **cổng gate**: manifest phải nạp được trước khi listener mở. Chứa `manifestDiscoveryTimeout` (90s) — con số vận hành đáng chất vấn nhất trong repo. Cũng là nơi khai bước nào KHÔNG dùng chung: migration và tài khoản khởi tạo chỉ chạy ở web, sweeper chỉ chạy ở worker. |
+| `cmd/web/main.go` | 12 | Entrypoint web: config → `app.BootstrapWeb` → `web.Run`. |
+| `cmd/worker/main.go` | 12 | Entrypoint worker: config → `app.BootstrapWorker` → `worker.Run`. |
+| `cmd/cron/main.go` | 13 | Entrypoint cron: config → `app.BootstrapCron` → `cron.Run`. |
+| `app/bootstrap.go` | 147 | Ba bootstrap rõ nghĩa thay cho `-mode`: web chạy migration/seed/auth; worker chạy DB/Redis/Engine; cron chỉ chạy storage sweeper. Chứa manifest gate dùng cho web và worker. |
 | `web/server.go` | 78 | `http.Server` cùng bốn hạn thời gian của nó, và trình tự tắt gọn. |
 | `worker/worker.go` | 84 | Vòng lặp nhặt job: trần `maxInFlight` mỗi tiến trình, và `wg.Wait()` để job dở dang chạy nốt khi nhận tín hiệu dừng. |
 | `cron/cron.go` | 16 | Giữ tiến trình cron sống để sweeper chạy: không mở cổng, không nối DB/Redis/Engine. Giữ đúng 1 replica trong triển khai. |

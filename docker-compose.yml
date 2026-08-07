@@ -119,10 +119,10 @@ services:
         condition: service_healthy
       core-engine:
         condition: service_started
-    command: ./main -mode=web
+    command: ./web
     restart: unless-stopped
 
-  # 2.1 Synthesis Worker (cùng image với backend, khác chế độ)
+  # 2.1 Synthesis Worker (cùng image, binary riêng)
   #
   # Tách khỏi web vì ba lý do: một lượt tổng hợp không còn chết khi deploy lại web, số lượt
   # gọi Engine cùng lúc có trần thật thay vì bằng số request đang tới, và số worker tăng giảm
@@ -164,7 +164,7 @@ services:
         condition: service_healthy
       core-engine:
         condition: service_started
-    command: ./main -mode=worker
+    command: ./worker
     restart: unless-stopped
 
   # Sweeper dọn âm thanh tạm quá hạn. Cron, không phải worker: nó chạy theo đồng hồ
@@ -188,7 +188,7 @@ services:
       - TEMP_AUDIO_RETENTION_HOURS=${TEMP_AUDIO_RETENTION_HOURS:-24}
     volumes:
       - ./core-backend/storage:/app/storage
-    command: ./main -mode=cron
+    command: ./cron
     restart: unless-stopped
 
   # 3. Frontend Worker Builder (Node.js Sidecar for On-Demand Static HTML Re-prerendering)

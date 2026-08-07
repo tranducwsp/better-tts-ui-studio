@@ -8,7 +8,9 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o web ./cmd/web
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o worker ./cmd/worker
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o cron ./cmd/cron
 
 # Production stage
 FROM alpine:latest
@@ -17,7 +19,7 @@ RUN apk add --no-cache ca-certificates ffmpeg
 
 WORKDIR /app
 
-COPY --from=builder /app/main .
+COPY --from=builder /app/web /app/worker /app/cron .
 
 # Không COPY .env vào image.
 #
@@ -28,4 +30,5 @@ COPY --from=builder /app/main .
 
 EXPOSE 8000
 
-CMD ["./main"]
+# No default command: compose selects ./web, ./worker, or ./cron explicitly.
+# Keeping the image commandless prevents a service from silently starting the wrong role.
