@@ -8,5 +8,5 @@ import (
 
 func main() {
 	cfg := config.LoadConfig()
-	worker.Run(app.BootstrapWorker(cfg))
+	worker.Run(app.BootstrapWorker(cfg), cfg.WorkerMaxInFlight)
 }

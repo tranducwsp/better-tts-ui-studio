@@ -47,12 +47,12 @@ tổng hợp giọng nói, và nó chạm vào mọi tầng:
 | `cmd/web/main.go` | 12 | Entrypoint web: config → `app.BootstrapWeb` → `web.Run`. |
 | `cmd/worker/main.go` | 12 | Entrypoint worker: config → `app.BootstrapWorker` → `worker.Run`. |
 | `cmd/cron/main.go` | 13 | Entrypoint cron: config → `app.BootstrapCron` → `cron.Run`. |
-| `app/bootstrap.go` | 147 | Ba bootstrap rõ nghĩa thay cho `-mode`: web chạy migration/seed/auth; worker chạy DB/Redis/Engine; cron chỉ chạy storage sweeper. Chứa manifest gate dùng cho web và worker. |
+| `app/bootstrap.go` | 114 | Ba bootstrap rõ nghĩa: web chạy migration/seed/auth và cấu hình advanced policy; worker chạy DB/Redis/Engine; cron chỉ chạy storage sweeper. Manifest gate dùng cho web và worker. |
 | `web/server.go` | 78 | `http.Server` cùng bốn hạn thời gian của nó, và trình tự tắt gọn. |
 | `worker/worker.go` | 84 | Vòng lặp nhặt job: trần `maxInFlight` mỗi tiến trình, và `wg.Wait()` để job dở dang chạy nốt khi nhận tín hiệu dừng. |
 | `cron/cron.go` | 16 | Giữ tiến trình cron sống để sweeper chạy: không mở cổng, không nối DB/Redis/Engine. Giữ đúng 1 replica trong triển khai. |
-| `config/settings.go` | 194 | **Bảng đặc tả mọi biến môi trường**: tên, mặc định, khoảng hợp lệ, tài liệu. `.env.example` được sinh ra từ đây. Muốn biết biến X làm gì thì đọc đúng một chỗ này. |
-| `config/config.go` | 217 | Đọc bảng trên thành struct `Config`. `requireAll()` chặn khởi động khi thiếu biến bắt buộc. `logSummary()` in cấu hình đang có hiệu lực. |
+| `config/settings.go` | 279 | **Bảng đặc tả mọi biến môi trường**: tên, mặc định, khoảng hợp lệ, tài liệu. Nhóm `Advanced deployment tuning` có default an toàn và không bắt AI engineer phải đổi. `.env.example` được sinh ra từ đây. Muốn biết biến X làm gì thì đọc đúng một chỗ này. |
+| `config/config.go` | 263 | Đọc bảng trên thành struct `Config`. `requireAll()` chặn khởi động khi thiếu biến bắt buộc; các advanced knobs có range validation và default. `logSummary()` in cấu hình đang có hiệu lực. |
 | `cmd/gen-env/main.go` | 91 | Sinh `.env.example` từ `config/settings.go`. Chạy bằng `go generate ./config`. |
 
 ### Hợp đồng với Engine (Manifest)
@@ -82,7 +82,7 @@ Hai tệp này quyết định hành vi của phần lớn hệ thống. Đọc 
 | `handlers/unified.go` | 302 | **Cổng tổng hợp chính.** `GetVoices` và `Synthesize`. Chạy chuỗi validate theo Manifest, tạo task, ghi job/chunk, rồi sinh audio trong goroutine nền. Đường đi nóng nhất của hệ thống. |
 | `handlers/upload.go` | 165 | Nhận tệp multipart: trần kích thước, allowlist định dạng theo Manifest, **kiểm magic bytes** (bắt tệp bị đổi phần mở rộng), và kiểm `model_id` trước khi nó vào đường dẫn tệp. |
 | `handlers/tts_clone.go` | 333 | Nhân bản giọng: lưu tệp tham chiếu, gọi engine trích embedding, ghi DB. Có `DeleteUserVoice`. Nơi đường dẫn tệp được dựng từ đầu vào người dùng. |
-| `handlers/tasks.go` | 314 | Trạng thái task, huỷ task, tải audio (kèm chuyển mã), và **SSE** stream tiến độ. `ownsTask` kiểm quyền cho cả 4 endpoint. `safeTaskID` chặn traversal. |
+| `handlers/tasks.go` | 401 | Trạng thái task, huỷ task, tải audio (kèm chuyển mã), và **SSE** stream tiến độ. `ownsTask` kiểm quyền cho cả 4 endpoint. `safeTaskID` chặn traversal. Presigned URL TTL lấy từ advanced deployment config. |
 | `handlers/utils.go` | 271 | Bóc văn bản từ tệp tài liệu (.txt/.pdf/.docx/.odt). DOCX và ODT là zip → **đây là chỗ còn lỗ hổng zip bomb chưa vá** (dòng ~118 và ~175). |
 | `handlers/auth.go` | 273 | Đăng ký, đăng nhập (đặt cookie HttpOnly), đăng xuất, `/me`, và hai API admin (liệt kê, duyệt user). |
 | `handlers/history.go` | 295 | Lịch sử job và chi tiết chunk. `GetJobDetail` là ví dụ tốt về kiểm quyền sở hữu đúng cách. |
@@ -105,7 +105,7 @@ Hai tệp này quyết định hành vi của phần lớn hệ thống. Đọc 
 | `db/sqlc/*.go` | 708 | **Sinh tự động.** Bỏ qua khi review, trừ khi đang kiểm chính bản sinh. |
 | `storage/paths.go` | 51 | Dựng mọi đường dẫn lưu trữ (`TempDir`, `ModeDir`) từ một gốc duy nhất, kèm `safeSegment` làm sạch. Nhỏ, đáng đọc trọn. |
 | `storage/sweeper.go` | 74 | Dọn tệp audio tạm quá hạn, định kỳ và một lần lúc khởi động. |
-| `audio/transcode.go` | 120 | Chuyển mã bằng ffmpeg qua pipe (không tệp tạm), có hàng đợi giới hạn theo số nhân CPU và timeout. Tham số ffmpeg là bảng cố định, không ghép từ đầu vào. |
+| `audio/transcode.go` | 118 | Chuyển mã bằng ffmpeg qua pipe (không tệp tạm), có concurrency/timeout lấy từ advanced platform config. Tham số ffmpeg là bảng cố định, không ghép từ đầu vào. |
 
 ### Hàng đợi và tổng hợp
 

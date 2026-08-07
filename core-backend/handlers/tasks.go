@@ -17,11 +17,17 @@ import (
 )
 
 // TasksHandler xử lý việc kiểm tra tiến độ, stream Server-Sent Events (SSE), hủy task và tải file audio.
-type TasksHandler struct{}
+type TasksHandler struct {
+	presignTTL time.Duration
+}
 
 // NewTasksHandler khởi tạo TasksHandler.
-func NewTasksHandler() *TasksHandler {
-	return &TasksHandler{}
+func NewTasksHandler(ttl ...time.Duration) *TasksHandler {
+	presignTTL := 60 * time.Second
+	if len(ttl) > 0 && ttl[0] > 0 {
+		presignTTL = ttl[0]
+	}
+	return &TasksHandler{presignTTL: presignTTL}
 }
 
 // ownsTask kiểm tra người gọi có quyền trên task này không, và đã ghi phản hồi lỗi nếu không.
@@ -140,12 +146,12 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	if format != "" {
 		key := storage.TranscodeKey(taskID, format)
 		if ok, err := storage.Global.Exists(r.Context(), key); err == nil && ok {
-			if serveFromStore(w, r, key, format) {
+			if h.serveFromStore(w, r, key, format) {
 				return
 			}
 		}
 		if ok, err := storage.Global.Exists(r.Context(), storage.TempKey(taskID, format)); err == nil && ok {
-			if serveFromStore(w, r, storage.TempKey(taskID, format), format) {
+			if h.serveFromStore(w, r, storage.TempKey(taskID, format), format) {
 				return
 			}
 		}
@@ -190,7 +196,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 			if format == "" {
 				format = ext
 			}
-			if format == ext && serveFromStore(w, r, key, ext) {
+			if format == ext && h.serveFromStore(w, r, key, ext) {
 				return
 			}
 			b, err := storage.Global.Get(r.Context(), key)
@@ -236,7 +242,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		writeAudio(w, converted, format)
 		return
 	}
-	if serveFromStore(w, r, transKey, format) {
+	if h.serveFromStore(w, r, transKey, format) {
 		return
 	}
 	writeAudio(w, converted, format)
@@ -258,12 +264,9 @@ func taskSourceFormat(taskID string) string {
 	return format
 }
 
-// presignTTL là thời hạn của URL tải trực tiếp.
-//
-// Ngắn có chủ ý. URL đã ký không đi qua ownsTask ở lần dùng lại — quyền được kiểm một lần lúc
-// phát, rồi bản thân URL là thứ cho phép tải. Sáu mươi giây đủ để trình duyệt bắt đầu tải
-// ngay sau khi nhận redirect, nhưng không đủ để một liên kết bị dán lại còn dùng được.
-const presignTTL = 60 * time.Second
+// presignTTL là thời hạn mặc định của URL tải trực tiếp khi handler được dựng ngoài bootstrap.
+// Production truyền giá trị từ Config; default chỉ giữ các test/consumer cũ chạy an toàn.
+const defaultPresignTTL = 60 * time.Second
 
 // serveFromStore trả âm thanh cho client, và cho biết đã trả được chưa.
 //
@@ -273,13 +276,13 @@ const presignTTL = 60 * time.Second
 //
 // Với kho không phát được URL (đĩa cục bộ), trả về false để người gọi đi đường cũ: đọc bytes
 // rồi ghi vào response.
-func serveFromStore(w http.ResponseWriter, r *http.Request, key, format string) bool {
+func (h *TasksHandler) serveFromStore(w http.ResponseWriter, r *http.Request, key, format string) bool {
 	ps, ok := storage.Global.(storage.Presigner)
 	if !ok {
 		return false
 	}
 
-	url, err := ps.PresignGet(r.Context(), key, presignTTL)
+	url, err := ps.PresignGet(r.Context(), key, h.presignTTL)
 	if err != nil {
 		// Ký hỏng không phải lý do để từ chối người dùng: đường đọc bytes vẫn còn đó.
 		log.Printf("Không ký được URL cho %s: %v — trả về qua backend", key, err)

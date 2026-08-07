@@ -97,7 +97,7 @@ var Settings = []Setting{
 			"Đặt 0 để tắt cache và quay về truy vấn từng request.",
 	},
 
-	{Key: "DATABASE_URL", Kind: KindString, Default: "postgres://postgres:postgres@localhost:5432/ai_studio?sslmode=disable", Group: "Database"},
+	{Key: "DATABASE_URL", Kind: KindString, Default: "postgres://postgres:<change>@localhost:5432/ai_studio?sslmode=disable", Group: "Database", Doc: "Connection string PostgreSQL. Khi dùng docker-compose, giá trị này được dựng từ POSTGRES_PASSWORD;\n\t\tđể <change> nếu tự triển khai và thay bằng credential thật."},
 	{Key: "DB_MAX_CONNS", Kind: KindInt, Default: "25", Min: 1, Max: 10000, Group: "Database"},
 	{
 		Key: "DB_MIN_CONNS", Kind: KindInt, Default: "5", Min: 0, Max: 10000,
@@ -215,6 +215,36 @@ var Settings = []Setting{
 		Doc: "Đặt cờ Secure trên cookie access_token, tức chỉ gửi cookie qua HTTPS. Mặc định bật.\n" +
 			"Trước đây cờ này bị viết cứng thành false, nên kể cả khi triển khai sau TLS thì token\n" +
 			"phiên vẫn đi được qua HTTP thường. Chỉ đặt 0 khi phát triển cục bộ trên http://localhost.",
+	},
+
+	{
+		Key: "WORKER_MAX_IN_FLIGHT", Kind: KindInt, Default: "2", Min: 1, Max: 128,
+		Group: "Advanced deployment tuning",
+		Doc: "Số lượt tổng hợp tối đa đồng thời trong MỖI worker. Mặc định an toàn cho một Engine GPU;\n" +
+			"tổng tải là số worker nhân giá trị này. AI engineer thường không cần đổi biến này.",
+	},
+	{
+		Key: "TRANSCODE_MAX_CONCURRENCY", Kind: KindInt, Default: "2", Min: 1, Max: 128,
+		Group: "Advanced deployment tuning",
+		Doc: "Số tiến trình ffmpeg tối đa đồng thời trong MỖI web replica. Chỉ đổi khi operator biết\n" +
+			"quota CPU/RAM của deployment; không liên quan đến capability của Core TTS Engine.",
+	},
+	{
+		Key: "TRANSCODE_TIMEOUT_SECONDS", Kind: KindInt, Default: "60", Min: 1, Max: 3600,
+		Group: "Advanced deployment tuning",
+		Doc: "Thời gian tối đa cho một lượt chuyển mã audio. Đây là policy của platform, không phải\n" +
+			"thời gian Engine tổng hợp.",
+	},
+	{
+		Key: "AUTH_RATE_LIMIT_REQUESTS", Kind: KindInt, Default: "10", Min: 1, Max: 1000,
+		Group: "Advanced deployment tuning",
+		Doc: "Số request login/register tối đa trong một cửa sổ. Mặc định bảo vệ bcrypt khỏi dò mật khẩu;\n" +
+			"chỉ operator đổi khi hiểu traffic và deployment.",
+	},
+	{
+		Key: "AUTH_RATE_LIMIT_WINDOW_SECONDS", Kind: KindInt, Default: "60", Min: 1, Max: 3600,
+		Group: "Advanced deployment tuning",
+		Doc:   "Độ dài cửa sổ rate limit login/register.",
 	},
 
 	{

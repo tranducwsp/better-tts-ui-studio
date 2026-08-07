@@ -51,11 +51,16 @@ type Config struct {
 	S3ForcePathStyle bool
 	S3Prefix         string
 	// Số giờ giữ tập tin âm thanh tạm trước khi bị quét xoá.
-	TempRetentionHours int
-	MaxUploadMB        int
-	CORSOrigins        []string
-	CookieSecure       bool
-	TTSClientTimeout   int
+	TempRetentionHours         int
+	MaxUploadMB                int
+	CORSOrigins                []string
+	CookieSecure               bool
+	TTSClientTimeout           int
+	WorkerMaxInFlight          int
+	TranscodeMaxConcurrency    int
+	TranscodeTimeoutSeconds    int
+	AuthRateLimitRequests      int
+	AuthRateLimitWindowSeconds int
 
 	// TrustedProxies là các dải CIDR được phép đặt X-Forwarded-For.
 	//
@@ -177,19 +182,24 @@ func LoadConfig() *Config {
 		StorageBackend: str("STORAGE_BACKEND"),
 		StorageDir:     str("STORAGE_DIR"),
 
-		S3Bucket:           str("S3_BUCKET"),
-		S3Region:           str("S3_REGION"),
-		S3Endpoint:         str("S3_ENDPOINT"),
-		S3AccessKey:        str("S3_ACCESS_KEY_ID"),
-		S3SecretKey:        str("S3_SECRET_ACCESS_KEY"),
-		S3ForcePathStyle:   num("S3_FORCE_PATH_STYLE") == 1,
-		S3Prefix:           str("S3_PREFIX"),
-		TempRetentionHours: num("TEMP_AUDIO_RETENTION_HOURS"),
-		MaxUploadMB:        num("MAX_UPLOAD_SIZE_MB"),
-		CORSOrigins:        corsOrigins,
-		CookieSecure:       num("COOKIE_SECURE") == 1,
-		TTSClientTimeout:   num("TTS_CLIENT_TIMEOUT_SECONDS"),
-		TrustedProxies:     trustedProxies,
+		S3Bucket:                   str("S3_BUCKET"),
+		S3Region:                   str("S3_REGION"),
+		S3Endpoint:                 str("S3_ENDPOINT"),
+		S3AccessKey:                str("S3_ACCESS_KEY_ID"),
+		S3SecretKey:                str("S3_SECRET_ACCESS_KEY"),
+		S3ForcePathStyle:           num("S3_FORCE_PATH_STYLE") == 1,
+		S3Prefix:                   str("S3_PREFIX"),
+		TempRetentionHours:         num("TEMP_AUDIO_RETENTION_HOURS"),
+		MaxUploadMB:                num("MAX_UPLOAD_SIZE_MB"),
+		CORSOrigins:                corsOrigins,
+		CookieSecure:               num("COOKIE_SECURE") == 1,
+		TTSClientTimeout:           num("TTS_CLIENT_TIMEOUT_SECONDS"),
+		WorkerMaxInFlight:          num("WORKER_MAX_IN_FLIGHT"),
+		TranscodeMaxConcurrency:    num("TRANSCODE_MAX_CONCURRENCY"),
+		TranscodeTimeoutSeconds:    num("TRANSCODE_TIMEOUT_SECONDS"),
+		AuthRateLimitRequests:      num("AUTH_RATE_LIMIT_REQUESTS"),
+		AuthRateLimitWindowSeconds: num("AUTH_RATE_LIMIT_WINDOW_SECONDS"),
+		TrustedProxies:             trustedProxies,
 	}
 
 	cfg.logSummary()

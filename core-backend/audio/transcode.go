@@ -5,24 +5,22 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"runtime"
 	"time"
 )
 
-// TranscodeTimeout giới hạn thời gian chạy ffmpeg cho một lần chuyển mã, tránh tiến trình
-// treo giữ mãi một goroutine.
-const TranscodeTimeout = 60 * time.Second
+// transcodeTimeout giới hạn thời gian chạy ffmpeg cho một lần chuyển mã.
+var transcodeTimeout = 60 * time.Second
 
-// transcodeSlots chặn số tiến trình ffmpeg chạy cùng lúc.
-//
-// ffmpeg là việc nặng CPU và trước đây được gọi thẳng từ goroutine của request mà không có
-// hàng đợi: N lượt tải cùng lúc là N tiến trình giành nhau số nhân có hạn, mỗi tiến trình
-// còn giữ cả đầu vào và đầu ra trong RAM. Một người dùng gọi ?format=flac trong vòng lặp là
-// đủ ghim mọi nhân trong suốt TranscodeTimeout — không cần tới lỗ hổng nào.
-//
-// Số chỗ bằng số nhân khả dụng: chuyển mã đã bám CPU nên cho chạy nhiều hơn thế chỉ làm mọi
-// lượt chậm đi chứ không xong sớm hơn. Tối thiểu 2 để máy một nhân vẫn xử được lượt thứ hai.
-var transcodeSlots = make(chan struct{}, max(2, runtime.GOMAXPROCS(0)))
+var transcodeSlots = make(chan struct{}, 2)
+
+// ConfigureTranscoding đặt policy chuyển mã một lần lúc khởi động.
+func ConfigureTranscoding(timeout time.Duration, maxConcurrency int) {
+	if timeout <= 0 || maxConcurrency < 1 {
+		panic("invalid transcoding configuration")
+	}
+	transcodeTimeout = timeout
+	transcodeSlots = make(chan struct{}, maxConcurrency)
+}
 
 // ffmpegArgs mô tả tham số mã hoá cho từng định dạng đầu ra được hỗ trợ.
 // Đầu vào luôn đọc từ stdin ("-i pipe:0") và kết quả ghi ra stdout ("pipe:1"), nên không
@@ -65,7 +63,7 @@ func Transcode(ctx context.Context, input []byte, format string) ([]byte, error)
 		return nil, fmt.Errorf("transcode queue: %w", ctx.Err())
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, TranscodeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, transcodeTimeout)
 	defer cancel()
 
 	full := append([]string{"-hide_banner", "-loglevel", "error", "-i", "pipe:0"}, args...)
@@ -80,7 +78,7 @@ func Transcode(ctx context.Context, input []byte, format string) ([]byte, error)
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("ffmpeg timed out after %s", TranscodeTimeout)
+			return nil, fmt.Errorf("ffmpeg timed out after %s", transcodeTimeout)
 		}
 		return nil, fmt.Errorf("ffmpeg failed: %v: %s", err, stderr.String())
 	}

@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"core-backend/audio"
 	"core-backend/client"
 	"core-backend/config"
 	"core-backend/db"
@@ -14,9 +15,6 @@ import (
 	"core-backend/state"
 	"core-backend/storage"
 )
-
-// manifestDiscoveryTimeout là thời gian chờ Engine trả về một Manifest hợp lệ lúc khởi động.
-const manifestDiscoveryTimeout = 90 * time.Second
 
 // BootstrapWeb khởi tạo mọi thứ mà HTTP backend cần rồi trả về client Engine.
 //
@@ -27,6 +25,7 @@ func BootstrapWeb(cfg *config.Config) *client.CoreTTSClient {
 	initStorage(cfg)
 
 	handlers.SetMaxUploadMB(cfg.MaxUploadMB)
+	audio.ConfigureTranscoding(time.Duration(cfg.TranscodeTimeoutSeconds)*time.Second, cfg.TranscodeMaxConcurrency)
 	middleware.ConfigureUserCache(time.Duration(cfg.AuthUserCacheSeconds) * time.Second)
 	middleware.SetTrustedProxies(cfg.TrustedProxies)
 
@@ -74,7 +73,7 @@ func bootstrapEngine(cfg *config.Config, dbOptions db.InitOptions) *client.CoreT
 	state.InitRedis(cfg)
 
 	ttsClient := client.NewCoreTTSClient(cfg.CoreTTSURL, cfg.TTSClientTimeout)
-	if err := discoverManifest(ttsClient, cfg.CoreTTSURL, manifestDiscoveryTimeout); err != nil {
+	if err := discoverManifest(ttsClient, cfg.CoreTTSURL, 90*time.Second, 3*time.Second); err != nil {
 		log.Fatalf("Không lấy được Manifest từ AI Engine: %v.\n"+
 			"Backend không khởi động khi thiếu Manifest, vì mọi giới hạn đầu vào (độ dài văn bản,\n"+
 			"khoảng speed/pitch, danh sách mode và emotion) đều do Manifest khai. Hãy kiểm tra\n"+
@@ -84,7 +83,7 @@ func bootstrapEngine(cfg *config.Config, dbOptions db.InitOptions) *client.CoreT
 }
 
 // discoverManifest hỏi Engine tới khi có Manifest hợp lệ, hoặc hết thời gian chờ.
-func discoverManifest(ttsClient *client.CoreTTSClient, engineURL string, timeout time.Duration) error {
+func discoverManifest(ttsClient *client.CoreTTSClient, engineURL string, timeout, retryInterval time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 
@@ -110,6 +109,6 @@ func discoverManifest(ttsClient *client.CoreTTSClient, engineURL string, timeout
 		}
 
 		log.Printf("⏳ Đang chờ Manifest từ AI Engine tại %s (%v)... thử lại sau 3s", engineURL, lastErr)
-		time.Sleep(3 * time.Second)
+		time.Sleep(retryInterval)
 	}
 }

@@ -19,6 +19,7 @@ const header = `# Sinh tự động từ core-backend/config/settings.go — đ�
 #
 # Sao chép thành .env rồi điền trước khi triển khai. Giá trị hiển thị là mặc định backend
 # dùng khi biến không được đặt; biến nào đánh dấu BẮT BUỘC thì không có mặc định an toàn.
+# Nhóm "Advanced deployment tuning" là tùy chọn cho operator; AI engineer thường không cần đổi.
 `
 
 func main() {

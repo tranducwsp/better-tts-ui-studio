@@ -11,12 +11,10 @@ import (
 	"core-backend/state"
 )
 
-// Giới hạn kích thước upload, đặt một lần lúc khởi động từ MAX_UPLOAD_SIZE_MB.
-//
-// Trước đây ba handler đều viết cứng `32 << 20`, nên biến môi trường được đọc, được kiểm
-// tra khoảng hợp lệ, được in ra log khởi động — rồi không ai thực thi. Đặt nó thành 8 hay
-// 512 đều không thay đổi hành vi.
-var maxUploadBytes int64 = 32 << 20
+// Mặc định khớp MAX_UPLOAD_SIZE_MB=256 trong config/settings.go để các handler được dựng
+// độc lập trong test không có một trần 32MB bí mật. Bootstrap production luôn ghi đè bằng
+// giá trị Config đã validate.
+var maxUploadBytes int64 = 256 << 20
 
 // SetMaxUploadMB đặt trần kích thước upload cho mọi handler nhận multipart.
 func SetMaxUploadMB(mb int) {

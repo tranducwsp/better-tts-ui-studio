@@ -59,7 +59,7 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 		// ngoài (dò mật khẩu, tạo tài khoản rác, và mỗi lượt là một lần bcrypt). Các route đã
 		// đăng nhập không cần lớp này vì đã có danh tính để truy vết.
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RateLimit(10, time.Minute))
+			r.Use(middleware.RateLimit(cfg.AuthRateLimitRequests, time.Duration(cfg.AuthRateLimitWindowSeconds)*time.Second))
 
 			r.Post("/register", authHandler.Register)
 			r.Post("/login", authHandler.Login)

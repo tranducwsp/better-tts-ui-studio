@@ -14,17 +14,15 @@ import (
 	"core-backend/synth"
 )
 
-// maxInFlight là trần số job chạy song song trong MỘT worker.
-//
-// Engine là nút cổ chai: nó bám GPU, nên đẩy nhiều lượt hơn số nó xử được chỉ làm mọi lượt
-// chậm đi. Muốn nhiều hơn thì chạy thêm worker — đó là lý do tách tiến trình.
-const maxInFlight = 2
-
 // Run nhặt job từ hàng đợi và chạy cho tới khi nhận tín hiệu dừng.
+// maxInFlight là trần số job chạy song song trong một worker; tổng tải là số worker nhân giá trị này.
 //
 // Không mở cổng nào: worker không phục vụ request, và mở một listener chỉ để healthcheck sẽ
 // tạo ra một bề mặt không ai dùng. Trạng thái của nó nhìn được qua log và qua chính hàng đợi.
-func Run(ttsClient *client.CoreTTSClient) {
+func Run(ttsClient *client.CoreTTSClient, maxInFlight int) {
+	if maxInFlight < 1 {
+		log.Fatal("WORKER_MAX_IN_FLIGHT phải lớn hơn 0")
+	}
 	if state.RedisClient == nil {
 		log.Fatal("Worker cần Redis để nhận job, nhưng REDIS_URL chưa cấu hình hoặc không kết nối được.\n" +
 			"Không có Redis thì chạy chế độ web là đủ: nó tự tổng hợp tại chỗ.")
