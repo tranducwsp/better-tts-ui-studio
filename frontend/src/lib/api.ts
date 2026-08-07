@@ -12,9 +12,24 @@ export async function fetchManifest(): Promise<UniversalManifest | null> {
   }
 }
 
+export async function refreshSession(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function checkCurrentUser(): Promise<UserResponse | null> {
   try {
-    const res = await fetch('/api/me', { credentials: 'include' });
+    let res = await fetch('/api/me', { credentials: 'include' });
+    if (res.status === 401 && await refreshSession()) {
+      res = await fetch('/api/me', { credentials: 'include' });
+    }
     if (!res.ok) return null;
     return await res.json();
   } catch (err) {
