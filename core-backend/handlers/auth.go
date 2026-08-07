@@ -169,19 +169,16 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5. Send secure HttpOnly cookie to browser client
-	//
-	// Secure lấy từ cấu hình, không viết cứng: cờ này từng là false cố định, nên một triển
-	// khai có TLS vẫn để token phiên đi qua HTTP thường nếu có ai hạ giao thức.
-	http.SetCookie(w, &http.Cookie{
-		Name:     "access_token",
-		Value:    "Bearer " + accessToken,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   h.Config.CookieSecure,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   h.Config.AccessTokenExpireMinutes * 60,
-	})
+	refreshToken, err := security.CreateToken(user.Username, user.Role, security.TokenUseRefresh, h.Config.SecretKey, h.Config.RefreshTokenExpireMinutes)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to generate authentication token"})
+		return
+	}
+
+	// Access token có thể được trả về JSON cho client API; refresh token thì tuyệt đối không
+	// được trả trong body/header. Nó chỉ nằm trong HttpOnly cookie để JavaScript không đọc được.
+	h.setTokenCookies(w, accessToken, refreshToken)
 
 	// Touch online status in Redis
 	state.TouchUserOnline(r.Context(), user.ID)
@@ -194,7 +191,66 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Logout clears the access_token cookie in browser.
+// setTokenCookies đặt access token và refresh token với thuộc tính phù hợp.
+//
+// Refresh token dùng Path=/api/auth/refresh để browser chỉ gửi nó tới endpoint refresh;
+// Authorization header không bao giờ được đọc cho refresh token.
+func (h *AuthHandler) setTokenCookies(w http.ResponseWriter, accessToken, refreshToken string) {
+	http.SetCookie(w, &http.Cookie{
+		Name: "access_token", Value: "Bearer " + accessToken, Path: "/", HttpOnly: true,
+		Secure: h.Config.CookieSecure, SameSite: http.SameSiteLaxMode,
+		MaxAge: h.Config.AccessTokenExpireMinutes * 60,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name: "refresh_token", Value: refreshToken, Path: "/api/auth/refresh", HttpOnly: true,
+		Secure: h.Config.CookieSecure, SameSite: http.SameSiteLaxMode,
+		MaxAge: h.Config.RefreshTokenExpireMinutes * 60,
+	})
+}
+
+// Refresh cấp access token mới từ refresh_token HttpOnly cookie.
+//
+// Không chấp nhận body, query param hay Authorization header cho refresh token. Header đó chỉ
+// dành cho access token ở AuthMiddleware; đưa refresh token vào đó sẽ không bao giờ có tác dụng.
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	cookie, err := r.Cookie("refresh_token")
+	if err != nil || cookie.Value == "" {
+		writeError(w, http.StatusUnauthorized, "Refresh token missing")
+		return
+	}
+
+	claims, err := security.ValidateRefreshToken(cookie.Value, h.Config.SecretKey)
+	if err != nil || claims.Username == "" {
+		writeError(w, http.StatusUnauthorized, "Invalid refresh token")
+		return
+	}
+
+	user, err := db.Queries.GetUserByUsername(r.Context(), claims.Username)
+	if err != nil || !user.IsApproved {
+		writeError(w, http.StatusUnauthorized, "User is not active")
+		return
+	}
+
+	accessToken, err := security.CreateAccessToken(user.Username, user.Role, h.Config.SecretKey, h.Config.AccessTokenExpireMinutes)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to generate authentication token")
+		return
+	}
+
+	// Chỉ rotate access token; refresh token vẫn được browser giữ trong HttpOnly cookie và
+	// không xuất hiện trong body/header.
+	http.SetCookie(w, &http.Cookie{
+		Name: "access_token", Value: "Bearer " + accessToken, Path: "/", HttpOnly: true,
+		Secure: h.Config.CookieSecure, SameSite: http.SameSiteLaxMode,
+		MaxAge: h.Config.AccessTokenExpireMinutes * 60,
+	})
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
+		"access_token": accessToken,
+		"token_type":   "bearer",
+	})
+}
+
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	// Thuộc tính phải trùng với cookie lúc đặt, nếu không trình duyệt coi đây là một cookie
@@ -207,6 +263,12 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.Config.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
+	})
+	// Refresh cookie có Path hẹp hơn, nên phải xoá với đúng Path đó; xoá access_token thôi
+	// vẫn để phiên dài hạn còn lại trong browser.
+	http.SetCookie(w, &http.Cookie{
+		Name: "refresh_token", Value: "", Path: "/api/auth/refresh", HttpOnly: true,
+		Secure: h.Config.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: -1,
 	})
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Logged out successfully"})
 }

@@ -51,8 +51,8 @@ tổng hợp giọng nói, và nó chạm vào mọi tầng:
 | `web/server.go` | 78 | `http.Server` cùng bốn hạn thời gian của nó, và trình tự tắt gọn. |
 | `worker/worker.go` | 84 | Vòng lặp nhặt job: trần `maxInFlight` mỗi tiến trình, và `wg.Wait()` để job dở dang chạy nốt khi nhận tín hiệu dừng. |
 | `cron/cron.go` | 16 | Giữ tiến trình cron sống để sweeper chạy: không mở cổng, không nối DB/Redis/Engine. Giữ đúng 1 replica trong triển khai. |
-| `config/settings.go` | 279 | **Bảng đặc tả mọi biến môi trường**: tên, mặc định, khoảng hợp lệ, tài liệu. Nhóm `Advanced deployment tuning` có default an toàn và không bắt AI engineer phải đổi. `.env.example` được sinh ra từ đây. Muốn biết biến X làm gì thì đọc đúng một chỗ này. |
-| `config/config.go` | 263 | Đọc bảng trên thành struct `Config`. `requireAll()` chặn khởi động khi thiếu biến bắt buộc; các advanced knobs có range validation và default. `logSummary()` in cấu hình đang có hiệu lực. |
+| `config/settings.go` | 283 | **Bảng đặc tả mọi biến môi trường**: tên, mặc định, khoảng hợp lệ, tài liệu. Nhóm `Advanced deployment tuning` có default an toàn và không bắt AI engineer phải đổi. `.env.example` được sinh ra từ đây. Muốn biết biến X làm gì thì đọc đúng một chỗ này. |
+| `config/config.go` | 265 | Đọc bảng trên thành struct `Config`. `requireAll()` chặn khởi động khi thiếu biến bắt buộc; các advanced knobs có range validation và default. `logSummary()` in cấu hình đang có hiệu lực. |
 | `cmd/gen-env/main.go` | 91 | Sinh `.env.example` từ `config/settings.go`. Chạy bằng `go generate ./config`. |
 
 ### Hợp đồng với Engine (Manifest)
@@ -84,7 +84,7 @@ Hai tệp này quyết định hành vi của phần lớn hệ thống. Đọc 
 | `handlers/tts_clone.go` | 333 | Nhân bản giọng: lưu tệp tham chiếu, gọi engine trích embedding, ghi DB. Có `DeleteUserVoice`. Nơi đường dẫn tệp được dựng từ đầu vào người dùng. |
 | `handlers/tasks.go` | 401 | Trạng thái task, huỷ task, tải audio (kèm chuyển mã), và **SSE** stream tiến độ. `ownsTask` kiểm quyền cho cả 4 endpoint. `safeTaskID` chặn traversal. Presigned URL TTL lấy từ advanced deployment config. |
 | `handlers/utils.go` | 271 | Bóc văn bản từ tệp tài liệu (.txt/.pdf/.docx/.odt). DOCX và ODT là zip → **đây là chỗ còn lỗ hổng zip bomb chưa vá** (dòng ~118 và ~175). |
-| `handlers/auth.go` | 273 | Đăng ký, đăng nhập (đặt cookie HttpOnly), đăng xuất, `/me`, và hai API admin (liệt kê, duyệt user). |
+| `handlers/auth.go` | 350 | Đăng ký, đăng nhập (access + refresh cookie HttpOnly), refresh access token chỉ từ refresh cookie, đăng xuất, `/me`, và hai API admin. |
 | `handlers/history.go` | 295 | Lịch sử job và chi tiết chunk. `GetJobDetail` là ví dụ tốt về kiểm quyền sở hữu đúng cách. |
 | `handlers/engine_sync.go` | 84 | `POST /api/internal/engine/reload`: nạp lại Manifest và bắn webhook rebuild sang frontend-builder. Route admin. |
 | `handlers/health.go` | 49 | `/health`, `/ready`, và `/api/info` (trả Manifest từ RAM). |

@@ -29,15 +29,21 @@ func TestAuth_Logout(t *testing.T) {
 
 	cookies := rec.Result().Cookies()
 	var logoutCookie *http.Cookie
+	var refreshLogoutCookie *http.Cookie
 	for _, c := range cookies {
-		if c.Name == "access_token" {
+		switch c.Name {
+		case "access_token":
 			logoutCookie = c
-			break
+		case "refresh_token":
+			refreshLogoutCookie = c
 		}
 	}
 
 	if logoutCookie == nil || logoutCookie.MaxAge != -1 {
 		t.Errorf("Expected access_token cookie to be expired (-1), got: %v", logoutCookie)
+	}
+	if refreshLogoutCookie == nil || refreshLogoutCookie.MaxAge != -1 || refreshLogoutCookie.Path != "/api/auth/refresh" {
+		t.Errorf("Expected refresh_token cookie to expire at its narrow path, got: %v", refreshLogoutCookie)
 	}
 }
 

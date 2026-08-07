@@ -11,11 +11,12 @@ import (
 
 // Config chứa toàn bộ thông số cấu hình của hệ thống core-backend, được nạp từ biến môi trường (ENV).
 type Config struct {
-	Host                     string
-	Port                     string
-	DatabaseURL              string
-	SecretKey                string
-	AccessTokenExpireMinutes int
+	Host                      string
+	Port                      string
+	DatabaseURL               string
+	SecretKey                 string
+	AccessTokenExpireMinutes  int
+	RefreshTokenExpireMinutes int
 	// Số giây ghi nhớ bản ghi người dùng sau khi xác thực token. 0 nghĩa là không cache.
 	AuthUserCacheSeconds int
 	CoreTTSURL           string
@@ -154,15 +155,16 @@ func LoadConfig() *Config {
 	}
 
 	cfg := &Config{
-		Host:                     str("HOST"),
-		Port:                     str("PORT"),
-		DatabaseURL:              str("DATABASE_URL"),
-		SecretKey:                resolveSecretKey(),
-		AccessTokenExpireMinutes: num("ACCESS_TOKEN_EXPIRE_MINUTES"),
-		AuthUserCacheSeconds:     num("AUTH_USER_CACHE_SECONDS"),
-		CoreTTSURL:               str("CORE_ENGINE_URL"),
-		CoreTTSGrpcURL:           str("CORE_ENGINE_GRPC_URL"),
-		FEBuilderURL:             str("FE_BUILDER_URL"),
+		Host:                      str("HOST"),
+		Port:                      str("PORT"),
+		DatabaseURL:               str("DATABASE_URL"),
+		SecretKey:                 resolveSecretKey(),
+		AccessTokenExpireMinutes:  num("ACCESS_TOKEN_EXPIRE_MINUTES"),
+		RefreshTokenExpireMinutes: num("REFRESH_TOKEN_EXPIRE_MINUTES"),
+		AuthUserCacheSeconds:      num("AUTH_USER_CACHE_SECONDS"),
+		CoreTTSURL:                str("CORE_ENGINE_URL"),
+		CoreTTSGrpcURL:            str("CORE_ENGINE_GRPC_URL"),
+		FEBuilderURL:              str("FE_BUILDER_URL"),
 
 		DefaultAdminUsername: str("DEFAULT_ADMIN_USERNAME"),
 		DefaultAdminPassword: str("DEFAULT_ADMIN_PASSWORD"),

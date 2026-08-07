@@ -65,6 +65,10 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 			r.Post("/login", authHandler.Login)
 		})
 
+		// Refresh chỉ đọc refresh_token từ HttpOnly cookie. Không nhận refresh token trong
+		// Authorization header hay body.
+		r.Post("/auth/refresh", authHandler.Refresh)
+
 		r.Post("/logout", authHandler.Logout)
 
 		// Protected routes (Require active/approved user)

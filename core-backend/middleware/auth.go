@@ -43,7 +43,7 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 				}
 
 				// Validate JWT token với secret key
-				claims, err := security.ValidateToken(tokenString, cfg.SecretKey)
+				claims, err := security.ValidateAccessToken(tokenString, cfg.SecretKey)
 				if err == nil && claims.Username != "" {
 					user, ok := lookupUser(r, claims.Username)
 					if ok {

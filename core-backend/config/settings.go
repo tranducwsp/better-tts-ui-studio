@@ -89,6 +89,10 @@ var Settings = []Setting{
 		Group: "Server", Doc: "Thời hạn token đăng nhập. Mặc định 7 ngày.",
 	},
 	{
+		Key: "REFRESH_TOKEN_EXPIRE_MINUTES", Kind: KindInt, Default: "43200", Min: 60, Max: 525600,
+		Group: "Server", Doc: "Thời hạn refresh token. Refresh token chỉ nằm trong HttpOnly cookie và không được chấp nhận trong Authorization header.",
+	},
+	{
 		Key: "AUTH_USER_CACHE_SECONDS", Kind: KindInt, Default: "15", Min: 0, Max: 3600,
 		Group: "Server",
 		Doc: "Số giây ghi nhớ bản ghi người dùng sau khi xác thực token, để mỗi request không\n" +
