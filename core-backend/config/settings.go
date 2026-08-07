@@ -85,8 +85,8 @@ var Settings = []Setting{
 	{Key: "HOST", Kind: KindString, Default: "0.0.0.0", Group: "Server"},
 	{Key: "PORT", Kind: KindString, Default: "8000", Group: "Server"},
 	{
-		Key: "ACCESS_TOKEN_EXPIRE_MINUTES", Kind: KindInt, Default: "10080", Min: 1, Max: 525600,
-		Group: "Server", Doc: "Thời hạn token đăng nhập. Mặc định 7 ngày.",
+		Key: "ACCESS_TOKEN_EXPIRE_MINUTES", Kind: KindInt, Default: "15", Min: 1, Max: 525600,
+		Group: "Server", Doc: "Thời hạn access token đăng nhập. Mặc định 15 phút; refresh token dùng để cấp access token mới.",
 	},
 	{
 		Key: "REFRESH_TOKEN_EXPIRE_MINUTES", Kind: KindInt, Default: "43200", Min: 60, Max: 525600,

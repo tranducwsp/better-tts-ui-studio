@@ -79,7 +79,7 @@ The table below is a summary; `settings.go` and `.env.example` are authoritative
 | `DEFAULT_ADMIN_USERNAME` / `_PASSWORD` | empty | Both blank ⇒ no admin seeded. |
 | `DEFAULT_USER_USERNAME` / `_PASSWORD` | empty | Same. |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `10080` | 1 … 525600. Access token is accepted from the HttpOnly cookie or Authorization header. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | 1 … 525600. Access token is accepted from the HttpOnly cookie or Authorization header. |
 | `REFRESH_TOKEN_EXPIRE_MINUTES` | `43200` | Refresh token is accepted only from the `refresh_token` HttpOnly cookie at `POST /api/auth/refresh`; never send it in Authorization. || `DATABASE_URL` | local postgres | |
 | `DB_MAX_CONNS` / `DB_MIN_CONNS` | `25` / `5` | min may not exceed max |
 | `DB_MAX_CONN_LIFETIME_MINUTES` / `DB_MAX_CONN_IDLE_MINUTES` | `30` / `15` | |
