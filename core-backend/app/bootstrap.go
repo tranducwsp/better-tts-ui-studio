@@ -41,17 +41,13 @@ func BootstrapWorker(cfg *config.Config) *client.CoreTTSClient {
 	return bootstrapEngine(cfg, db.InitOptions{})
 }
 
-// BootstrapCron chỉ khởi tạo storage rồi bắt đầu sweeper.
+// BootstrapCron chỉ khởi tạo storage rồi trả về kho cho cron.Run tự chạy vòng lặp.
 //
 // Cron không cần DB, Redis hay Engine: nó chỉ LIST/DELETE các object temp. Giữ phụ thuộc của
 // nó nhỏ và rõ để một lỗi ở database không làm chết một bộ dọn rác không liên quan.
-func BootstrapCron(cfg *config.Config) {
+func BootstrapCron(cfg *config.Config) storage.Store {
 	initStorage(cfg)
-	storage.StartTempSweeper(
-		storage.Global,
-		time.Duration(cfg.TempRetentionHours)*time.Hour,
-		storage.DefaultSweepInterval,
-	)
+	return storage.Global
 }
 
 func initStorage(cfg *config.Config) {

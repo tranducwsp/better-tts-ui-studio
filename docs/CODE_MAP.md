@@ -47,10 +47,10 @@ tổng hợp giọng nói, và nó chạm vào mọi tầng:
 | `cmd/web/main.go` | 12 | Entrypoint web: config → `app.BootstrapWeb` → `web.Run`. |
 | `cmd/worker/main.go` | 12 | Entrypoint worker: config → `app.BootstrapWorker` → `worker.Run`. |
 | `cmd/cron/main.go` | 13 | Entrypoint cron: config → `app.BootstrapCron` → `cron.Run`. |
-| `app/bootstrap.go` | 114 | Ba bootstrap rõ nghĩa: web chạy migration/seed/auth và cấu hình advanced policy; worker chạy DB/Redis/Engine; cron chỉ chạy storage sweeper. Manifest gate dùng cho web và worker. |
+| `app/bootstrap.go` | 110 | Ba bootstrap rõ nghĩa: web chạy migration/seed/auth và cấu hình advanced policy; worker chạy DB/Redis/Engine; cron chỉ khởi tạo storage rồi trả kho cho `cron.Run`. Manifest gate dùng cho web và worker. |
 | `web/server.go` | 78 | `http.Server` cùng bốn hạn thời gian của nó, và trình tự tắt gọn. |
 | `worker/worker.go` | 84 | Vòng lặp nhặt job: trần `maxInFlight` mỗi tiến trình, và `wg.Wait()` để job dở dang chạy nốt khi nhận tín hiệu dừng. |
-| `cron/cron.go` | 16 | Giữ tiến trình cron sống để sweeper chạy: không mở cổng, không nối DB/Redis/Engine. Giữ đúng 1 replica trong triển khai. |
+| `cron/sweeper.go` | 56 | Vòng lặp dọn âm thanh tạm: chạy sweep ngay lúc khởi động và mỗi giờ; không mở cổng, không nối DB/Redis/Engine. Giữ đúng 1 replica. |
 | `config/settings.go` | 283 | **Bảng đặc tả mọi biến môi trường**: tên, mặc định, khoảng hợp lệ, tài liệu. Nhóm `Advanced deployment tuning` có default an toàn và không bắt AI engineer phải đổi. `.env.example` được sinh ra từ đây. Muốn biết biến X làm gì thì đọc đúng một chỗ này. |
 | `config/config.go` | 265 | Đọc bảng trên thành struct `Config`. `requireAll()` chặn khởi động khi thiếu biến bắt buộc; các advanced knobs có range validation và default. `logSummary()` in cấu hình đang có hiệu lực. |
 | `cmd/gen-env/main.go` | 91 | Sinh `.env.example` từ `config/settings.go`. Chạy bằng `go generate ./config`. |
@@ -104,7 +104,7 @@ Hai tệp này quyết định hành vi của phần lớn hệ thống. Đọc 
 | `db/query/*.sql` | 17 truy vấn | Nguồn thật của mọi câu SQL. `sqlc` sinh code Go từ đây → **không sửa `db/sqlc/` bằng tay**, sửa ở đây rồi chạy `sqlc generate`. |
 | `db/sqlc/*.go` | 708 | **Sinh tự động.** Bỏ qua khi review, trừ khi đang kiểm chính bản sinh. |
 | `storage/paths.go` | 51 | Dựng mọi đường dẫn lưu trữ (`TempDir`, `ModeDir`) từ một gốc duy nhất, kèm `safeSegment` làm sạch. Nhỏ, đáng đọc trọn. |
-| `storage/sweeper.go` | 74 | Dọn tệp audio tạm quá hạn, định kỳ và một lần lúc khởi động. |
+| `storage/sweeper.go` | 40 | `SweepTempObjects`: thao tác dữ liệu thuần — liệt kê nhánh temp và xoá tập quá hạn. Vòng lặp chạy định kỳ nằm ở `cron.Run`, không phải ở đây. |
 | `audio/transcode.go` | 118 | Chuyển mã bằng ffmpeg qua pipe (không tệp tạm), có concurrency/timeout lấy từ advanced platform config. Tham số ffmpeg là bảng cố định, không ghép từ đầu vào. |
 
 ### Hàng đợi và tổng hợp
