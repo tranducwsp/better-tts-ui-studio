@@ -94,7 +94,11 @@ Hai tệp này quyết định hành vi của phần lớn hệ thống. Đọc 
 
 | Tệp | Dòng | Chức năng |
 |-----|------|-----------|
-| `state/tasks.go` | 785 | Task bất đồng bộ: tiến độ, hủy, pub/sub cho SSE (fanout nội bộ + Redis khi có nhiều replica), cache audio. Có `GlobalTaskManager` — một trong hai singleton của repo. Tệp phức tạp nhất về đồng thời. |
+| `state/task_item.go` | 204 | Dữ liệu và hành vi của một task: owner, trạng thái, audio trong RAM, cancel và snapshot. |
+| `state/task_manager.go` | 311 | Map task trong RAM, đồng bộ với Redis, quyền sở hữu, cache transcode và cleanup. |
+| `state/task_pubsub.go` | 172 | Redis Pub/Sub và fanout SSE cho TaskItem; gồm generation guard để tránh subscription cũ phát trùng. |
+| `state/redis_state.go` | 126 | Redis client singleton và trạng thái online của user. |
+| `state/manifest.go` | 199 | Manifest singleton và các hàm validate runtime. |
 | `db/db.go` | 289 | Khởi tạo pool pgx; migration và tài khoản mặc định chạy theo `InitOptions` (chỉ web, để nhiều tiến trình không giành cùng một khoá migration). `RegisterJobAndChunk` và `UpdateChunkStatus` là hai hàm ghi được handler dùng — hàm đầu cũng là nơi kiểm job có thuộc người gọi không. |
 | `db/schema.sql` | 52 | 4 bảng: `users`, `user_voices`, `tts_jobs`, `tts_chunks` + index. Đọc để hiểu quan hệ `chunk → job → user` (nền tảng của kiểm quyền task). |
 | `db/query/*.sql` | 17 truy vấn | Nguồn thật của mọi câu SQL. `sqlc` sinh code Go từ đây → **không sửa `db/sqlc/` bằng tay**, sửa ở đây rồi chạy `sqlc generate`. |
