@@ -66,25 +66,17 @@ theo tiến trình. Comment ở đó nói nó chặn "một người dùng ghim 
 nhân, mỗi tiến trình giữ cả đầu vào và đầu ra trong RAM. Thêm nữa `GOMAXPROCS` báo số nhân
 của MÁY, không phải phần cgroup được cấp, nên trần còn nở ra theo kích thước host.
 
-**Sweeper (`storage/sweeper.go`)** — chạy trong worker, một goroutine mỗi tiến trình. Đã
-lấy ra khỏi web đúng vì lý do này, nhưng lấy sang worker thì vấn đề chỉ dịch chỗ: bốn
-worker replica là bốn lượt `LIST` toàn nhánh `temp/` mỗi giờ để xoá đúng cùng một tập tệp.
-Không hỏng vì `Delete` một khoá không tồn tại không phải lỗi (hợp đồng của `Store`), nhưng
-với S3 thì đó là request và tiền.
+**Sweeper** — đã tách thành service riêng (`-mode=cron`), giữ đúng 1 replica.
+Sweeper là cron chứ không phải worker: nó kích hoạt bởi đồng hồ nên nhiều bản không chia
+được việc. Tách ra khỏi worker vì N worker replica sẽ chạy N sweeper cùng quét cùng một tập
+tệp — không hỏng dữ liệu nhưng phí request S3. Cách tách thông thường: để orchestrator giữ
+đúng 1 replica, thay vì thêm cơ chế khoá.
 
-Sweeper là **cron**, không phải worker: nó kích hoạt bởi đồng hồ chứ không bởi hàng đợi,
-nên chạy nhiều bản không chia được việc cho nhau như worker chia job. Nó đang nằm trong
-worker vì đó là tiến trình duy nhất không phải web.
-
-Chưa xử lý vì hiện chỉ chạy một replica mỗi loại, và cả hai chỉ tốn thêm tài nguyên chứ
+Chưa xử lý vì hiện chỉ chạy một replica, và nó chỉ tốn thêm tài nguyên chứ
 không sai kết quả. Khi thật sự scale:
 
 - `transcodeSlots` — chuyển sang trần dùng chung trên Redis (cùng khuôn với rate limiter đã
   chuyển), hoặc đọc quota cgroup thay cho `GOMAXPROCS`.
-- Sweeper — cho nó giành khoá Redis (`SET lock:sweeper <id> NX EX`) rồi mới quét, để N
-  replica thì đúng một đứa chạy mỗi giờ. Cách này đúng với mọi số replica, kể cả khi ai đó
-  scale lên — khác với việc tách thành service riêng, nơi tính đúng đắn phụ thuộc vào việc
-  người vận hành nhớ giữ đúng một bản.
 
 ---
 

@@ -23,12 +23,17 @@ const (
 	ModeWeb Mode = "web"
 	// ModeWorker nhặt job ra chạy, không mở cổng nào.
 	ModeWorker Mode = "worker"
+	// ModeCron chạy các tác vụ nền định kỳ (dọn âm thanh tạm).
+	//
+	// Tách khỏi worker vì sweeper là cron, không phải worker: nó kích hoạt bởi đồng hồ chứ
+	// không bởi hàng đợi, nên nhiều bản không chia được việc cho nhau. Giữ đúng 1 replica.
+	ModeCron Mode = "cron"
 )
 
 // ParseMode kiểm giá trị cờ -mode.
 func ParseMode(s string) (Mode, error) {
 	switch Mode(s) {
-	case ModeWeb, ModeWorker:
+	case ModeWeb, ModeWorker, ModeCron:
 		return Mode(s), nil
 	default:
 		return "", fmt.Errorf("-mode=%q không hợp lệ; chỉ nhận %q hoặc %q", s, ModeWeb, ModeWorker)
@@ -86,15 +91,17 @@ func Bootstrap(cfg *config.Config, mode Mode) *client.CoreTTSClient {
 	// Xoá định kỳ âm thanh tạm. Mỗi lần tổng hợp ghi một đối tượng vào nhánh temp và trước
 	// đây không có gì dọn chúng, nên kho chỉ có thể phình lên.
 	//
-	// Chỉ chạy ở worker: bộ quét là việc nền, và để nó ở web nghĩa là mỗi replica web thêm
-	// một lượt quét toàn bộ nhánh temp mỗi giờ — với S3 thì đó là tiền và hạn mức API, đổi
-	// lại không có gì vì các lượt quét xoá đúng cùng một tập tệp.
-	if mode == ModeWorker {
+	// Chỉ chạy ở cron: sweeper là cron, không phải worker — nó kích hoạt bởi đồng hồ nên
+	// nhiều bản không chia được việc. Giữ đúng 1 replica.
+	if mode == ModeCron {
+		// Cron chỉ cần kho. DB, Redis, Manifest đều là phụ thuộc của web và worker — nối
+		// chúng ở đây chỉ để rồi không dùng, và làm người đọc tưởng cron cần chúng.
 		storage.StartTempSweeper(
 			storage.Global,
 			time.Duration(cfg.TempRetentionHours)*time.Hour,
 			storage.DefaultSweepInterval,
 		)
+		return nil
 	}
 
 	// Kết nối DB. Migration và tài khoản khởi tạo chỉ thuộc về web — xem db.InitOptions.

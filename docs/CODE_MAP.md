@@ -48,6 +48,7 @@ tổng hợp giọng nói, và nó chạm vào mọi tầng:
 | `app/bootstrap.go` | 167 | Chuỗi khởi tạo dùng chung cho cả hai chế độ, và **cổng gate**: manifest phải nạp được trước khi listener mở. Chứa `manifestDiscoveryTimeout` (90s) — con số vận hành đáng chất vấn nhất trong repo. Cũng là nơi khai bước nào KHÔNG dùng chung: migration và tài khoản khởi tạo chỉ chạy ở web, sweeper chỉ chạy ở worker. |
 | `web/server.go` | 78 | `http.Server` cùng bốn hạn thời gian của nó, và trình tự tắt gọn. |
 | `worker/worker.go` | 84 | Vòng lặp nhặt job: trần `maxInFlight` mỗi tiến trình, và `wg.Wait()` để job dở dang chạy nốt khi nhận tín hiệu dừng. |
+| `cron/cron.go` | 16 | Giữ tiến trình cron sống để sweeper chạy: không mở cổng, không nối DB/Redis/Engine. Giữ đúng 1 replica trong triển khai. |
 | `config/settings.go` | 194 | **Bảng đặc tả mọi biến môi trường**: tên, mặc định, khoảng hợp lệ, tài liệu. `.env.example` được sinh ra từ đây. Muốn biết biến X làm gì thì đọc đúng một chỗ này. |
 | `config/config.go` | 217 | Đọc bảng trên thành struct `Config`. `requireAll()` chặn khởi động khi thiếu biến bắt buộc. `logSummary()` in cấu hình đang có hiệu lực. |
 | `cmd/gen-env/main.go` | 91 | Sinh `.env.example` từ `config/settings.go`. Chạy bằng `go generate ./config`. |

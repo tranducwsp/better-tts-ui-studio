@@ -6,6 +6,7 @@ import (
 
 	"core-backend/app"
 	"core-backend/config"
+	"core-backend/cron"
 	"core-backend/web"
 	"core-backend/worker"
 )
@@ -34,6 +35,8 @@ func main() {
 	switch mode {
 	case app.ModeWorker:
 		worker.Run(ttsClient)
+	case app.ModeCron:
+		cron.Run()
 	default:
 		web.Run(cfg, ttsClient)
 	}
