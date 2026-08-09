@@ -21,6 +21,7 @@
   }: Props = $props();
 
   let isRegexMode = $state(false);
+  let isExtracting = $state(false);
   let findQuery = $state('');
   let replaceQuery = $state('');
   let uploadedFileName = $state('');
@@ -38,6 +39,10 @@
     const target = e.target as HTMLInputElement;
     if (!target.files?.length) return;
     const file = target.files[0];
+    isExtracting = true;
+    // Trả lại control trước lần read đầu: document lớn khiến fetch mất vài giây, và phần tử
+    // input vừa chọn file đang "bận" — không tắt spinner thì khung hình không hiện.
+    await Promise.resolve();
     toast.show('Reading document...', 'info');
     try {
       const extracted = await extractTextFromFile(file);
@@ -51,6 +56,8 @@
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       toast.show('Error reading file: ' + errMsg, 'error');
+    } finally {
+      isExtracting = false;
     }
     target.value = ''; // Reset input
   }
@@ -280,6 +287,9 @@
     <div style="display: flex; justify-content: space-between; align-items: center;">
       <label for="main-text" style="margin-bottom: 0; font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 8px;">
         <i class="fa-solid fa-file-lines"></i> Input Text
+        {#if isExtracting}
+          <i class="fa-solid fa-spinner fa-spin" style="color: var(--primary);" aria-label="Reading document"></i>
+        {/if}
         {#if isReadOnly}
           <span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); font-size: 0.75rem; margin-left: 8px;">
             Locked
@@ -294,8 +304,8 @@
                 <i class="fa-solid fa-check"></i> {uploadedFileName}
               </span>
             {/if}
-            <button class="upload-link" onclick={() => fileInput?.click()} style="background: none; border: none;">
-              <i class="fa-solid fa-file-import"></i> Upload file
+            <button class="upload-link" onclick={() => fileInput?.click()} disabled={isExtracting} style="background: none; border: none; opacity: {isExtracting ? 0.5 : 1}; cursor: {isExtracting ? 'wait' : 'pointer'};">
+              <i class="fa-solid fa-file-import"></i> {isExtracting ? 'Reading...' : 'Upload file'}
             </button>
             <button onclick={() => runAutoFormat(true)} disabled={isReadOnly} style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 3px 10px; border-radius: 6px; font-size: 0.8em; font-weight: 500; cursor: {isReadOnly ? 'not-allowed' : 'pointer'}; opacity: {isReadOnly ? 0.5 : 1}; display: flex; align-items: center; gap: 4px;">
               <i class="fa-solid fa-wand-magic-sparkles"></i> Clean Text

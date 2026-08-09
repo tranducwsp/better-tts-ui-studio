@@ -11,12 +11,19 @@ import (
 	"sync/atomic"
 	"time"
 
+	"core-backend/db/sqlc"
 	"core-backend/state"
 
 	"github.com/redis/go-redis/v9"
 )
 
 // RateLimit giới hạn số request theo IP trong một cửa sổ thời gian trượt.
+//
+// scope tách khoá Redis giữa các nhóm route: register+login dùng chung một budget (dò mật
+// khẩu / tạo rác), còn refresh phải có budget RIÊNG — nó bị frontend gọi trên mỗi lần tải
+// trang, kể cả khi người dùng chưa đăng nhập, nên gộp chung với login sẽ để một người chỉ cần
+// tải lại trang vài lần là làm cạn budget và chặn cả đăng nhập của chính họ. Khoá Redis không
+// phân biệt limiter instance nào ghi, nên hai nhóm cùng scope ghi vào một khoá là một budget.
 //
 // Đặt trên /login và /register vì hai route đó là nơi một vòng lặp có giá trị với người
 // ngoài: login không giới hạn là dò mật khẩu miễn phí, còn register không giới hạn vừa tạo
@@ -31,17 +38,39 @@ import (
 // tế là limit × số replica: mỗi tiến trình đếm riêng, nên người dò mật khẩu chỉ cần được load
 // balancer rải đều là có thêm bấy nhiêu lần thử — và đó là trạng thái mặc định của một
 // deployment nhiều node, không phải trường hợp hiếm.
-func RateLimit(limit int, window time.Duration) func(http.Handler) http.Handler {
-	l := &ipLimiter{
+func RateLimit(scope string, limit int, window time.Duration) func(http.Handler) http.Handler {
+	return rateLimitBy(func(r *http.Request) string { return "ip:" + ClientIP(r) }, scope, limit, window)
+}
+
+// RateLimitUser giống RateLimit nhưng khoá theo user đã xác thực thay vì IP.
+//
+// Dùng cho route nặng (như /extract-text): một người dùng hợp lệ vẫn có thể quấy tiếp bằng cách
+// giữ chu kỳ gọi; khoá theo user ID đếm đúng từng người, không bị ai đó dưới cùng NAT ăn hết
+// budget chung.
+func RateLimitUser(scope string, limit int, window time.Duration) func(http.Handler) http.Handler {
+	return rateLimitBy(func(r *http.Request) string {
+		if u, ok := r.Context().Value(UserContextKey).(*sqlc.User); ok && u != nil && u.ID != "" {
+			return "user:" + u.ID
+		}
+		return "ip:" + ClientIP(r)
+	}, scope, limit, window)
+}
+
+// rateLimitBy là phần chung của RateLimit và RateLimitUser: keyFn quyết định danh tính người
+// gọi, phần còn lại (cửa sổ trượt Redis, fallback RAM, reap) dùng chung.
+func rateLimitBy(keyFn func(*http.Request) string, scope string, limit int, window time.Duration) func(http.Handler) http.Handler {
+	l := &keyedLimiter{
+		scope:  scope,
 		limit:  limit,
 		window: window,
+		keyFn:  keyFn,
 		hits:   make(map[string][]time.Time),
 	}
 	go l.reap()
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !l.allow(r.Context(), clientIP(r), time.Now()) {
+			if !l.allow(r.Context(), keyFn(r), time.Now()) {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", strconv.Itoa(int(window.Seconds())))
 				w.WriteHeader(http.StatusTooManyRequests)
@@ -75,9 +104,11 @@ redis.call('EXPIRE', KEYS[1], ARGV[4])
 return 1
 `)
 
-type ipLimiter struct {
+type keyedLimiter struct {
+	scope  string
 	limit  int
 	window time.Duration
+	keyFn  func(*http.Request) string
 
 	mu   sync.Mutex
 	hits map[string][]time.Time
@@ -88,10 +119,10 @@ type ipLimiter struct {
 }
 
 // rateLimitKey đặt tiền tố để khoá không đụng khoá nào khác trên cùng Redis.
-func rateLimitKey(ip string) string { return "ratelimit:ip:" + ip }
+func rateLimitKey(scope, key string) string { return "ratelimit:" + scope + ":" + key }
 
 // allow ghi nhận một lượt gọi và cho biết nó có nằm trong hạn mức không.
-func (l *ipLimiter) allow(ctx context.Context, ip string, now time.Time) bool {
+func (l *keyedLimiter) allow(ctx context.Context, key string, now time.Time) bool {
 	if rdb := state.RedisClient; rdb != nil {
 		// Không dùng context của request: nó bị huỷ khi client ngắt kết nối, và một người dò
 		// mật khẩu tự ngắt sau mỗi lượt sẽ khiến lượt đó không được tính.
@@ -99,7 +130,7 @@ func (l *ipLimiter) allow(ctx context.Context, ip string, now time.Time) bool {
 		defer cancel()
 
 		res, err := slidingWindowScript.Run(opCtx, rdb,
-			[]string{rateLimitKey(ip)},
+			[]string{rateLimitKey(l.scope, key)},
 			now.Add(-l.window).UnixNano(),
 			now.UnixNano(),
 			l.limit,
@@ -121,32 +152,32 @@ func (l *ipLimiter) allow(ctx context.Context, ip string, now time.Time) bool {
 	defer l.mu.Unlock()
 
 	// Lọc tại chỗ để không cấp phát lại slice cho mỗi request.
-	kept := l.hits[ip][:0]
-	for _, t := range l.hits[ip] {
+	kept := l.hits[key][:0]
+	for _, t := range l.hits[key] {
 		if t.After(cutoff) {
 			kept = append(kept, t)
 		}
 	}
 
 	if len(kept) >= l.limit {
-		l.hits[ip] = kept
+		l.hits[key] = kept
 		return false
 	}
 
-	l.hits[ip] = append(kept, now)
+	l.hits[key] = append(kept, now)
 	return true
 }
 
-// reap dọn các IP đã hết dấu vết khỏi bộ đếm RAM.
+// reap dọn các khoá đã hết dấu vết khỏi bộ đếm RAM.
 //
 // Không có nó, map giữ một khoá cho mỗi IP từng gọi tới và chỉ lớn lên — tức là một cách rẻ
 // để làm cạn RAM của chính máy chủ mà lớp giới hạn này đang bảo vệ. Nhánh Redis không cần:
 // EXPIRE trong script tự thu hồi khoá.
-func (l *ipLimiter) reap() {
+func (l *keyedLimiter) reap() {
 	for range time.Tick(10 * time.Minute) {
 		cutoff := time.Now().Add(-l.window)
 		l.mu.Lock()
-		for ip, ts := range l.hits {
+		for key, ts := range l.hits {
 			fresh := false
 			for _, t := range ts {
 				if t.After(cutoff) {
@@ -155,7 +186,7 @@ func (l *ipLimiter) reap() {
 				}
 			}
 			if !fresh {
-				delete(l.hits, ip)
+				delete(l.hits, key)
 			}
 		}
 		l.mu.Unlock()
@@ -209,7 +240,7 @@ func SetTrustedProxies(cidrs []string) {
 // Lấy phần tử CUỐI CÙNG mà vẫn còn nằm ngoài dải tin cậy, duyệt từ phải sang: các phần tử
 // bên phải do proxy của ta ghi nên tin được, còn phần bên trái thì client đã có thể bịa sẵn
 // trước khi request tới proxy.
-func clientIP(r *http.Request) string {
+func ClientIP(r *http.Request) string {
 	remote := r.RemoteAddr
 	if host, _, err := net.SplitHostPort(remote); err == nil {
 		remote = host

@@ -200,7 +200,7 @@ var Settings = []Setting{
 			"giẫm lên nhau. Ví dụ \"prod\" hoặc \"staging\".",
 	},
 	{
-		Key: "MAX_UPLOAD_SIZE_MB", Kind: KindInt, Default: "256", Min: 1, Max: 10240,
+		Key: "MAX_UPLOAD_SIZE_MB", Kind: KindInt, Default: "50", Min: 1, Max: 10240,
 		Group: "Storage",
 		Doc: "Trần cứng của hạ tầng cho một request tải lên — nói về RAM và băng thông của\n" +
 			"deployment, không phải về model. Engine khai trần riêng trong\n" +
@@ -238,6 +238,14 @@ var Settings = []Setting{
 		Group: "Advanced deployment tuning",
 		Doc: "Thời gian tối đa cho một lượt chuyển mã audio. Đây là policy của platform, không phải\n" +
 			"thời gian Engine tổng hợp.",
+	},
+	{
+		Key: "STALE_CHUNK_AFTER_MINUTES", Kind: KindInt, Default: "30", Min: 1, Max: 1440,
+		Group: "Advanced deployment tuning",
+		Doc: "Một chunk còn đứng ở pending/processing quá ngưỡng này bị coi là mồ côi (mất hàng đợi,\n" +
+			"worker chết, Redis restart) và được cron đưa về error. Ngưỡng phải lớn hơn thời gian tối\n" +
+			"đa một chunk hợp lệ có thể chạy — tức TTS_CLIENT_TIMEOUT_SECONDS cộng thời gian chờ\n" +
+			"queue tệ nhất — nếu không một job dài/thẳng hàng chờ bị đánh chết oan.",
 	},
 	{
 		Key: "AUTH_RATE_LIMIT_REQUESTS", Kind: KindInt, Default: "10", Min: 1, Max: 1000,

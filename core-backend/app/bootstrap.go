@@ -41,12 +41,15 @@ func BootstrapWorker(cfg *config.Config) *client.CoreTTSClient {
 	return bootstrapEngine(cfg, db.InitOptions{})
 }
 
-// BootstrapCron chỉ khởi tạo storage rồi trả về kho cho cron.Run tự chạy vòng lặp.
+// BootstrapCron khởi tạo storage và DB rồi trả về kho cho cron.Run tự chạy vòng lặp.
 //
-// Cron không cần DB, Redis hay Engine: nó chỉ LIST/DELETE các object temp. Giữ phụ thuộc của
-// nó nhỏ và rõ để một lỗi ở database không làm chết một bộ dọn rác không liên quan.
+// Cron không cần Redis hay Engine: nó LIST/DELETE các object temp và Reconcile chunk mồ côi
+// trực tiếp trên DB. DB là phụ thuộc mới — cần cho việc đưa chunk kẹt về error — nhưng vẫn
+// không có Redis, và migration/seed vẫn không chạy ở đây (cron chỉ đọc/ghi trạng thái, không
+// sở hữu schema).
 func BootstrapCron(cfg *config.Config) storage.Store {
 	initStorage(cfg)
+	db.InitDB(cfg, db.InitOptions{})
 	return storage.Global
 }
 

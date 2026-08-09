@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -105,6 +107,21 @@ func (h *TasksHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state.GlobalTaskManager.Cancel(taskID)
+
+	// Ghi trạng thái xuống DB ngay, không chờ worker. Trước đây chỉ có Cancel ở tầng state: job
+	// còn đang xếp hàng thì không ai đặt chunk về 'cancelled', bảng tts_chunks cứ đứng ở
+	// 'processing' mãi dù người dùng đã bấm dừng và giao diện đã hiện "cancelled".
+	//
+	// Dùng context.Background() thay vì r.Context(): người dùng có thể đã ngắt kết nối ngay sau
+	// khi gửi lệnh dừng, và bản ghi này vẫn phải có hiệu lực dù client không nghe phản hồi.
+	// Update là dạng có điều kiện (chỉ chuyển từ pending/processing) nên không đè 'done'/'error'
+	// nếu worker thắng cuộc đua.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := db.CancelChunk(ctx, taskID); err != nil {
+		log.Printf("Task %s: huỷ ở tầng state được nhưng không ghi được trạng thái vào DB: %v", taskID, err)
+	}
+
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Cancellation requested"})
 }
 
@@ -236,7 +253,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	// chạy lại ffmpeg, nên không cần làm hỏng phản hồi đang thành công. Vẫn log để đĩa đầy
 	// không biểu hiện thành "sao dạo này tải chậm".
 	transKey := storage.TranscodeKey(taskID, format)
-	if err := storage.Global.Put(r.Context(), transKey, converted); err != nil {
+	if err := storage.Global.Put(r.Context(), transKey, bytes.NewReader(converted)); err != nil {
 		log.Printf("Không cất được bản chuyển mã %s.%s: %v", taskID, format, err)
 		// Không cất được thì không ký được: URL sẽ trỏ vào đối tượng không tồn tại.
 		writeAudio(w, converted, format)

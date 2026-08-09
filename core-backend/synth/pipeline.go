@@ -1,6 +1,7 @@
 package synth
 
 import (
+	"bytes"
 	"context"
 	"log"
 
@@ -79,7 +80,7 @@ func Run(ctx context.Context, tts *client.CoreTTSClient, job queue.Job) {
 	// lỗi, và không có dòng log này thì nguyên nhân không thể truy ra từ triệu chứng.
 	audioKey := storage.TempKey(job.TaskID, sourceFormat)
 	wroteToStore := true
-	if err := storage.Global.Put(ctx, audioKey, audioBytes); err != nil {
+	if err := storage.Global.Put(ctx, audioKey, bytes.NewReader(audioBytes)); err != nil {
 		log.Printf("Không ghi được âm thanh task %s vào kho (%s): %v — giữ trong RAM", job.TaskID, audioKey, err)
 		wroteToStore = false
 	}

@@ -8,14 +8,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuthSession struct {
+	ID              string             `json:"id"`
+	SessionFamilyID string             `json:"session_family_id"`
+	UserID          string             `json:"user_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt       pgtype.Timestamptz `json:"revoked_at"`
+	ReplacedBy      pgtype.Text        `json:"replaced_by"`
+	UserAgent       pgtype.Text        `json:"user_agent"`
+	Ip              pgtype.Text        `json:"ip"`
+}
+
 type TtsChunk struct {
-	ID         string      `json:"id"`
-	JobID      string      `json:"job_id"`
-	ChunkIndex int32       `json:"chunk_index"`
-	Text       string      `json:"text"`
-	AudioPath  pgtype.Text `json:"audio_path"`
-	Status     string      `json:"status"`
-	ErrorMsg   pgtype.Text `json:"error_msg"`
+	ID         string             `json:"id"`
+	JobID      string             `json:"job_id"`
+	ChunkIndex int32              `json:"chunk_index"`
+	Text       string             `json:"text"`
+	AudioPath  pgtype.Text        `json:"audio_path"`
+	Status     string             `json:"status"`
+	ErrorMsg   pgtype.Text        `json:"error_msg"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
 type TtsJob struct {

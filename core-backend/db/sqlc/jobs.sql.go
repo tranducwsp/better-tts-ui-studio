@@ -141,14 +141,19 @@ SELECT
 FROM tts_jobs j
 LEFT JOIN tts_chunks c ON j.id = c.job_id
 WHERE j.user_id = $1
+  AND ($3::timestamptz IS NULL
+       OR j.created_at < $3::timestamptz
+       OR (j.created_at = $3::timestamptz AND j.id < $4::text))
 GROUP BY j.id
-ORDER BY j.created_at DESC
+ORDER BY j.created_at DESC, j.id DESC
 LIMIT $2
 `
 
 type ListUserHistorySummariesParams struct {
-	UserID string `json:"user_id"`
-	Limit  int32  `json:"limit"`
+	UserID          string             `json:"user_id"`
+	Limit           int32              `json:"limit"`
+	BeforeCreatedAt pgtype.Timestamptz `json:"before_created_at"`
+	BeforeID        string             `json:"before_id"`
 }
 
 type ListUserHistorySummariesRow struct {
@@ -168,8 +173,23 @@ type ListUserHistorySummariesRow struct {
 //
 // Có LIMIT vì trước đây truy vấn trả về mọi job của người dùng: ai dùng nhiều thì mỗi lần
 // mở lịch sử là tổng hợp rồi truyền về hàng nghìn dòng mà giao diện chỉ hiển thị một phần.
+//
+// Phân trang theo con trỏ (keyset) thay vì OFFSET: trang kế tiếp truyền `before_id` của item
+// cuối cùng trang trước cùng `created_at` của nó. Điều kiện so sánh (created_at, id) theo thứ
+// tự của ORDER BY nên bộ lập kế hoạch dùng được chỉ mục thay vì quét dòng thừa; OFFSET thì
+// mỗi trang sâu thêm một nấc phải bỏ đi lại càng nhiều dòng. `before_created_at` nhận NULL
+// cho "trang đầu" — lúc đó mệnh đề rơi vào nhánh đầu nên không lọc gì. Trang tiếp theo chỉ
+// có giá trị khi hai cột cùng được truyền (before_id là cột phụ để chống trùng timestamp).
+//
+// GROUP BY j.id: nhiều chunk nằm trong cùng một job khi tách chạy worker — tôi cần làm phẳng
+// chúng ra một hàng summary.
 func (q *Queries) ListUserHistorySummaries(ctx context.Context, arg ListUserHistorySummariesParams) ([]ListUserHistorySummariesRow, error) {
-	rows, err := q.db.Query(ctx, listUserHistorySummaries, arg.UserID, arg.Limit)
+	rows, err := q.db.Query(ctx, listUserHistorySummaries,
+		arg.UserID,
+		arg.Limit,
+		arg.BeforeCreatedAt,
+		arg.BeforeID,
+	)
 	if err != nil {
 		return nil, err
 	}

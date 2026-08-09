@@ -176,6 +176,7 @@ services:
     container_name: ai-core-cron
     environment:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY chưa được đặt trong .env}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
       - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
       - STORAGE_DIR=/app/storage
       - S3_BUCKET=${S3_BUCKET:-}
@@ -188,6 +189,9 @@ services:
       - TEMP_AUDIO_RETENTION_HOURS=${TEMP_AUDIO_RETENTION_HOURS:-24}
     volumes:
       - ./core-backend/storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
     command: ./cron
     restart: unless-stopped
 

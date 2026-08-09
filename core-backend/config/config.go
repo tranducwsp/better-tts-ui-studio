@@ -62,6 +62,7 @@ type Config struct {
 	TranscodeTimeoutSeconds    int
 	AuthRateLimitRequests      int
 	AuthRateLimitWindowSeconds int
+	StaleChunkAfterMinutes     int
 
 	// TrustedProxies là các dải CIDR được phép đặt X-Forwarded-For.
 	//
@@ -201,6 +202,7 @@ func LoadConfig() *Config {
 		TranscodeTimeoutSeconds:    num("TRANSCODE_TIMEOUT_SECONDS"),
 		AuthRateLimitRequests:      num("AUTH_RATE_LIMIT_REQUESTS"),
 		AuthRateLimitWindowSeconds: num("AUTH_RATE_LIMIT_WINDOW_SECONDS"),
+		StaleChunkAfterMinutes:     num("STALE_CHUNK_AFTER_MINUTES"),
 		TrustedProxies:             trustedProxies,
 	}
 

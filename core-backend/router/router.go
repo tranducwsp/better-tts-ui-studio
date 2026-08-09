@@ -14,6 +14,19 @@ import (
 	"github.com/go-chi/cors"
 )
 
+// Hạn mức riêng của /extract-text — endpoint nặng nhất của backend.
+//
+// Mỗi request bóc chữ giữ tới ~32 MiB RAM (xem phần trần trong handlers/utils.go), nên một
+// loạt request cùng lúc nhân lượng bộ nhớ đó lên: đây là chốt chặn global cuối cùng, không thể
+// điều khiển bằng input hay tài khoản. Rate-limit theo user thì thoáng (20 lượt/10 phút) để
+// hàng nghìn người dùng hợp lệ đều đi qua được — nó chỉ có nhiệm vụ chặn một người giữ vòng
+// lặp gọi liên tục, cúp cầu hay không.
+const (
+	extractMaxConcurrent     = 8
+	extractRateLimitRequests = 20
+	extractRateLimitWindow   = 10 * time.Minute
+)
+
 // NewRouter tạo và cấu hình toàn bộ HTTP Router (go-chi) kèm Middlewares và API Endpoints.
 func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler {
 	r := chi.NewRouter()
@@ -52,24 +65,35 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 	engineSyncHandler := handlers.NewEngineSyncHandler(ttsClient, cfg.FEBuilderURL)
 
 	r.Route("/api", func(r chi.Router) {
+		// Cap body của mọi payload JSON/text (C3). Tác dụng phụ có lợi: với Content-Length
+		// vượt trần, chi trả lỗi 413 ngay khi ghi chứ không phải sau khi handler xử lý xong.
+		r.Use(middleware.BodyLimit)
+
 		// Public Auth & Engine Info routes
 		r.Get("/info", handlers.GetEngineInfo)
 
-		// Chỉ hai route này bị giới hạn nhịp: chúng là nơi một vòng lặp có giá trị với người
-		// ngoài (dò mật khẩu, tạo tài khoản rác, và mỗi lượt là một lần bcrypt). Các route đã
-		// đăng nhập không cần lớp này vì đã có danh tính để truy vết.
+		// Chỉ các route cần bảo vệ dò mật khẩu / tạo rác mới nằm trong nhóm này. Mỗi nhóm
+		// có khoá Redis riêng (scope khác nhau), nên refresh không ăn budget của login.
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RateLimit(cfg.AuthRateLimitRequests, time.Duration(cfg.AuthRateLimitWindowSeconds)*time.Second))
+			r.Use(middleware.RateLimit("auth", cfg.AuthRateLimitRequests, time.Duration(cfg.AuthRateLimitWindowSeconds)*time.Second))
 
 			r.Post("/register", authHandler.Register)
 			r.Post("/login", authHandler.Login)
 		})
 
-		// Refresh chỉ đọc refresh_token từ HttpOnly cookie. Không nhận refresh token trong
-		// Authorization header hay body.
-		r.Post("/auth/refresh", authHandler.Refresh)
+		// Refresh có budget riêng: frontend gọi nó trên mỗi lần tải trang (kể cả khi chưa
+		// đăng nhập), gộp chung với login sẽ làm cạn budget của chính người dùng.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RateLimit("refresh", cfg.AuthRateLimitRequests, time.Duration(cfg.AuthRateLimitWindowSeconds)*time.Second))
 
-		r.Post("/logout", authHandler.Logout)
+			// Refresh chỉ đọc refresh_token từ HttpOnly cookie. Không nhận refresh token trong
+			// Authorization header hay body.
+			r.Post("/auth/refresh", authHandler.Refresh)
+		})
+
+		// Logout phải ở cùng scope Path=/api/auth với refresh cookie để cookie được gửi tới
+		// logout — server cần nó để thu hồi phiên phía DB.
+		r.Post("/auth/logout", authHandler.Logout)
 
 		// Protected routes (Require active/approved user)
 		r.Group(func(r chi.Router) {
@@ -98,8 +122,15 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 			r.Get("/tasks/{task_id}/audio", tasksHandler.GetTaskAudio)
 			r.Get("/stream/tasks/{task_id}", tasksHandler.StreamTaskProgress)
 
-			// Utils
-			r.Post("/extract-text", utilsHandler.ExtractText)
+			// Utils — /extract-text có hai lớp bảo vệ riêng, không áp dụng cho route khác:
+			//   * ConcurrencyLimit dừng lượng bộ nhớ tổng (mỗi request ~32 MiB),
+			//   * RateLimitUser khoá theo user đã xác thực (fallback IP) để một tài khoản
+			//     giữ chu kỳ gọi không ăn hết chỗ của những người dùng khác.
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConcurrencyLimit(extractMaxConcurrent))
+				r.Use(middleware.RateLimitUser("extract", extractRateLimitRequests, extractRateLimitWindow))
+				r.Post("/extract-text", utilsHandler.ExtractText)
+			})
 		})
 
 		// Admin routes

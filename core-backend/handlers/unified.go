@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"core-backend/client"
 	"core-backend/db"
@@ -76,15 +77,23 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if supportsPreset {
-		presetVoices, err := h.TTSClient.GetVoices(modelID)
-		if err == nil {
-			for _, v := range presetVoices {
-				unifiedList = append(unifiedList, UnifiedVoiceResponse{
-					ID:           v.ID,
-					Name:         v.Name,
-					Descriptions: v.Descriptions,
-				})
+		// Giọng preset là thứ thay đổi hiếm, nhưng trước đây mỗi lần mở voice picker là một
+		// lượt HTTP tới engine (timeout 60s) — mở kéo 4 mode là 4 giây hệt như treo. Cache theo
+		// mode; hai lớp hết hạn (TTL + manifest version) nằm trong voice_cache.go.
+		presetVoices, cached := getCachedPresetVoices(modelID, time.Now())
+		if !cached {
+			var fetchErr error
+			presetVoices, fetchErr = h.TTSClient.GetVoices(modelID)
+			if fetchErr == nil {
+				storeCachedPresetVoices(modelID, presetVoices, time.Now())
 			}
+		}
+		for _, v := range presetVoices {
+			unifiedList = append(unifiedList, UnifiedVoiceResponse{
+				ID:           v.ID,
+				Name:         v.Name,
+				Descriptions: v.Descriptions,
+			})
 		}
 	}
 

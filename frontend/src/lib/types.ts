@@ -31,9 +31,15 @@ export interface HistoryItem {
   voice: string;
   speed: number;
   text: string;
+  created_at: string;
   time_ago: string;
   progress: string;
   is_complete: boolean;
+}
+
+export interface HistoryPage {
+  items: HistoryItem[];
+  has_more: boolean;
 }
 
 export interface ChunkItemResponse {

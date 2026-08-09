@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -126,11 +125,11 @@ func isNotFound(err error) bool {
 	return errors.As(err, &nf)
 }
 
-func (s *S3Store) Put(ctx context.Context, key string, data []byte) error {
+func (s *S3Store) Put(ctx context.Context, key string, src io.Reader) error {
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.full(key)),
-		Body:   bytes.NewReader(data),
+		Body:   src,
 	})
 	return err
 }

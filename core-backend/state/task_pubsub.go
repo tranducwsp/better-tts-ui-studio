@@ -161,8 +161,14 @@ func (t *TaskItem) Notify(update TaskUpdate) {
 	}
 
 	pipe := RedisClient.Pipeline()
-	pipe.Publish(ctx, "channel:task:"+t.ID, data)
+	// Ghi trạng thái TRƯỚC khi Publish, cố ý: WatchCancel của worker đọc lại khoá task:<id>
+	// ngay sau khi subscribe, và Cancel dựa trên thứ tự này để đóng khe hở tin Publish bị mất
+	// trước lúc worker kịp đăng ký. Nếu bản ghi có trước lượt đọc thì worker thấy cờ huỷ; nếu
+	// lượt đọc chạy trước bản ghi thì Publish tới sau, tới đúng subscription vừa sẵn sàng. Đảo
+	// ngược thứ tự, một lần chạy có thể lọt giữa "Set chưa xong" và "Publish đã đi qua lúc chưa
+	// ai nghe" — đúng cái khe đang được đóng.
 	pipe.Set(ctx, "task:"+t.ID, taskStateData, redisTaskTTL)
+	pipe.Publish(ctx, "channel:task:"+t.ID, data)
 	_, _ = pipe.Exec(ctx)
 }
 

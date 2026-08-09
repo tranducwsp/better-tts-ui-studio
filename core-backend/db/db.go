@@ -287,3 +287,18 @@ func UpdateChunkStatus(ctx context.Context, taskID, status string, audioPath *st
 	_, err := Queries.UpdateTTSChunkStatus(ctx, params)
 	return err
 }
+
+// CancelChunk chuyển chunk còn đang chờ/xử lý sang 'cancelled' ngay tại thời điểm huỷ.
+//
+// Tách khỏi UpdateChunkStatus vì đây là một ghi có điều kiện: chỉ chuyển từ pending/processing
+// để không đè kết quả nếu worker thắng cuộc đua và đã ghi 'done'/'error' trước. Trả về số dòng
+// thực sự đổi, dùng cho log. Ghi DB này nằm ở handler CancelTask chứ không chờ worker: job còn
+// đang xếp hàng thì không ai khác sẽ đặt chunk về 'cancelled'.
+func CancelChunk(ctx context.Context, taskID string) (int64, error) {
+	// Handler test huỷ task chạy không DB (Queries = nil): ghi DB là tuỳ chọn, bỏ qua im lặng
+	// thay vì panic nil. Production luôn có Queries sau InitDB nên nhánh này không bao giờ chạy.
+	if Queries == nil {
+		return 0, nil
+	}
+	return Queries.CancelTTSChunk(ctx, taskID)
+}

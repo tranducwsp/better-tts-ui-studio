@@ -1,5 +1,5 @@
-import type { UserResponse, VoiceOption, Preset, HistoryItem, UniversalManifest, JobDetailResponse, ChunkItemResponse } from './types';
-export type { UserResponse, VoiceOption, Preset, HistoryItem, UniversalManifest, JobDetailResponse, ChunkItemResponse };
+import type { HistoryPage, UserResponse, VoiceOption, Preset, HistoryItem, UniversalManifest, JobDetailResponse, ChunkItemResponse } from './types';
+export type { HistoryPage, UserResponse, VoiceOption, Preset, HistoryItem, UniversalManifest, JobDetailResponse, ChunkItemResponse };
 
 export async function fetchManifest(): Promise<UniversalManifest | null> {
   try {
@@ -14,10 +14,19 @@ export async function fetchManifest(): Promise<UniversalManifest | null> {
 
 export async function refreshSession(): Promise<boolean> {
   try {
-    const res = await fetch('/api/auth/refresh', {
+    let res = await fetch('/api/auth/refresh', {
       method: 'POST',
       credentials: 'include',
     });
+    // Rotation: nếu một tab khác vừa rotate trước đó, cookie trong jar đã là token mới nhất
+    // nhưng lượt gửi này mang token cũ bị trả 401 ("already used"). Gửi lại một lần với đúng
+    // cookie hiện tại là tự sửa; lần thứ hai vẫn 401 mới thực sự là phiên chết.
+    if (res.status === 401) {
+      res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    }
     return res.ok;
   } catch {
     return false;
@@ -70,7 +79,7 @@ export async function registerUser(username: string, password: string): Promise<
 export { loginUser as login, registerUser as register };
 
 export async function logout(): Promise<void> {
-  await fetch('/api/logout', {
+  await fetch('/api/auth/logout', {
     method: 'POST',
     credentials: 'include',
   });
@@ -313,8 +322,21 @@ export function subscribeTaskStream(
   };
 }
 
-export async function fetchHistory(): Promise<HistoryItem[]> {
-  const res = await fetch('/api/history', { credentials: 'include' });
+// HistoryCursor là vị trí dừng của trang trước để lấy trang sau: created_at và job_id của item
+// cuối cùng. Truyền null cho trang đầu tiên.
+export interface HistoryCursor {
+  created_at: string;
+  job_id: string;
+}
+
+export async function fetchHistory(before: HistoryCursor | null = null): Promise<HistoryPage> {
+  const params = new URLSearchParams();
+  if (before) {
+    params.set('before', before.created_at);
+    params.set('before_id', before.job_id);
+  }
+  const qs = params.toString();
+  const res = await fetch(`/api/history${qs ? `?${qs}` : ''}`, { credentials: 'include' });
   if (!res.ok) throw new Error('Failed to fetch history');
   return await res.json();
 }

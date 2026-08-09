@@ -27,6 +27,16 @@ WHERE id = $1 LIMIT 1;
 --
 -- Có LIMIT vì trước đây truy vấn trả về mọi job của người dùng: ai dùng nhiều thì mỗi lần
 -- mở lịch sử là tổng hợp rồi truyền về hàng nghìn dòng mà giao diện chỉ hiển thị một phần.
+--
+-- Phân trang theo con trỏ (keyset) thay vì OFFSET: trang kế tiếp truyền `before_id` của item
+-- cuối cùng trang trước cùng `created_at` của nó. Điều kiện so sánh (created_at, id) theo thứ
+-- tự của ORDER BY nên bộ lập kế hoạch dùng được chỉ mục thay vì quét dòng thừa; OFFSET thì
+-- mỗi trang sâu thêm một nấc phải bỏ đi lại càng nhiều dòng. `before_created_at` nhận NULL
+-- cho "trang đầu" — lúc đó mệnh đề rơi vào nhánh đầu nên không lọc gì. Trang tiếp theo chỉ
+-- có giá trị khi hai cột cùng được truyền (before_id là cột phụ để chống trùng timestamp).
+--
+-- GROUP BY j.id: nhiều chunk nằm trong cùng một job khi tách chạy worker — tôi cần làm phẳng
+-- chúng ra một hàng summary.
 -- name: ListUserHistorySummaries :many
 SELECT
     j.id AS job_id,
@@ -42,7 +52,10 @@ SELECT
 FROM tts_jobs j
 LEFT JOIN tts_chunks c ON j.id = c.job_id
 WHERE j.user_id = $1
+  AND (sqlc.arg(before_created_at)::timestamptz IS NULL
+       OR j.created_at < sqlc.arg(before_created_at)::timestamptz
+       OR (j.created_at = sqlc.arg(before_created_at)::timestamptz AND j.id < sqlc.arg(before_id)::text))
 GROUP BY j.id
-ORDER BY j.created_at DESC
+ORDER BY j.created_at DESC, j.id DESC
 LIMIT $2;
 

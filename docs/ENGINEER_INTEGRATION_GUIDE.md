@@ -12,7 +12,6 @@ You only need to define your model's capabilities and UI specifications in Pytho
 3. [Configuring UI Controls (`ui_schema`)](#3-configuring-ui-controls-ui_schema)
 4. [Custom Voice Metadata Schema (`voice_metadata_schema`)](#4-custom-voice-metadata-schema-voice_metadata_schema)
 5. [Text Normalization & Cleaning Rules (`auto_format`)](#5-text-normalization--cleaning-rules-auto_format)
-6. [Data Mode Configuration (`ENABLE_AUTH` vs `Shared`)](#6-data-mode-configuration-enable_auth-vs-shared)
 
 ---
 
@@ -139,21 +138,6 @@ DEFAULT_AUTO_FORMAT_RULES = [
     AutoFormatRule(find=r"[^a-zA-Z0-9 \n\t\r.,?!;:\-\"'()\[\]%/“”‘’À-ỹ]", replace="") # Strip strange characters
 ]
 ```
-
----
-
-## 6. Data Mode Configuration (`ENABLE_AUTH` vs `Shared`)
-
-The system supports two deployment modes configured via environment variables:
-
-1. **Authenticated Multi-tenant Mode (`ENABLE_AUTH=true`)**:
-   - Each user registers/logins.
-   - User cloned voices & history are isolated per user under `/storage/{model_id}/{user_id}/`.
-   - Has built-in Admin user management modal.
-
-2. **Shared / Non-authenticated Mode (`ENABLE_AUTH=false`)**:
-   - Ideal for public demos, internal teams, or local desktop use.
-   - All custom cloned voices and history items are shared in `/storage/{model_id}/shared/`.
 
 ---
 

@@ -26,8 +26,10 @@ var ErrNotFound = errors.New("storage: không tìm thấy đối tượng")
 // Mọi phương thức nhận Context vì bản S3 là I/O qua mạng và phải huỷ được. Bản local bỏ qua
 // nó, nhưng người gọi thì viết một kiểu cho cả hai.
 type Store interface {
-	// Put ghi đè nội dung tại khoá.
-	Put(ctx context.Context, key string, data []byte) error
+	// Put ghi nội dung từ src vào khoá. Chấp nhận io.Reader thay vì []byte để người gọi có thể
+	// stream một tệp lớn từ đĩa/khác xuống mà không dựng toàn bộ trong RAM (đường upload giọng
+	// nói trước đây đọc hết tệp vào bộ nhớ chỉ để chuyển vào đây).
+	Put(ctx context.Context, key string, src io.Reader) error
 
 	// Get đọc toàn bộ nội dung. Trả ErrNotFound nếu khoá không tồn tại.
 	Get(ctx context.Context, key string) ([]byte, error)

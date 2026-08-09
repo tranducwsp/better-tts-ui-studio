@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -27,7 +28,7 @@ func newStore(t *testing.T) (storage.Store, string) {
 // quyết định theo chính thời gian đó, nên bài kiểm thử phải điều khiển được nó.
 func writeAged(t *testing.T, s storage.Store, root, key string, size int, age time.Duration) {
 	t.Helper()
-	if err := s.Put(context.Background(), key, make([]byte, size)); err != nil {
+	if err := s.Put(context.Background(), key, bytes.NewReader(make([]byte, size))); err != nil {
 		t.Fatalf("ghi %s: %v", key, err)
 	}
 	full := filepath.Join(root, filepath.FromSlash(key))

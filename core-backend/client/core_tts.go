@@ -170,34 +170,41 @@ func (c *CoreTTSClient) Synthesize(ctx context.Context, text, voice string, spee
 	return respBody, nil
 }
 
-func (c *CoreTTSClient) CloneVoice(fileBytes []byte, filename, name string) (map[string]interface{}, error) {
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
+func (c *CoreTTSClient) CloneVoice(src io.Reader, filename, name string) (map[string]interface{}, error) {
+	// Stream multipart qua pipe thay vì dựng toàn bộ trong bytes.Buffer: một tệp tham chiếu
+	// dài cả phút là hàng chục MB, giữ một bản copy nữa trong RAM ở đây là copy thứ ba của
+	// cùng một tệp (sau parseUpload và storage). Với io.Pipe, engine đọc trực tiếp từ luồng.
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
 
-	part, err := writer.CreateFormFile("file", filename)
+	go func() {
+		defer pw.Close()
+		part, err := writer.CreateFormFile("file", filename)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		if _, err := io.Copy(part, src); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		if err := writer.WriteField("name", name); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		writer.Close()
+	}()
+
+	req, err := http.NewRequest("POST", c.BaseURL+"/voices/clone", pr)
 	if err != nil {
-		return nil, err
-	}
-	if _, err := part.Write(fileBytes); err != nil {
-		return nil, err
-	}
-
-	if err := writer.WriteField("name", name); err != nil {
-		return nil, err
-	}
-
-	if err := writer.Close(); err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", c.BaseURL+"/voices/clone", body)
-	if err != nil {
+		pr.Close()
 		return nil, err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
+		pr.Close() // ngắt pipe để goroutine ghi dừng lại
 		return nil, err
 	}
 	defer resp.Body.Close()

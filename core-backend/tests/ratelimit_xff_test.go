@@ -22,7 +22,7 @@ func countingLimiter(t *testing.T, limit int) (http.Handler, *int) {
 	t.Cleanup(func() { state.RedisClient = prev })
 
 	passed := 0
-	h := middleware.RateLimit(limit, time.Minute)(
+	h := middleware.RateLimit("test", limit, time.Minute)(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			passed++
 			w.WriteHeader(http.StatusOK)

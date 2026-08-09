@@ -39,6 +39,27 @@ func (tm *TaskManager) GetOrCreate(taskID string) *TaskItem {
 		CreatedAt:   time.Now(),
 		subscribers: make(map[chan TaskUpdate]struct{}),
 	}
+
+	// Đọc trạng thái đã ghi trên Redis trước khi dựng bản mới, thay vì ghi đè sạch trơn.
+	//
+	// Tiến trình web ghi trạng thái task lên Redis lúc nhận yêu cầu (Synthesize) — và có thể đã
+	// ghi luôn cờ huỷ vào đó nếu người dùng bấm dừng ngay sau khi gửi. Worker chạy ở tiến trình
+	// riêng không thấy RAM của web, nên bản này là nguồn duy nhất của nó. Ghi đè bằng một
+	// TaskItem "sạch" (Cancel=false, Status=processing) chính là cách một lệnh huỷ biến mất:
+	// worker nhặt job bị huỷ, giẫm lên cancel:true vừa lưu, rồi chạy trọn lượt mà người dùng đã
+	// bấm dừng — DB và giao diện sau đó báo "done" đè lên "cancelled" đã hiện.
+	if RedisClient != nil {
+		ctx, rcancel := context.WithTimeout(context.Background(), taskRedisTimeout)
+		val, rerr := RedisClient.Get(ctx, "task:"+taskID).Result()
+		rcancel()
+		if rerr == nil && val != "" {
+			var remote TaskItem
+			if err := sonic.Unmarshal([]byte(val), &remote); err == nil {
+				item.applyRemoteState(&remote)
+			}
+		}
+	}
+
 	tm.tasks[taskID] = item
 
 	// Đăng ký Key lên Redis nếu có kết nối.
@@ -100,8 +121,10 @@ func (t *TaskItem) SetOwner(userID string) {
 // applyRemoteState cập nhật phần trạng thái điều khiển từ bản đọc được trên Redis.
 //
 // Chỉ chép những trường mà tiến trình khác có thẩm quyền hơn: tiến độ, kết quả, định dạng.
-// Không đụng subscribers hay OwnerID — người đăng ký SSE thuộc về tiến trình này, còn chủ sở
-// hữu đã được xác lập lúc tạo và không đổi.
+// Không đụng subscribers — người đăng ký SSE thuộc về tiến trình này. OwnerID được chép vì
+// task dựng lại từ Redis mang theo chủ sở hữu đã ghi, và SetOwner chỉ gắn khi bản này chưa ai
+// sở hữu. Cancel bắt buộc phải theo: nó là lệnh dừng do tiến trình web ghi, và worker khôi phục
+// TaskItem từ Redis cần nhìn thấy nó để biết lượt tổng hợp phải cắt.
 func (t *TaskItem) applyRemoteState(remote *TaskItem) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -109,6 +132,7 @@ func (t *TaskItem) applyRemoteState(remote *TaskItem) {
 	t.Status = remote.Status
 	t.Progress = remote.Progress
 	t.Error = remote.Error
+	t.Cancel = remote.Cancel
 	if remote.SourceFormat != "" {
 		t.SourceFormat = remote.SourceFormat
 	}

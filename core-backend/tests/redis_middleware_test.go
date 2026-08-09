@@ -84,13 +84,13 @@ func TestRedisRateLimit_SharedAcrossReplicas(t *testing.T) {
 	const ip = "203.0.113.99"
 
 	for i := 1; i <= limit; i++ {
-		replica := middleware.RateLimit(limit, time.Minute)(okHandler())
+		replica := middleware.RateLimit("test", limit, time.Minute)(okHandler())
 		if code := loginOnce(t, replica, ip); code != http.StatusOK {
 			t.Fatalf("lượt %d trong hạn mức phải đi qua, got %d", i, code)
 		}
 	}
 
-	other := middleware.RateLimit(limit, time.Minute)(okHandler())
+	other := middleware.RateLimit("test", limit, time.Minute)(okHandler())
 	if code := loginOnce(t, other, ip); code != http.StatusTooManyRequests {
 		t.Errorf("lượt vượt hạn mức phải bị chặn kể cả khi đi qua replica khác, got %d", code)
 	}
@@ -101,7 +101,7 @@ func TestRedisRateLimit_WindowSlides(t *testing.T) {
 	withRedis(t)
 
 	const ip = "198.51.100.77"
-	h := middleware.RateLimit(2, 2*time.Second)(okHandler())
+	h := middleware.RateLimit("test", 2, 2*time.Second)(okHandler())
 
 	if c1, c2 := loginOnce(t, h, ip), loginOnce(t, h, ip); c1 != http.StatusOK || c2 != http.StatusOK {
 		t.Fatalf("hai lượt đầu phải qua, got %d %d", c1, c2)
@@ -122,7 +122,7 @@ func TestRedisRateLimit_DownFallsBackNotOpen(t *testing.T) {
 	withDeadRedis(t)
 
 	const ip = "203.0.113.5"
-	h := middleware.RateLimit(2, time.Minute)(okHandler())
+	h := middleware.RateLimit("test", 2, time.Minute)(okHandler())
 
 	if c1, c2 := loginOnce(t, h, ip), loginOnce(t, h, ip); c1 != http.StatusOK || c2 != http.StatusOK {
 		t.Fatalf("hai lượt đầu phải qua, got %d %d", c1, c2)

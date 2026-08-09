@@ -174,6 +174,30 @@ func (t *TaskItem) WatchCancel(parent context.Context) (context.Context, func())
 	}
 
 	pubsub := RedisClient.Subscribe(ctx, "channel:task:"+t.ID)
+
+	// Lệnh huỷ tới trong khoảng giữa "kiểm cờ cục bộ" và "bắt đầu nghe kênh" bị mất vĩnh viễn:
+	// Publish chỉ phát cho người đã đăng ký, không có bộ đệm để phát lại. Đóng khe này bằng cách
+	// đọc lại trạng thái trên Redis ngay sau khi subscribe.
+	//
+	// Thứ tự bảo đảm một trong hai đường luôn bắt được lệnh huỷ: Cancel ghi trạng thái (Set)
+	// TRƯỚC khi Publish (xem Notify). Nếu lệnh huỷ chạy trước lượt đọc này thì bản ghi đã trên
+	// Redis để đọc thấy; nếu nó chạy sau, thì Publish cũng tới sau, và subscribe đã được phía
+	// server xác nhận ngay khi lệnh SUBSCRIBE được xử lý (go-redis đọc reply trước khi hàm trả
+	// về) — nên bản tin sẽ tới đúng subscription vừa sẵn sàng. Không một lần chạy nào rơi vào cả
+	// hai lỗ hổng cùng lúc.
+	rctx, rcancel := context.WithTimeout(context.Background(), taskRedisTimeout)
+	val, rerr := RedisClient.Get(rctx, "task:"+t.ID).Result()
+	rcancel()
+	if rerr == nil && val != "" {
+		var remote TaskItem
+		if sonic.Unmarshal([]byte(val), &remote) == nil && (remote.Cancel || remote.Status == "cancelled") {
+			t.RequestCancel()
+			cancel()
+			_ = pubsub.Close()
+			return ctx, cancel
+		}
+	}
+
 	go func() {
 		defer pubsub.Close()
 		ch := pubsub.Channel()

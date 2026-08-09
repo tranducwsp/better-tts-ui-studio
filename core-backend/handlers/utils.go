@@ -12,9 +12,31 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/bytedance/sonic"
 )
+
+// maxExtractBytes là trần số byte đọc từ file upload vào RAM cho việc bóc chữ.
+//
+// Trước đây ExtractText đọc CẢ upload (đến MAX_UPLOAD_SIZE_MB, tối đa 10 GB) và giữ trong RAM
+// suốt quá trình bóc — với file PDF large, fallback còn copy `string(data)` thêm lần nữa.
+// Bóc chữ là best-effort: văn bản thật của một tài liệu hiếm khi vượt vài MB, nên đọc quá
+// ngưỡng này cắt bớt không làm mất gì đáng kể, và một request không còn kéo theo nguy cơ tốn
+// cả GB RAM. Với file .txt chỉ cần chữ đầu, đọc thấp hơn nữa (xem ExtractText).
+const maxExtractBytes = 32 << 20 // 32 MiB
+
+// maxExtractOutputBytes là trần kích thước text trả về, tính theo byte.
+//
+// 200 KiB rộng hơn hầu hết văn bản mà người dùng muốn xem/xoá vào TTS; chặn builder phình theo
+// tài liệu (một DOCX giải nén tới 64 MB text vẫn được bóc hết chỉ để lấy 200 KiB).
+const maxExtractOutputBytes = 200 << 10 // 200 KiB
+
+// maxPdfMatches là trần số match regex xử lý khi bóc PDF.
+//
+// Một PDF crafted có thể chứa trăm nghìn thẻ `(..) Tj`; FindAllSubmatchIndex trả về match thành
+// limiting slice — không chặn thì dựng slice vô hạn và tốn CPU ở mọi input lớn.
+const maxPdfMatches = 100_000
 
 // UtilsHandler xử lý các API tiện ích hỗ trợ đọc và bóc tách văn bản từ file tài liệu upload.
 type UtilsHandler struct{}
@@ -33,6 +55,7 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
 	}
+	defer cleanupMultipartForm(r)
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -42,14 +65,22 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	content, err := io.ReadAll(file)
+	// Đọc giới hạn theo định dạng: với .txt chỉ ghi phần đầu vào textarea, nên chỉ cần lấy đủ
+	// trần output — không mang bản sao hàng chục MB về cho vài trăm KB dùng được. PDF/zip thì
+	// cần đủ buffer để regex scan / trình giải nén chạy, nên dùng trần input 32 MiB.
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	readLimit := int64(maxExtractBytes)
+	if ext == ".txt" {
+		readLimit = maxExtractOutputBytes
+	}
+
+	content, err := io.ReadAll(io.LimitReader(file, readLimit))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read file content"})
 		return
 	}
 
-	ext := strings.ToLower(filepath.Ext(header.Filename))
 	extractedText := ""
 
 	switch ext {
@@ -98,8 +129,22 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
-		"text": strings.TrimSpace(extractedText),
+		"text": strings.TrimSpace(truncateText(extractedText, maxExtractOutputBytes)),
 	})
+}
+
+// truncateText cắt chuỗi về tối đa maxBytes, dừng ở biên giới ký tự UTF-8.
+//
+// Plain `s[:maxBytes]` có thể cắt giữa một rune → cuối text là một ký tự hỏng. JSON encoder xử
+// lý được nhưng người dùng thấy một ô vuông lạ ở cuối bài; lùi về biên giới rune thì đẹp hơn.
+func truncateText(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+	return s[:maxBytes]
 }
 
 // maxDocumentXMLBytes là trần cho phần XML đã giải nén của một tệp DOCX/ODT.
@@ -275,28 +320,66 @@ var (
 // extractPDFText bóc tách các dòng chữ thô từ PDF Stream Objects.
 func extractPDFText(data []byte) (string, error) {
 	var sb strings.Builder
-	matches := rePDFTextObj.FindAllSubmatch(data, -1)
+
+	// FindAllSubmatchIndex trả về cặp chỉ số vào data thay vì thuộc cấp phát []byte cho từng
+	// match như FindAllSubmatch, và tham số thứ hai chặn số match — với input đã bị cắt nhưng
+	// vẫn có thể chứa trăm nghìn thẻ, một slice match vô hạn là cách tốn cả RAM lẫn CPU.
+	matches := rePDFTextObj.FindAllSubmatchIndex(data, maxPdfMatches)
 
 	for _, m := range matches {
-		if len(m[1]) > 0 {
-			sb.Write(m[1])
-			sb.WriteString(" ")
-		} else if len(m[2]) > 0 {
-			subMatches := rePDFStringInArray.FindAllSubmatch(m[2], -1)
-			for _, sm := range subMatches {
-				sb.Write(sm[1])
+		// m là dãy cặp [start,end] liên tiếp: [0:2] toàn khớp, [2:4] nhóm 1 `(...) Tj`,
+		// [4:6] nhóm 2 `[...] TJ`. Nhóm nào không tham gia thì chỉ số của nó là -1.
+		switch {
+		case len(m) >= 4 && m[2] >= 0:
+			sb.Write(data[m[2]:m[3]])
+			sb.WriteByte(' ')
+		case len(m) >= 6 && m[4] >= 0:
+			array := data[m[4]:m[5]]
+			// Trong mảng `[...]` mỗi phần tử lại là `(text)`, và đó là những gì người dùng cần.
+			subs := rePDFStringInArray.FindAllSubmatchIndex(array, maxPdfMatches)
+			for _, sm := range subs {
+				if len(sm) >= 4 && sm[2] >= 0 {
+					sb.Write(array[sm[2]:sm[3]])
+				}
 			}
-			sb.WriteString(" ")
+			sb.WriteByte(' ')
+		}
+
+		if sb.Len() >= maxExtractOutputBytes {
+			break
 		}
 	}
 
 	res := sb.String()
 	if strings.TrimSpace(res) == "" {
-		found := rePDFReadableRun.FindAllString(string(data), -1)
-		res = strings.Join(found, "\n")
+		res = extractPDFReadableRun(data)
 	}
 
 	return res, nil
+}
+
+// extractPDFReadableRun là fallback quét text đọc được bằng regex khi không tìm thấy thẻ chữ.
+//
+// Chạy trên []byte trực tiếp thay vì `string(data)`: bản cũ copy nguyên input thành string rồi
+// mới quét — với file vừa chạm trần input, đó là thêm ~32 MiB RAM không cần thiết.
+func extractPDFReadableRun(data []byte) string {
+	var sb strings.Builder
+	sb.Grow(maxExtractOutputBytes)
+
+	limit := maxExtractOutputBytes
+	for _, m := range rePDFReadableRun.FindAll(data, maxPdfMatches) {
+		if len(m) >= limit {
+			sb.Write(m[:limit])
+			break
+		}
+		sb.Write(m)
+		sb.WriteByte('\n')
+		limit -= len(m) + 1
+		if limit <= 0 {
+			break
+		}
+	}
+	return sb.String()
 }
 
 func fmtError(msg string) error {

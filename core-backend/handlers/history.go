@@ -11,6 +11,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // HistoryHandler xử lý các API xem lịch sử chuyển đổi TTS và chi tiết các Job/Task.
@@ -28,9 +29,19 @@ type JobSummaryResponse struct {
 	Voice      string  `json:"voice"`
 	Speed      float64 `json:"speed"`
 	Text       string  `json:"text"`
+	CreatedAt  string  `json:"created_at"`
 	TimeAgo    string  `json:"time_ago"`
 	Progress   string  `json:"progress"`
 	IsComplete bool    `json:"is_complete"`
+}
+
+// HistoryPageResponse là một trang lịch sử: danh sách item cùng cờ báo còn trang sau.
+//
+// Giao diện cần HasMore để quyết định có hiện "tải tiếp" không; trước đây API trả trần một
+// mảng nên client chỉ biết có 200 mục và không biết đã hết thật chưa.
+type HistoryPageResponse struct {
+	Items   []JobSummaryResponse `json:"items"`
+	HasMore bool                 `json:"has_more"`
 }
 
 // GetUserHistory lấy danh sách lịch sử tạo TTS của chính người dùng đang đăng nhập.
@@ -58,15 +69,41 @@ func (h *HistoryHandler) GetUserHistoryAdmin(w http.ResponseWriter, r *http.Requ
 // cuộn, nên trần này là thứ người dùng không nhìn thấy còn máy chủ thì thấy rõ.
 const historyPageSize = 200
 
+// historyFetchLimit là số job truy vấn thật sự: trang cần để tính HasMore chỉ bằng cách hỏi
+// một dòng hơn trần. Nếu cùng đủ, phần dư bị cắt — không ai thấy một trang có 201 mục.
+const historyFetchLimit = historyPageSize + 1
+
 // getHistoryForUser hàm nội bộ tổng hợp dữ liệu lịch sử các Job và tiến độ hoàn thành các Chunk của User.
+//
+// Phân trang theo con trỏ: client gửi `before` (RFC3339) và `before_id` của item cuối cùng
+// trang trước, để lần hỏi sau trả những job cũ hơn. Thiếu tham số hoặc `before` rỗng nghĩa là
+// trang đầu tiên. Trường `before_id` thường đi kèm nhưng predicate chỉ dựa vào nó khi hai job
+// trùng timestamp.
 func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Request, userID string) {
-	summaries, err := db.Queries.ListUserHistorySummaries(r.Context(), sqlc.ListUserHistorySummariesParams{
+	params := sqlc.ListUserHistorySummariesParams{
 		UserID: userID,
-		Limit:  historyPageSize,
-	})
+		Limit:  historyFetchLimit,
+	}
+
+	if raw := r.URL.Query().Get("before"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "Invalid before timestamp")
+			return
+		}
+		params.BeforeCreatedAt = pgtype.Timestamptz{Time: t, Valid: true}
+		params.BeforeID = r.URL.Query().Get("before_id")
+	}
+
+	summaries, err := db.Queries.ListUserHistorySummaries(r.Context(), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Database error")
 		return
+	}
+
+	hasMore := len(summaries) > historyPageSize
+	if hasMore {
+		summaries = summaries[:historyPageSize]
 	}
 
 	result := make([]JobSummaryResponse, 0, len(summaries))
@@ -109,19 +146,32 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 			}
 		}
 
+		// Định dạng đủ microsecond thay vì RFC3339 rút gọn: created_at này được client gửi ngược
+		// lại làm cursor phân trang, và bỏ phần dưới giây khiến những job cùng timestamp đứng
+		// đúng hàng rào trang bị nhảy mất. Sáu chữ số khớp độ phân giải microsecond của Postgres,
+		// nên round-trip qua client không làm lệch thứ tự.
+		createdAt := ""
+		if s.CreatedAt.Valid {
+			createdAt = s.CreatedAt.Time.Format("2006-01-02T15:04:05.000000Z")
+		}
+
 		result = append(result, JobSummaryResponse{
 			JobID:      s.JobID,
 			Engine:     s.Engine,
 			Voice:      s.Voice,
 			Speed:      s.Speed,
 			Text:       shortText,
+			CreatedAt:  createdAt,
 			TimeAgo:    timeAgo,
 			Progress:   strconv.Itoa(doneChunks) + "/" + strconv.Itoa(actualTotal),
 			IsComplete: doneChunks == actualTotal && actualTotal > 0,
 		})
 	}
 
-	_ = sonic.ConfigDefault.NewEncoder(w).Encode(result)
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(HistoryPageResponse{
+		Items:   result,
+		HasMore: hasMore,
+	})
 }
 
 // ChunkItemResponse thông tin từng đoạn audio chunk trong job.

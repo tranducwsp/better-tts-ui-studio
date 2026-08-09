@@ -62,7 +62,7 @@ func path(key string) string {
 	return filepath.Join(out...)
 }
 
-func (s *LocalStore) Put(_ context.Context, key string, data []byte) error {
+func (s *LocalStore) Put(_ context.Context, key string, src io.Reader) error {
 	full, err := s.resolve(key)
 	if err != nil {
 		return err
@@ -84,7 +84,7 @@ func (s *LocalStore) Put(_ context.Context, key string, data []byte) error {
 		os.Remove(tmpName) // không sao nếu rename đã thành công
 	}()
 
-	if _, err := tmp.Write(data); err != nil {
+	if _, err := io.Copy(tmp, src); err != nil {
 		return err
 	}
 	if err := tmp.Close(); err != nil {

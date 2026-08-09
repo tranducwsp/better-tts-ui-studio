@@ -11,5 +11,5 @@ import (
 func main() {
 	cfg := config.LoadConfig()
 	store := app.BootstrapCron(cfg)
-	cron.Run(store, time.Duration(cfg.TempRetentionHours)*time.Hour)
+	cron.Run(store, time.Duration(cfg.TempRetentionHours)*time.Hour, time.Duration(cfg.StaleChunkAfterMinutes)*time.Minute)
 }

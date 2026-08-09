@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -93,6 +94,10 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Part spill ra đĩa (file > multipartMemoryLimit) cần được xoá sau khi stream xong. Gọi
+	// cuối handler, sau khi mọi luồng đã đọc; part nằm trong RAM thì RemoveAll chỉ thu hồi
+	// bộ nhớ, không có gì rơi vãi.
+	defer cleanupMultipartForm(r)
 
 	// Kiểm trước khi đọc tệp: đây là kiểm rẻ nhất, và nuốt hết một tệp lớn vào RAM để rồi
 	// từ chối vì thiếu tên giọng là lãng phí băng thông của người dùng cho một câu trả lời
@@ -107,6 +112,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer upload.File.Close()
 
 	// gender/region/style có cột riêng vì chúng được lọc và hiển thị. Mọi trường khác mà
 	// Engine khai trong voice_metadata_schema đi vào cột metadata JSONB — nếu không, một
@@ -127,9 +133,18 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	// Kho đầy hay hết quota trước đây vẫn đi tiếp và báo "Nhân bản giọng thành công!", đồng
 	// thời ghi một bản ghi trỏ tới tệp không tồn tại — người dùng chỉ phát hiện khi chọn dùng
 	// giọng đó, ở một lần khác và một thông báo lỗi không liên quan.
-	if err := storage.Global.Put(r.Context(), voiceKey, upload.Data); err != nil {
+	if err := storage.Global.Put(r.Context(), voiceKey, upload.File); err != nil {
 		log.Printf("Không ghi được tệp giọng %s: %v", voiceKey, err)
 		writeError(w, http.StatusInternalServerError, "Không lưu được giọng vào kho")
+		return
+	}
+
+	// storage.Put đã đọc hết File; đưa con trỏ về 0 để gửi tiếp sang engine. multipart.File
+	// cũng là io.Seeker, không cần nạp lại từ đầu.
+	if _, err := upload.File.Seek(0, io.SeekStart); err != nil {
+		log.Printf("Không đọc lại được tệp giọng %s để gửi engine: %v", voiceKey, err)
+		_ = storage.Global.Delete(r.Context(), voiceKey)
+		writeError(w, http.StatusInternalServerError, "Không đọc được tệp giọng")
 		return
 	}
 
@@ -137,7 +152,7 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	//
 	// Tệp vừa ghi được dọn nếu các bước sau thất bại: không có bản ghi nào trỏ tới nó, nên để
 	// lại thì nó là rác vô hình mà bộ quét dọn (chỉ nhìn storage/temp) không bao giờ thu hồi.
-	res, err := h.TTSClient.CloneVoice(upload.Data, upload.Filename, name)
+	res, err := h.TTSClient.CloneVoice(upload.File, upload.Filename, name)
 	if err != nil {
 		_ = storage.Global.Delete(r.Context(), voiceKey)
 		// Lỗi của Engine chỉ vào log. Trả err.Error() thẳng ra ngoài sẽ lộ tên máy, cổng và
@@ -197,13 +212,15 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	defer cleanupMultipartForm(r)
 
 	upload, ok := receiveReferenceAudio(w, r)
 	if !ok {
 		return
 	}
+	defer upload.File.Close()
 
-	res, err := h.TTSClient.CloneVoice(upload.Data, upload.Filename, "temp_voice")
+	res, err := h.TTSClient.CloneVoice(upload.File, upload.Filename, "temp_voice")
 	if err != nil {
 		log.Printf("Engine không nạp được giọng tạm: %v", err)
 		writeError(w, http.StatusBadGateway, "Không nạp được giọng, vui lòng thử lại")

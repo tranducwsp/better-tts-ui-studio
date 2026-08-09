@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -76,7 +77,7 @@ func TestLocalStore_RejectsEscapingKeys(t *testing.T) {
 		"/etc/escaped.txt",
 	} {
 		// Ghi được hay bị từ chối đều chấp nhận; điều KHÔNG được phép là tệp xuất hiện ngoài gốc.
-		_ = s.Put(ctx, key, []byte("x"))
+		_ = s.Put(ctx, key, bytes.NewReader([]byte("x")))
 
 		if _, err := os.Stat(outside); err == nil {
 			os.Remove(outside)
@@ -101,7 +102,7 @@ func TestLocalStore_RoundTrip(t *testing.T) {
 		t.Errorf("đọc khoá chưa có phải trả ErrNotFound, nhận %v", err)
 	}
 
-	if err := s.Put(ctx, key, []byte("hello")); err != nil {
+	if err := s.Put(ctx, key, bytes.NewReader([]byte("hello"))); err != nil {
 		t.Fatalf("ghi: %v", err)
 	}
 	got, err := s.Get(ctx, key)

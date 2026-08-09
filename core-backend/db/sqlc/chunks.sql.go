@@ -11,10 +11,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelTTSChunk = `-- name: CancelTTSChunk :execrows
+UPDATE tts_chunks
+SET status = 'cancelled',
+    error_msg = COALESCE(error_msg, 'Đã huỷ theo yêu cầu'),
+    updated_at = now()
+WHERE id = $1
+  AND status IN ('pending', 'processing')
+`
+
+// Chuyển chunk còn đang chờ/xử lý sang 'cancelled'. Guard bằng status để cancel chạy đua với
+// worker hoàn tất không đè được kết quả: chunk đã 'done'/'error' giữ nguyên trạng thái.
+func (q *Queries) CancelTTSChunk(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, cancelTTSChunk, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createTTSChunk = `-- name: CreateTTSChunk :one
 INSERT INTO tts_chunks (id, job_id, chunk_index, text, audio_path, status, error_msg)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, job_id, chunk_index, text, audio_path, status, error_msg
+RETURNING id, job_id, chunk_index, text, audio_path, status, error_msg, updated_at
 `
 
 type CreateTTSChunkParams struct {
@@ -46,6 +65,7 @@ func (q *Queries) CreateTTSChunk(ctx context.Context, arg CreateTTSChunkParams) 
 		&i.AudioPath,
 		&i.Status,
 		&i.ErrorMsg,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -64,7 +84,7 @@ func (q *Queries) GetTaskOwner(ctx context.Context, id string) (string, error) {
 }
 
 const listTTSChunksByJobID = `-- name: ListTTSChunksByJobID :many
-SELECT id, job_id, chunk_index, text, audio_path, status, error_msg FROM tts_chunks
+SELECT id, job_id, chunk_index, text, audio_path, status, error_msg, updated_at FROM tts_chunks
 WHERE job_id = $1
 ORDER BY chunk_index ASC
 `
@@ -86,6 +106,7 @@ func (q *Queries) ListTTSChunksByJobID(ctx context.Context, jobID string) ([]Tts
 			&i.AudioPath,
 			&i.Status,
 			&i.ErrorMsg,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -97,13 +118,39 @@ func (q *Queries) ListTTSChunksByJobID(ctx context.Context, jobID string) ([]Tts
 	return items, nil
 }
 
+const reconcileStaleChunks = `-- name: ReconcileStaleChunks :execrows
+UPDATE tts_chunks
+SET status = 'error',
+    error_msg = COALESCE(error_msg, 'Job mất sau khi Redis khởi động lại, không phục hồi được'),
+    updated_at = now()
+WHERE status IN ('pending', 'processing')
+  AND updated_at < $1::timestamptz
+`
+
+// Chuyển chunk mồ côi về 'error'. Một chunk đứng mãi ở pending/processing nghĩa là không ai
+// đang xử lý nó nữa — người điều hành thấy nó kẹt vĩnh viễn sau khi hàng đợi mất (Redis restart:
+// stream non-persistent, job trong đó trôi thẳng, không gì phục hồi lại được).
+//
+// updated_at là mốc tiến triển cuối (CreateTTSChunk đến 'processing' chính là cột mốc bắt đầu);
+// tham số $1 là mốc thời gian giới hạn: chunk chưa chuyển trạng thái kể từ trước mốc đó là kẹt.
+// Ngưỡng này do STALE_CHUNK_AFTER_MINUTES quyết định và phải lớn hơn thời gian tối đa một
+// chunk hợp lệ có thể chạy (từng chunk ≤ TTS_CLIENT_TIMEOUT_SECONDS + chờ queue).
+func (q *Queries) ReconcileStaleChunks(ctx context.Context, dollar_1 pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, reconcileStaleChunks, dollar_1)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateTTSChunkStatus = `-- name: UpdateTTSChunkStatus :one
 UPDATE tts_chunks
 SET status = $2,
     audio_path = COALESCE($3, audio_path),
-    error_msg = COALESCE($4, error_msg)
+    error_msg = COALESCE($4, error_msg),
+    updated_at = now()
 WHERE id = $1
-RETURNING id, job_id, chunk_index, text, audio_path, status, error_msg
+RETURNING id, job_id, chunk_index, text, audio_path, status, error_msg, updated_at
 `
 
 type UpdateTTSChunkStatusParams struct {
@@ -129,6 +176,7 @@ func (q *Queries) UpdateTTSChunkStatus(ctx context.Context, arg UpdateTTSChunkSt
 		&i.AudioPath,
 		&i.Status,
 		&i.ErrorMsg,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

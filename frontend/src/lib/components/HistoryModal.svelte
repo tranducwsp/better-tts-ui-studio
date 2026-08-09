@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fetchHistory } from '../api';
+  import type { HistoryCursor } from '../api';
   import { toast } from '../toast.svelte';
   import type { HistoryItem, JobDetailResponse } from '../types';
 
@@ -15,6 +16,8 @@
 
   let history = $state<HistoryItem[]>([]);
   let isLoading = $state(false);
+  let hasMore = $state(false);
+  let isLoadingMore = $state(false);
 
   $effect(() => {
     if (isOpen) {
@@ -22,36 +25,61 @@
     }
   });
 
+  // requestHistoryPage gọi API lịch sử (người dùng của mình hoặc admin theo user_id) và trả về
+  // cả mục lẫn cờ còn trang. Admin dùng cùng định dạng phân trang nên hai nhánh chia một code.
+  async function requestHistoryPage(before: HistoryCursor | null): Promise<{ items: HistoryItem[]; has_more: boolean }> {
+    if (targetUserId) {
+      const params = new URLSearchParams();
+      if (before) {
+        params.set('before', before.created_at);
+        params.set('before_id', before.job_id);
+      }
+      const qs = params.toString();
+      const res = await fetch(`/api/admin/users/${targetUserId}/history${qs ? `?${qs}` : ''}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to load user history');
+      return await res.json();
+    }
+    return await fetchHistory(before);
+  }
+
   async function loadHistory() {
     isLoading = true;
     try {
-      let data: HistoryItem[] = [];
-      if (targetUserId) {
-        const res = await fetch(`/api/admin/users/${targetUserId}/history`, { credentials: 'include' });
-        if (!res.ok) throw new Error('Failed to load user history');
-        data = await res.json();
-      } else {
-        data = await fetchHistory();
-      }
-
-      // Filter out duplicate entries
-      const unique: HistoryItem[] = [];
-      const seen = new Set<string>();
-
-      for (const item of data) {
-        const key = `${item.engine}_${item.voice}_${item.text}_${item.progress}_${item.time_ago}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          unique.push(item);
-        }
-      }
-      history = unique;
+      const page = await requestHistoryPage(null);
+      history = page.items;
+      hasMore = page.has_more;
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : String(e);
       toast.show('Failed to load history: ' + errMsg, 'error');
       history = [];
+      hasMore = false;
     } finally {
       isLoading = false;
+    }
+  }
+
+  // loadMore nối thêm trang sau vào danh sách đang hiển thị. Con trỏ là item cuối cùng hiện có —
+  // keyset máy chủ dùng là (created_at, job_id). Cùng job có thể xuất hiện lại ở trang sau khi
+  // hai job trùng timestamp, nên loại ngay khi id đã có ở trang trước.
+  async function loadMore() {
+    if (isLoadingMore || isLoading) return;
+    const last = history[history.length - 1];
+    if (!last) return;
+
+    isLoadingMore = true;
+    try {
+      const page = await requestHistoryPage({ created_at: last.created_at, job_id: last.job_id });
+      const seen = new Set(history.map((item) => item.job_id));
+      const fresh = page.items.filter((item) => !seen.has(item.job_id));
+      if (fresh.length > 0) {
+        history = [...history, ...fresh];
+      }
+      hasMore = page.has_more;
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      toast.show('Failed to load more history: ' + errMsg, 'error');
+    } finally {
+      isLoadingMore = false;
     }
   }
 
@@ -135,6 +163,21 @@
           </tbody>
         </table>
       </div>
+        {#if hasMore}
+          <div style="display: flex; justify-content: center; padding: 16px 0 8px;">
+            <button
+              onclick={loadMore}
+              disabled={isLoadingMore}
+              style="padding: 8px 20px; font-size: 0.85rem; background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.4); color: white; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-weight: 500;"
+            >
+              {#if isLoadingMore}
+                <i class="fa-solid fa-spinner fa-spin"></i> Loading...
+              {:else}
+                <i class="fa-solid fa-angles-down"></i> Load more
+              {/if}
+            </button>
+          </div>
+        {/if}
       {/if}
     </div>
   </div>

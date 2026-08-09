@@ -15,9 +15,7 @@
 - ⚡ **Dynamic Schema-Driven UI**: The entire user interface (options, sliders, tabs, notice banners, input rules) is generated dynamically at runtime from the AI engine's manifest (`GET /info`).
 - 🪄 **Manifest Auto-Format Regex Rules**: Text hygiene and text normalization (gantry stripping, footnote removal, Vietnamese unicode fixes) are centralized in the Core TTS manifest.
 - 🎙️ **Dynamic Voice Cloning Metadata**: Customize the voice creation form fields (Accent, Gender, Style, Age) directly via engine configuration schemas.
-- 🔒 **Dual Authentication & Storage Modes**:
-  - **Authenticated Mode (`ENABLE_AUTH=true`)**: Multi-tenant isolation (`/storage/{model_id}/{user_id}/`) with JWT HttpOnly session security and Admin dashboard.
-  - **Shared Data Mode (`ENABLE_AUTH=false`)**: Zero-login mode for public demos, desktop tools, and team sharing (`/storage/{model_id}/shared/`).
+- 🔒 **Authentication & Multi-tenant Storage**: JWT HttpOnly session security (access + refresh token pair), mandatory authentication, per-user isolation of voices and history, and an Admin dashboard.
 - ⚡ **High Concurrency Go Chi Control Plane**: Sub-millisecond latency router managing task queues, PostgreSQL database history, SSE progress streaming, and audio caching.
 - 🎨 **Modern Futuristic UI**: Built with Svelte 5 (Runes), glassmorphism styling, real-time chunk audio playback, and intuitive search/replace text tools.
 
@@ -36,7 +34,7 @@
  │              Control Plane Gateway (Go Chi)            │
  │   - Authentication (JWT HttpOnly Cookies)              │
  │   - PostgreSQL Metadata & Job Task Queue Manager       │
- │   - User Voice Storage & Shared Mode Router            │
+ │   - User Voice Storage & Per-User Isolation              │
  └───────────────────────────┬────────────────────────────┘
                              │ gRPC / REST Core Protocol
  ┌───────────────────────────▼────────────────────────────┐
