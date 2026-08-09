@@ -20,7 +20,7 @@
 - [ ] **[FEATURE] F1 — Shared mode (zero-login, dùng chung nội bộ)**
   - Đã gỡ hứa hẹn khỏi docs (A1). Khi làm lại: cần thêm knobs cấu hình thật (`ENABLE_AUTH` hoặc tương đương) vào `config.Settings`, route `/storage/{model_id}/shared/`, và chính sách cô lập dữ liệu rõ ràng.
 - [x] **[HIGH] [Done 2026-08-09] A2 — `.env.example` thiếu toàn bộ biến runtime của engine**
-  - **Ranh giới nền tảng**: chỉ cần `CORE_ENGINE_URL` để biết địa chỉ engine. Biến nội bộ của engine (`OMP_NUM_THREADS`, `UI_MODE`, `CORE_CORS_ORIGINS`, v.v.) là việc của AI engineer — nền tảng không áp đặt. `core-tts-test` đã viết lại thành bản example engine, không còn là "mock load test" — README ghi rõ contract, AI engineer tự quyết định biến môi trường riêng.
+  - **Ranh giới nền tảng**: chỉ cần `CORE_ENGINE_URL` để biết địa chỉ engine. Biến nội bộ của engine (`OMP_NUM_THREADS`, `UI_MODE`, `CORE_CORS_ORIGINS`, v.v.) là việc của AI engineer — nền tảng không áp đặt. `core-tts-example` đã viết lại thành bản example engine, không còn là "mock load test" — README ghi rõ contract, AI engineer tự quyết định biến môi trường riêng.
 - [x] **[HIGH] [Done 2026-08-09] A3 — `PRESERVE_FILES`: env không tài liệu đổi hành vi xoá dữ liệu**
   - Đưa vào Settings table (`PRESERVE_FILES`, KindInt, default 0, min 0, max 1), thêm vào Config struct (`PreserveFiles bool`), cập nhật `tts_clone.go` đọc qua `h.Config.PreserveFiles` thay vì `os.Getenv`. `.env.example` tự sinh lại.
 - [x] **[MEDIUM] [Done 2026-08-09] A4 — `input_panel` thiếu field → default `false`, mâu thuẫn engine**

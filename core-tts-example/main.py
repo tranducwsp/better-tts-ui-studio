@@ -10,17 +10,15 @@ nền tảng không quan tâm, chỉ cần tuân thủ contract.
 """
 
 import os
-import time
 import uuid
 import struct
 import math
 import asyncio
-from typing import Dict, Any
 
 from fastapi import FastAPI, HTTPException, Response, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 
-from schemas import SynthesizeRequest, TaskStatusResponse, UniversalManifest, VoiceInfo
+from schemas import SynthesizeRequest, UniversalManifest, VoiceInfo
 
 app = FastAPI(
     title="Example TTS Engine",
@@ -37,14 +35,11 @@ app.add_middleware(
 )
 
 # ── Cấu hình ──────────────────────────────────────────────────────────────────
-# Chỉ CORE_PORT là cần thiết cho container. MOCK_DELAY_SEC chỉ dùng cho bản
+# Chỉ CORE_PORT là cần thiết cho container. EXAMPLE_DELAY_SEC chỉ dùng cho bản
 # example này — engine thật không cần.
 PORT = int(os.getenv("CORE_PORT", "8001"))
 HOST = os.getenv("CORE_HOST", "0.0.0.0")
-MOCK_DELAY_SEC = float(os.getenv("MOCK_DELAY_SEC", "0.0"))
-
-# ── Bộ nhớ trong RAM (example only) ──────────────────────────────────────────
-tasks_db: Dict[str, Dict[str, Any]] = {}
+EXAMPLE_DELAY_SEC = float(os.getenv("EXAMPLE_DELAY_SEC", "0.0"))
 
 # ── Giọng đọc mẫu ────────────────────────────────────────────────────────────
 # Mỗi giọng khai báo `modes` — danh sách mode hỗ trợ — để nền tảng lọc đúng.
@@ -99,15 +94,6 @@ def _generate_wav_bytes(duration_sec: float, sample_rate: int = 24000) -> bytes:
     return bytes(buf)
 
 
-def _wav_to_mp3_placeholder(wav_bytes: bytes) -> bytes:
-    """Bản example không có encoder MP3 — trả nguyên WAV.
-
-    Engine thật dùng lameenc, pydub, hoặc thư viện riêng để chuyển.
-    Nền tảng chỉ cần endpoint trả đúng Content-Type.
-    """
-    return wav_bytes
-
-
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -142,70 +128,31 @@ def health_check():
 
 @app.post("/synthesize", tags=["Synthesis"])
 async def synthesize(req: SynthesizeRequest):
-    """Sinh âm thanh — trả file WAV hoặc MP3.
+    """Sinh âm thanh — trả raw audio binary.
 
     Bản example này sinh sóng sin ngẫu nhiên dài 5–10 giây.
     Engine thật thay bằng model inference.
+
+    Nền tảng gửi voice_id, speed, engine, và (tuỳ mode) pitch/emotion.
+    Nền tảng đọc response body nguyên bản — không bọc JSON, không SSE.
     """
     text_lower = req.text.strip().lower()
     if not text_lower:
         raise HTTPException(status_code=400, detail="Empty text input")
 
-    task_id = req.task_id or str(uuid.uuid4())
-
-    # Giả lập xử lý (nếu có cấu hình MOCK_DELAY_SEC)
-    if MOCK_DELAY_SEC > 0:
-        await asyncio.sleep(MOCK_DELAY_SEC)
+    # Giả lập xử lý (nếu có cấu hình EXAMPLE_DELAY_SEC)
+    if EXAMPLE_DELAY_SEC > 0:
+        await asyncio.sleep(EXAMPLE_DELAY_SEC)
 
     # Sinh âm thanh ngẫu nhiên 5–10 giây
     import random
     duration = random.uniform(5.0, 10.0)
     wav_bytes = _generate_wav_bytes(duration)
 
-    if req.output_format == "mp3":
-        audio_bytes = _wav_to_mp3_placeholder(wav_bytes)
-        media_type = "audio/mpeg"
-    else:
-        audio_bytes = wav_bytes
-        media_type = "audio/wav"
-
-    tasks_db[task_id] = {
-        "status": "done",
-        "progress": 100,
-        "audio": audio_bytes,
-        "created_at": time.time(),
-    }
-
     return Response(
-        content=audio_bytes,
-        media_type=media_type,
-        headers={"X-Task-ID": task_id},
+        content=wav_bytes,
+        media_type="audio/wav",
     )
-
-
-@app.get("/tasks/{task_id}", response_model=TaskStatusResponse, tags=["Tasks"])
-def get_task_status(task_id: str):
-    """Trả trạng thái task — nền tảng dùng cho SSE polling."""
-    return TaskStatusResponse(
-        task_id=task_id,
-        status="done",
-        progress=100,
-        audio_url=f"/tasks/{task_id}/audio",
-    )
-
-
-@app.get("/tasks/{task_id}/audio", tags=["Tasks"])
-def get_task_audio(task_id: str, format: str = "wav"):
-    """Trả file âm thanh của task — nền tảng gọi khi SSE nhận được 'done'."""
-    audio_bytes = STATIC_MP3_BYTES if format.lower() == "mp3" else STATIC_WAV_BYTES
-    media_type = "audio/mpeg" if format.lower() == "mp3" else "audio/wav"
-    return Response(content=audio_bytes, media_type=media_type)
-
-
-@app.delete("/tasks/{task_id}", tags=["Tasks"])
-def cancel_task(task_id: str):
-    """Huỷ task — nền tảng gọi khi người dùng bấm Cancel."""
-    return {"message": "Cancellation requested", "task_id": task_id}
 
 
 @app.post("/voices/clone", tags=["Voice Cloning"])
@@ -220,12 +167,6 @@ async def clone_voice(file: UploadFile = File(...), name: str = Form(...)):
         "name": name,
         "status": "success",
     }
-
-
-# ── Pre-generate một WAV mẫu cho endpoint /tasks/{id}/audio ────────────────
-# (để không phải sinh lại mỗi lần GET)
-STATIC_WAV_BYTES = _generate_wav_bytes(7.0, 24000)
-STATIC_MP3_BYTES = _wav_to_mp3_placeholder(STATIC_WAV_BYTES)
 
 
 if __name__ == "__main__":

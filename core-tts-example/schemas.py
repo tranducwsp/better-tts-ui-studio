@@ -3,22 +3,21 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 
 class SynthesizeRequest(BaseModel):
+    """Payload the platform sends to /synthesize.
+
+    Only fields the platform actually transmits are listed here. An AI engineer
+    may add more (e.g. output_format, ref_voice_id) for internal use — the
+    platform ignores unknown fields in the request it sends.
+    """
     text: str
     voice_id: Optional[str] = None
-    voice: Optional[str] = None
-    engine: Optional[str] = None # "standard" | "fast" | "clone"
     speed: float = 1.0
-    pitch: float = 0.0
-    output_format: str = "wav"
-    ref_voice_id: Optional[str] = None
-    task_id: Optional[str] = None
-
-class TaskStatusResponse(BaseModel):
-    task_id: str
-    status: str # "pending" | "processing" | "done" | "error" | "cancelled"
-    progress: int = 0
-    audio_url: Optional[str] = None
-    error: Optional[str] = None
+    engine: Optional[str] = None
+    # pitch and emotion are only sent when the mode's capabilities declare
+    # supports_pitch / supports_emotion. When absent, the value is None —
+    # distinct from 0.0, which means "explicitly set to 0".
+    pitch: Optional[float] = None
+    emotion: Optional[str] = None
 
 class VoiceInfo(BaseModel):
     """A preset voice the engine ships with.
@@ -29,6 +28,10 @@ class VoiceInfo(BaseModel):
     A mock that is laxer than the contract cannot catch the bug it exists to catch: the UI
     offering a voice its mode cannot use looked fine in development and only broke against
     the real engine.
+
+    (The platform does NOT read the `modes` field from the response. It sends
+    `?model_id=<mode>` as a query parameter and relies on the engine to filter. The field
+    is kept here because the example engine uses it for its own filtering logic.)
     """
     id: str
     name: str
@@ -174,8 +177,8 @@ class UISchemaSpec(BaseModel):
             voice_type="radio",
             speed_type="slider",
             preset_voices=[
-                {"id": "Mock Voice A (Female)", "name": "Mock Voice A (Female)", "gender": "female"},
-                {"id": "Mock Voice B (Male)", "name": "Mock Voice B (Male)", "gender": "male"}
+                {"id": "Voice A (Female)", "name": "Voice A (Female)", "gender": "female"},
+                {"id": "Voice B (Male)", "name": "Voice B (Male)", "gender": "male"}
             ]
         ),
         "express": ModelOptionSpec(
@@ -235,25 +238,25 @@ class UISchemaSpec(BaseModel):
     })
 
 class UniversalManifest(BaseModel):
-    engine_id: str = Field(default_factory=lambda: os.getenv("ENGINE_ID", "core-tts-test-v1"))
-    engine_name: str = Field(default_factory=lambda: os.getenv("ENGINE_NAME", "Mock Test AI Engine"))
-    version: str = Field(default_factory=lambda: os.getenv("ENGINE_VERSION", "1.0.0-mock"))
-    provider: str = Field(default_factory=lambda: os.getenv("ENGINE_PROVIDER", "Universal AI Testbed"))
+    engine_id: str = Field(default_factory=lambda: os.getenv("ENGINE_ID", "core-tts-example-v1"))
+    engine_name: str = Field(default_factory=lambda: os.getenv("ENGINE_NAME", "Example TTS Engine"))
+    version: str = Field(default_factory=lambda: os.getenv("ENGINE_VERSION", "1.0.0"))
+    provider: str = Field(default_factory=lambda: os.getenv("ENGINE_PROVIDER", "Example Provider"))
     supported_modes: List[EngineModeSpec] = Field(default_factory=lambda: [
         # Only what differs from the engine-wide set below is stated here; anything left
         # unset is inherited. emotion_v2 is the interesting one: it is the sole mode that
         # can do pitch and emotion, which the engine-wide defaults switch off.
-        EngineModeSpec(id="standard", name="Mock Standard", description="Fast mock audio generator"),
-        EngineModeSpec(id="fast", name="Mock Fast", description="Instant mock audio generator"),
-        EngineModeSpec(id="express", name="Mock Express", description="Ultra-low latency streaming model"),
-        EngineModeSpec(id="zero_shot_clone", name="Mock Instant Zero-Shot Clone",
+        EngineModeSpec(id="standard", name="Standard", description="Standard quality TTS"),
+        EngineModeSpec(id="fast", name="Fast", description="Low-latency TTS"),
+        EngineModeSpec(id="express", name="Express", description="Ultra-low latency streaming"),
+        EngineModeSpec(id="zero_shot_clone", name="Instant Zero-Shot Clone",
                        description="Instant voice cloning from uploaded reference audio with voice saving support",
                        capabilities=EngineCapabilities(supports_cloning=True, supports_voice_saving=True)),
-        EngineModeSpec(id="multilingual", name="Mock Multilingual", description="Cross-lingual multi-accent voice engine"),
-        EngineModeSpec(id="emotion_v2", name="Mock Emotion & Style",
-                       description="Dynamic prosody & pitch control model",
+        EngineModeSpec(id="multilingual", name="Multilingual", description="Cross-lingual multi-accent voice engine"),
+        EngineModeSpec(id="emotion_v2", name="Emotion & Style",
+                       description="Dynamic prosody & pitch control",
                        capabilities=EngineCapabilities(supports_pitch=True, supports_emotion=True)),
-        EngineModeSpec(id="clone", name="Mock Voice Cloning", description="Simulated speaker cloning",
+        EngineModeSpec(id="clone", name="Voice Cloning", description="Speaker cloning",
                        capabilities=EngineCapabilities(supports_cloning=True, supports_voice_saving=True)),
     ])
     # Engine-wide defaults; modes that state nothing inherit these.

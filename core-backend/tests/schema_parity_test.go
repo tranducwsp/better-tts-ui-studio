@@ -9,19 +9,20 @@ import (
 	"testing"
 )
 
-// Hai đặc tả Manifest phía Python: engine thật và mock dùng để chạy frontend không cần GPU.
+// Hai đặc tả Manifest phía Python: engine thật và example dùng để chạy frontend không cần GPU.
 const (
 	realSchemaPath = "../../core-tts/schemas.py"
-	mockSchemaPath = "../../core-tts-test/schemas.py"
+	mockSchemaPath = "../../core-tts-example/schemas.py"
 )
 
-// TestPythonSchemaParity giữ mock trùng hợp đồng với engine thật.
+// TestPythonSchemaParity giữ example engine đồng bộ với engine thật.
 //
-// Mock tồn tại để bắt lỗi trước khi chúng gặp engine thật, nên nó chỉ có giá trị khi khai
-// đúng những gì engine khai. Nó đã từng trôi: `modes` được siết từ optional thành bắt buộc ở
-// engine thật, mock không được sửa theo, nên nó trả mọi giọng cho mọi mode trong khi
-// production lọc — tức mock không phát hiện được đúng loại lỗi nó sinh ra để phát hiện, và
-// lỗi chỉ lộ khi chạy thật.
+// Example engine là bản tham khảo contract cho AI engineer — nó chỉ nên khai những trường
+// nền tảng thực sự gửi/nhận. Engine thật có thể có thêm trường nội bộ (output_format,
+// ref_voice_id, task_id, voice) mà nền tảng không dùng — example không cần copy.
+//
+// Ngược lại, example có thể khai trường nền tảng gửi mà engine thật chưa có (ví dụ emotion)
+// khi engine thật chưa cập nhật — đó là tín hiệu engine thật cần bắt kịp.
 //
 // Kiểm bằng cách đọc văn bản hai tệp thay vì chạy Python: không có pytest trong repo, và một
 // bài test chỉ chạy khi ai đó nhớ chạy nó thì không chặn được sai lệch. Đặt ở đây để nó nằm
@@ -35,30 +36,61 @@ func TestPythonSchemaParity(t *testing.T) {
 			len(real), len(mock))
 	}
 
+	// Trường chỉ có ở engine thật — nền tảng không gửi, example không cần khai.
+	realOnlyFields := map[string]map[string]string{
+		"SynthesizeRequest": {
+			"output_format": "engine thật dùng nội bộ, nền tảng không gửi",
+			"ref_voice_id":  "engine thật dùng nội bộ, nền tảng không gửi",
+			"task_id":       "engine thật dùng nội bộ, nền tảng không gửi",
+			"voice":         "engine thật dùng nội bộ, nền tảng không gửi",
+		},
+	}
+
+	// Trường chỉ có ở example — nền tảng gửi nhưng engine thật chưa khai.
+	mockOnlyFields := map[string]map[string]string{
+		"SynthesizeRequest": {
+			"emotion": "nền tảng gửi khi mode khai supports_emotion",
+		},
+	}
+
+	// Class chỉ có ở engine thật — example không cần vì nền tảng không dùng.
+	realOnlyClasses := map[string]string{
+		"TaskStatusResponse": "nền tảng có vòng đời task riêng, không gọi /tasks/{id}",
+	}
+
 	for _, name := range sortedKeys(real) {
 		mockFields, ok := mock[name]
 		if !ok {
-			t.Errorf("mock thiếu hẳn class %s", name)
+			if _, isExpected := realOnlyClasses[name]; isExpected {
+				continue // known: example không cần class này
+			}
+			t.Errorf("example thiếu class %s mà engine thật khai", name)
 			continue
 		}
 		for _, f := range sortedKeys(real[name]) {
 			if _, ok := mockFields[f]; !ok {
-				t.Errorf("%s: mock thiếu trường %q mà engine thật khai", name, f)
+				if _, isExpected := realOnlyFields[name][f]; isExpected {
+					continue // known: example không cần trường này
+				}
+				t.Errorf("%s: example thiếu trường %q mà engine thật khai", name, f)
 			}
 		}
 	}
 
-	// Chiều ngược lại cũng đáng chặn: một trường chỉ có ở mock nghĩa là mock hứa điều mà
-	// engine thật không cung cấp, nên thứ chạy được khi phát triển sẽ vỡ khi chạy thật.
+	// Chiều ngược lại: example khai thêm trường mà engine thật chưa có.
+	// Đây là tín hiệu engine thật cần cập nhật — không phải lỗi của example.
 	for _, name := range sortedKeys(mock) {
 		realFields, ok := real[name]
 		if !ok {
-			t.Errorf("mock khai class %s mà engine thật không có", name)
+			t.Errorf("example khai class %s mà engine thật không có", name)
 			continue
 		}
 		for _, f := range sortedKeys(mock[name]) {
 			if _, ok := realFields[f]; !ok {
-				t.Errorf("%s: mock khai thêm trường %q không có ở engine thật", name, f)
+				if _, isExpected := mockOnlyFields[name][f]; isExpected {
+					continue // known: nền tảng gửi nhưng engine thật chưa khai
+				}
+				t.Errorf("%s: example khai thêm trường %q không có ở engine thật", name, f)
 			}
 		}
 	}

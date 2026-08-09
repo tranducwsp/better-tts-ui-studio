@@ -139,9 +139,11 @@ mạng nội bộ.
 | `config.py` | 20 | Giới hạn luồng CPU/GPU, host/port, thư mục lưu trữ. |
 | `grpc_server.py` | 76 | Server gRPC streaming. **Đã viết, chưa nối** — `main.py` chưa gọi `serve_grpc()`. Cùng nhóm để dành với `client/grpc_tts.go`. |
 
-`core-tts-test/` là **mock service** (không có torch/edge-tts, trả 2 tệp audio tĩnh) dùng để
-chạy frontend không cần GPU. Tự khai `engine_name="Mock Test AI Engine"` trong manifest.
-Không nằm trong `docker-compose.yml`; muốn dùng phải tự đổi build context.
+`core-tts-example/` là **example engine** (không cần GPU, sinh sóng sin ngẫu nhiên) dùng để
+chạy frontend mà không cần model thật. Tự khai `engine_name="Mock Test AI Engine"` trong manifest.
+README ghi rõ contract (endpoints, manifest, format) mà nền tảng mong đợi — AI engineer dùng
+làm bản tham khảo rồi tự thay bằng engine thật. Không nằm trong `docker-compose.yml`;
+muốn dùng phải tự đổi build context.
 
 ---
 

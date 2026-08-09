@@ -1,4 +1,4 @@
-# Example TTS Engine (`core-tts-test`)
+# Example TTS Engine (`core-tts-example`)
 
 Bản tham khảo minh hoạ **contract** giữa Engine và nền tảng Better TTS UI Studio.
 
@@ -10,15 +10,18 @@ chỉ cần biết `CORE_ENGINE_URL` để kết nối; mọi thứ khác là n�
 
 ## Contract
 
-Nền tảng gọi đúng 5 endpoint:
+Nền tảng gọi đúng 4 endpoint:
 
 | Endpoint | Method | Mục đích |
 |:---|:---|:---|
 | `/info` | GET | Trả manifest khai báo năng lực, giới hạn, UI schema |
 | `/voices` | GET | Trả danh sách giọng preset (lọc theo `?model_id=`) |
-| `/synthesize` | POST | Nhận text + voice + params, trả file âm thanh |
-| `/tasks/{id}/audio` | GET | Trả file âm thanh theo format (`?format=wav\|mp3`) |
+| `/synthesize` | POST | Nhận text + voice + params, trả file âm thanh binary |
 | `/voices/clone` | POST | Nhận file tham chiếu, trả voice_id mới |
+
+> **Lưu ý**: nền tảng có vòng đời task riêng (RAM + Redis + PostgreSQL). Nó không gọi
+> `/tasks/{id}` hay `/tasks/{id}/audio` trên engine — audio trả thẳng từ `/synthesize`
+> response body, không bọc JSON, không SSE. Engine chỉ cần 4 endpoint trên.
 
 ### Manifest (`/info`)
 
@@ -37,16 +40,18 @@ Xem `schemas.py` để biết đầy đủ các trường.
 ```json
 {
   "text": "Xin chào",
-  "voice": "Voice A",
+  "voice_id": "Voice A",
   "engine": "standard",
   "speed": 1.0,
-  "pitch": 0.0,
-  "output_format": "wav",
-  "task_id": "optional-client-id"
+  "pitch": 2.0,
+  "emotion": "happy"
 }
 ```
 
-Phản hồi: file âm thanh binary (`audio/wav` hoặc `audio/mpeg`) kèm header `X-Task-ID`.
+`pitch` và `emotion` chỉ gửi khi mode khai `supports_pitch` / `supports_emotion`.
+Khi không gửi, trường là `null` — khác với `0.0` (đặt cụ thể bằng 0).
+
+Phản hồi: **raw audio binary** (`audio/wav` hoặc `audio/mpeg`) — không bọc JSON.
 
 ---
 
@@ -59,13 +64,13 @@ Trong `docker-compose.yml`, trỏ `core-engine` sang bản example:
 ```yaml
 core-engine:
   build:
-    context: ./core-tts-test
+    context: ./core-tts-example
 ```
 
 ### Chạy trực tiếp
 
 ```bash
-cd core-tts-test
+cd core-tts-example
 pip install -r requirements.txt
 python main.py
 ```
@@ -76,7 +81,7 @@ python main.py
 |:---|:---|:---|
 | `CORE_PORT` | `8001` | Cổng lắng |
 | `CORE_HOST` | `0.0.0.0` | Host lắng |
-| `MOCK_DELAY_SEC` | `0.0` | Giả lập độ trễ (chỉ dùng cho example) |
+| `EXAMPLE_DELAY_SEC` | `0.0` | Giả lập độ trễ (chỉ dùng cho example) |
 
 **Lưu ý**: bản example chỉ dùng `CORE_PORT` và `CORE_HOST`. Engine thật tự quyết định
 biến môi trường nội bộ (ví dụ `OMP_NUM_THREADS`, `CUDA_VISIBLE_DEVICES`, …) — nền tảng
@@ -93,7 +98,8 @@ GPU hay thư viện ML. Engine thật thay bằng model inference.
 
 ## Thay engine thật
 
-1. Viết service expose cùng 5 endpoint trên
+1. Viết service expose đúng 4 endpoint trên
 2. Trả manifest `/info` đúng schema (xem `schemas.py`)
-3. Đổi `CORE_ENGINE_URL` trong compose trỏ sang engine mới
-4. Xong — nền tảng không cần thay gì
+3. `/synthesize` trả raw audio binary, không bọc JSON
+4. Đổi `CORE_ENGINE_URL` trong compose trỏ sang engine mới
+5. Xong — nền tảng không cần thay gì
