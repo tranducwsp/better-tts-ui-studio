@@ -117,33 +117,24 @@
 
 ## D. Frontend (Svelte/TS)
 
-- [ ] **[CRITICAL] D1 — Vòng lặp generation chạy tiếp sau khi component unmount**
-  - `StreamingPanel.svelte:145-224`, đóng panel (`App.svelte:192`) không cleanup set `isCancelled=true`. Job 50 chunk đóng sau 5 → 45 chunk còn lại âm thầm chạy, tốn GPU, thêm history.
-  - Fix: `$effect` cleanup / `onDestroy` set `isCancelled = true` + revoke blob URL.
-- [ ] **[HIGH] D2 — Auto-format trên blur phá huỷ ký tự không phải tiếng Việt**
-  - `TextInputPanel.svelte:58-88` (rule `[^a-zA-Z0-9...À-ỹ] → ''`), `:325` (`onblur`). Xoá vĩnh viễn emoji, CJK, em-dash, ellipsis, smart quotes, không hoàn tác.
-  - Fix: bỏ auto-format trên blur, hoặc preview + undo.
-- [ ] **[HIGH] D3 — Hardcode `?format=wav` → file `.mp3` chứa byte WAV**
-  - `api.ts:286` luôn `?format=wav`; `StreamingPanel.svelte:283-285` fast mode (mp3) trả `currentChunk.blobUrl` (WAV) khi `selectedFormat === defaultFmt`.
-  - Fix: `?format=` theo `defaultFmt`/`selectedFormat` thay vì hardcode `wav`.
-- [ ] **[MEDIUM] D4 — Không refresh token cho request ngoài `checkCurrentUser`**
-  - `api.ts:27-38` — chỉ `checkCurrentUser` retry 401; `synthesize`, `fetchVoices`, `cloneVoice`, `fetchHistory` throw 401. Access token 15 phút → phiên dài 401 "Please log in" dù refresh token còn hiệu lực.
-  - Fix: wrapper fetch thử `refreshSession()` một lần khi gặp 401.
-- [ ] **[MEDIUM] D5 — Race khi đổi tab voices**
-  - `GenericEnginePanel.svelte:94-143` — `loadVoicesForMode` không cancellation; fetch chậm nhất của mode cũ ghi đè `modeVoices` của mode mới.
-  - Fix: AbortController / guard theo mode id.
-- [ ] **[MEDIUM] D6 — SSE rớt mạng → restart nguyên chunk từ đầu (3× GPU phí phạm)**
-  - `api.ts:306-309` `onerror` đóng + `onError` ngay; retry (`StreamingPanel.svelte:158`) tạo task mới, vứt 90% đã xong. Backend SSE không heartbeat (`StreamTaskProgress`).
-  - Fix: reconnect EventSource (bỏ `onerror` đóng), backend gửi heartbeat + resume theo task_id.
-- [ ] **[BUG] D7 — `loginUser` trả `data.user || data` nhưng backend không có field `user`**
-  - `api.ts:52` vs `handlers/auth.go:186-191` (`{access_token, token_type, message, role}`). `Header.svelte:21` hiển thị `currentUser.username` = undefined sau login.
-  - Fix: backend thêm field `user` vào response login, hoặc FE dùng `/api/me` sau login.
-- [ ] **[LOW] D8 — History dedup key gồm `time_ago`**
-  - `HistoryModal.svelte:41-46` — "2 mins ago" vs "3 mins ago" không khớp → dedup no-op.
-  - Fix: bỏ `time_ago` khỏi key (hoặc bỏ hẳn code chết).
-- [ ] **[LOW] D9 — Clone reference không resample về 24kHz**
-  - `audioWav.ts:2` xuất đúng sample rate nguồn (48kHz) trong khi `audio_spec.default_sample_rate: 24000` (`schemas.py:276`). Trimmer không resample.
-  - Fix: resample về engine default trước khi encode.
+- [x] **[CRITICAL] [Done 2026-08-09] D1 — Vòng lặp generation chạy tiếp sau khi component unmount**
+  - `StreamingPanel.svelte`: thêm `onMount` cleanup — đặt `isCancelled = true` + revoke blob URLs khi component unmount. Đóng panel sau 5/50 chunk → 45 chunk còn lại dừng ngay, không tốn GPU, không rò blob URL.
+- [x] **[HIGH] [Done 2026-08-09] D2 — Auto-format trên blur phá huỷ ký tự không phải tiếng Việt**
+  - `TextInputPanel.svelte`: bỏ `onblur={() => runAutoFormat(false)}`. Auto-format chỉ chạy khi bấm nút "Clean Text" hoặc upload file — không còn tự động xoá emoji, CJK, em-dash khi người dùng rời ô.
+- [x] **[HIGH] [Done 2026-08-09] D3 — Hardcode `?format=wav` → file `.mp3` chứa byte WAV**
+  - `api.ts`: `subscribeTaskStream` thêm tham số `format` (default `'wav'`), dùng `encodeURIComponent`. `StreamingPanel` truyền `defaultFmt` (từ manifest) thay vì hardcode.
+- [x] **[MEDIUM] [Done 2026-08-09] D4 — Không refresh token cho request ngoài `checkCurrentUser`**
+  - `api.ts`: thêm `authFetch()` — wrapper tự thử `refreshSession()` một lần khi gặp 401, thay cho 12 chỗ `fetch` trần. `checkCurrentUser` đơn giản hoá nhờ wrapper. Các public endpoint (login, register, info, refresh) giữ `fetch` gốc.
+- [x] **[MEDIUM] [Done 2026-08-09] D5 — Race khi đổi tab voices**
+  - `GenericEnginePanel.svelte`: thêm bộ đếm `voiceLoadGeneration` — mỗi lần gọi `loadVoicesForMode` tăng generation, fetch xong kiểm tra generation còn đúng không. Mode cũ về sau bị bỏ, không ghi đè.
+- [x] **[MEDIUM] [Done 2026-08-09] D6 — SSE rớt mạng → restart nguyên chunk từ đầu**
+  - `api.ts`: `onerror` không đóng EventSource ngay — kiểm tra `readyState`: CONNECTING (browser đang reconnect) thì chờ, CLOSED (lỗi vĩnh viễn 404/403) mới gọi onError. Backend SSE gửi snapshot trạng thái khi mở lại, nên không mất tiến độ. Trước đây onerror đóng ngay → retry tạo task mới, vứt 90% đã xong.
+- [x] **[BUG] [Done prior] D7 — `loginUser` trả `data.user || data` nhưng backend không có field `user`**
+  - Backend đã thêm field `user` vào login response (C5: `handlers/auth.go:228-234`). Frontend `data.user` trả đúng UserResponse.
+- [x] **[LOW] [Done 2026-08-09] D8 — History dedup key gồm `time_ago`**
+  - C7 đã thay dedup key bằng `job_id` — `time_ago` không còn trong key.
+- [x] **[LOW] [Done 2026-08-09] D9 — Clone reference không resample về 24kHz**
+  - `audioWav.ts`: thêm `resampleAudioBuffer()` dùng `OfflineAudioContext` (Web Audio API, không thư viện ngoài). `audioSpec.ts`: thêm `defaultSampleRate()`. `WaveformTrimmer.svelte`: `handleTrimOnly` resample về engine default trước khi encode.
 
 ## E. Deploy / k8s / CI
 

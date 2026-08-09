@@ -33,12 +33,21 @@ export async function refreshSession(): Promise<boolean> {
   }
 }
 
+// authFetch giống fetch nhưng tự thử refreshSession() một lần khi gặp 401.
+// Mọi API call cần xác thực nên dùng hàm này thay vì fetch() trần — access token 15 phút,
+// phiên dài hơn 15 phút mà không retry thì mọi request sau bị 401 "Please log in" dù refresh
+// token còn hiệu lực.
+export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  let res = await fetch(input, { ...init, credentials: 'include' });
+  if (res.status === 401 && await refreshSession()) {
+    res = await fetch(input, { ...init, credentials: 'include' });
+  }
+  return res;
+}
+
 export async function checkCurrentUser(): Promise<UserResponse | null> {
   try {
-    let res = await fetch('/api/me', { credentials: 'include' });
-    if (res.status === 401 && await refreshSession()) {
-      res = await fetch('/api/me', { credentials: 'include' });
-    }
+    const res = await authFetch('/api/me');
     if (!res.ok) return null;
     return await res.json();
   } catch (err) {
@@ -79,22 +88,18 @@ export async function registerUser(username: string, password: string): Promise<
 export { loginUser as login, registerUser as register };
 
 export async function logout(): Promise<void> {
-  await fetch('/api/auth/logout', {
-    method: 'POST',
-    credentials: 'include',
-  });
+  await authFetch('/api/auth/logout', { method: 'POST' });
 }
 
 export async function fetchAdminUsers(): Promise<UserResponse[]> {
-  const res = await fetch('/api/admin/users', { credentials: 'include' });
+  const res = await authFetch('/api/admin/users');
   if (!res.ok) throw new Error('Failed to fetch user list');
   return await res.json();
 }
 
 export async function approveUser(userId: string): Promise<void> {
-  const res = await fetch(`/api/admin/users/${userId}/approve`, {
+  const res = await authFetch(`/api/admin/users/${userId}/approve`, {
     method: 'POST',
-    credentials: 'include',
   });
   if (!res.ok) throw new Error('Failed to approve user');
 }
@@ -126,7 +131,7 @@ export function parseVoiceItem(v: Record<string, unknown> | string): VoiceOption
 
 export async function fetchVoices(modelId: string): Promise<VoiceOption[]> {
   try {
-    const res = await fetch(`/api/voices/${modelId}`, { credentials: 'include' });
+    const res = await authFetch(`/api/voices/${modelId}`);
     if (!res.ok) throw new Error('Failed to load voices');
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -145,7 +150,7 @@ export async function fetchVoices(modelId: string): Promise<VoiceOption[]> {
 export async function fetchPresets(modelId?: string): Promise<Preset[]> {
   try {
     const url = modelId ? `/api/clone/voices?model_id=${encodeURIComponent(modelId)}` : '/api/clone/voices';
-    const res = await fetch(url, { credentials: 'include' });
+    const res = await authFetch(url);
     if (!res.ok) return [];
     const data = await res.json();
     if (Array.isArray(data)) {
@@ -168,9 +173,8 @@ export async function fetchPresets(modelId?: string): Promise<Preset[]> {
 }
 
 export async function deleteCloneVoice(id: string): Promise<void> {
-  const res = await fetch(`/api/clone/voices/${id}`, {
+  const res = await authFetch(`/api/clone/voices/${id}`, {
     method: 'DELETE',
-    credentials: 'include',
   });
   if (!res.ok) throw new Error('Failed to delete voice sample');
 }
@@ -178,10 +182,9 @@ export async function deleteCloneVoice(id: string): Promise<void> {
 export async function extractTextFromFile(file: File): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
-  const res = await fetch('/api/extract-text', {
+  const res = await authFetch('/api/extract-text', {
     method: 'POST',
     body: formData,
-    credentials: 'include',
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || 'Error reading file');
@@ -204,7 +207,7 @@ export async function synthesize(
   options: SynthesizeOptions = {}
 ): Promise<string> {
   const { jobId, chunkIndex = 0, totalChunks = 1, pitch, emotion } = options;
-  const res = await fetch(`/api/synthesize/${engine}`, {
+  const res = await authFetch(`/api/synthesize/${engine}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -219,7 +222,6 @@ export async function synthesize(
       ...(pitch !== undefined ? { pitch } : {}),
       ...(emotion ? { emotion } : {}),
     }),
-    credentials: 'include',
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || 'Audio synthesis failed');
@@ -251,10 +253,9 @@ export async function cloneVoice(
     formData.append(key, value);
   }
 
-  const res = await fetch('/api/clone/upload', {
+  const res = await authFetch('/api/clone/upload', {
     method: 'POST',
     body: formData,
-    credentials: 'include',
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || 'Voice cloning failed');
@@ -266,10 +267,9 @@ export async function cloneVoiceTemp(file: File, modelId = ''): Promise<string> 
   const formData = new FormData();
   formData.append('file', file);
   formData.append('model_id', modelId);
-  const res = await fetch('/api/clone/upload-temp', {
+  const res = await authFetch('/api/clone/upload-temp', {
     method: 'POST',
     body: formData,
-    credentials: 'include',
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || 'Failed to upload temporary voice');
@@ -279,8 +279,9 @@ export async function cloneVoiceTemp(file: File, modelId = ''): Promise<string> 
 export function subscribeTaskStream(
   taskId: string,
   onProgress: (progress: number) => void,
-  onComplete: (blob: Blob, mp3Url: string) => void,
-  onError: (errorMsg: string) => void
+  onComplete: (blob: Blob, altUrl: string) => void,
+  onError: (errorMsg: string) => void,
+  format = 'wav'
 ): () => void {
   const eventSource = new EventSource(`/api/stream/tasks/${taskId}`, { withCredentials: true });
 
@@ -292,14 +293,16 @@ export function subscribeTaskStream(
         onProgress(data.progress || 0);
       } else if (data.status === 'done') {
         eventSource.close();
-        const audioRes = await fetch(`/api/tasks/${taskId}/audio?format=wav`, { credentials: 'include' });
+        const audioRes = await authFetch(`/api/tasks/${taskId}/audio?format=${encodeURIComponent(format)}`);
         if (!audioRes.ok) {
-          onError('Failed to load audio file .wav from server');
+          onError(`Failed to load audio file .${format} from server`);
           return;
         }
         const blob = await audioRes.blob();
-        const mp3Url = `/api/tasks/${taskId}/audio?format=mp3`;
-        onComplete(blob, mp3Url);
+        // altUrl: URL for the same audio in a different format (first non-default from
+        // supported_formats).  Kept for backward compat — current callers ignore it.
+        const altUrl = `/api/tasks/${taskId}/audio?format=${format === 'mp3' ? 'wav' : 'mp3'}`;
+        onComplete(blob, altUrl);
       } else if (data.status === 'error' || data.status === 'failed') {
         eventSource.close();
         onError(data.error || 'AI processing error from server');
@@ -312,9 +315,16 @@ export function subscribeTaskStream(
     }
   };
 
-  eventSource.onerror = (err) => {
-    eventSource.close();
-    onError('Error connecting to Audio Stream SSE from server');
+  // D6: SSE onerror không đóng ngay — trình duyệt tự reconnect khi readyState là CONNECTING
+  // (0). Chỉ gọi onError khi kết nối bị đóng vĩnh viễn (readyState = CLOSED / 2), tức là
+  // server trả 404/403 hoặc lỗi không thể phục hồi. Nếu mất mạng tạm thời, EventSource tự
+  // kết nối lại; backend gửi snapshot trạng thái hiện tại khi SSE mở lại, nên không mất tiến
+  // độ. Trước đây onerror đóng ngay → retry tạo task mới, vứt 90% đã xong.
+  eventSource.onerror = () => {
+    if (eventSource.readyState === EventSource.CLOSED) {
+      onError('Connection to Audio Stream closed permanently');
+    }
+    // readyState === CONNECTING: browser đang tự reconnect — không làm gì cả.
   };
 
   return () => {
@@ -336,7 +346,7 @@ export async function fetchHistory(before: HistoryCursor | null = null): Promise
     params.set('before_id', before.job_id);
   }
   const qs = params.toString();
-  const res = await fetch(`/api/history${qs ? `?${qs}` : ''}`, { credentials: 'include' });
+  const res = await authFetch(`/api/history${qs ? `?${qs}` : ''}`);
   if (!res.ok) throw new Error('Failed to fetch history');
   return await res.json();
 }

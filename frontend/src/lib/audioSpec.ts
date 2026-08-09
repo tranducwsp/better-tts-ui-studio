@@ -126,6 +126,11 @@ export function defaultFormat(manifest: UniversalManifest | null | undefined, mo
   return resolveAudioSpec(manifest, mode).default_format.toLowerCase();
 }
 
+/** The default sample rate the engine expects for input and produces for output. */
+export function defaultSampleRate(manifest: UniversalManifest | null | undefined, mode?: Mode): number {
+  return resolveAudioSpec(manifest, mode).default_sample_rate;
+}
+
 /** MIME type for the default format, for assembling a combined download. */
 export function defaultMimeType(manifest: UniversalManifest | null | undefined, mode?: Mode): string {
   const known: Record<string, string> = {

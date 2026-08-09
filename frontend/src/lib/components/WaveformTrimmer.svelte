@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { audioBufferToWav } from '../audioWav';
+  import { audioBufferToWav, resampleAudioBuffer } from '../audioWav';
   import { toast } from '../toast.svelte';
-  import { referenceAudioSeconds } from '../audioSpec';
+  import { referenceAudioSeconds, defaultSampleRate } from '../audioSpec';
   import type { UniversalManifest, EngineModeSpec } from '../types';
 
   interface Props {
@@ -168,9 +168,14 @@
     isDragging = false;
   }
 
-  function handleTrimOnly() {
+  async function handleTrimOnly() {
     if (!audioBuffer) return;
-    const blob = audioBufferToWav(audioBuffer, trimStart, trimEnd);
+    // D9: resample về engine default (thường 24kHz) trước khi encode. Gửi 48kHz khiến engine
+    // phát nhanh/chậm hoặc từ chối. OfflineAudioContext resample chất lượng cao, không cần
+    // thư viện ngoài; bỏ qua khi đã đúng sample rate.
+    const targetRate = defaultSampleRate(manifest, mode);
+    const resampled = await resampleAudioBuffer(audioBuffer, targetRate);
+    const blob = audioBufferToWav(resampled, trimStart, trimEnd);
     const newFileName = file.name.replace(/\.[^/.]+$/, '') + '_trimmed.wav';
     const trimmedFile = new File([blob], newFileName, { type: 'audio/wav' });
     previewAudioUrl = URL.createObjectURL(blob);

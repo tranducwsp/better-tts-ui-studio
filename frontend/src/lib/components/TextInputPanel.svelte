@@ -332,7 +332,6 @@
           spellcheck="false"
           bind:value={text}
           readonly={isReadOnly}
-          onblur={() => runAutoFormat(false)}
           placeholder="Enter or paste your text here..."
           style="opacity: {isReadOnly ? 0.7 : 1}; cursor: {isReadOnly ? 'not-allowed' : 'text'};"
         ></textarea>

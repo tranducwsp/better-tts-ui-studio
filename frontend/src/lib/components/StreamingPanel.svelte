@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { synthesize, subscribeTaskStream } from '../api';
+  import { synthesize, subscribeTaskStream, authFetch } from '../api';
   import { splitIntoChunks } from '../textLimits';
   import { combinedDownloadFormat, defaultFormat, defaultMimeType, downloadFormats } from '../audioSpec';
   import { toast } from '../toast.svelte';
@@ -57,6 +57,18 @@
       chunkListContainer.addEventListener('wheel', handleWheel, { passive: false });
       return () => chunkListContainer.removeEventListener('wheel', handleWheel);
     }
+  });
+
+  // D1: Khi component unmount (đóng panel), dừng vòng lặp generation và thu hồi blob URL.
+  // Không có bước này, 50 chunk đóng sau 5 → 45 chunk âm thầm chạy tiếp tốn GPU, mỗi chunk
+  // tạo thêm một dòng lịch sử vô chủ, và blob URL rò cho đến khi trang bị nạp lại.
+  onMount(() => {
+    return () => {
+      isCancelled = true;
+      chunks.forEach((c) => {
+        if (c.blobUrl?.startsWith('blob:')) URL.revokeObjectURL(c.blobUrl);
+      });
+    };
   });
 
   async function startStreamingJob() {
@@ -122,7 +134,7 @@
 
     // Init Job History API
     try {
-      await fetch('/api/jobs/init', {
+      await authFetch('/api/jobs/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -135,7 +147,6 @@
           total_chunks: chunks.length,
           text: text,
         }),
-        credentials: 'include',
       });
     } catch (e) {}
 
@@ -181,7 +192,8 @@
               taskId,
               () => {},
               (b) => resolve(b),
-              (err) => reject(new Error(err))
+              (err) => reject(new Error(err)),
+              defaultFmt
             );
           });
 
@@ -305,9 +317,7 @@
       // only the first chunk's duration.
       const parts = await Promise.all(
         ready.map(async (c) => {
-          const res = await fetch(`/api/tasks/${c.taskId}/audio?format=${combinedFormat}`, {
-            credentials: 'include',
-          });
+          const res = await authFetch(`/api/tasks/${c.taskId}/audio?format=${combinedFormat}`);
           if (!res.ok) throw new Error(`Chunk ${c.index + 1} failed (${res.status})`);
           return res.blob();
         })

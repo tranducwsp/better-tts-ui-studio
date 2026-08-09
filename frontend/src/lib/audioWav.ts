@@ -1,3 +1,17 @@
+// resampleAudioBuffer chuyển đổi AudioBuffer về sample rate mục tiêu bằng OfflineAudioContext.
+// Engine thường yêu cầu 24kHz, nhưng file nguồn có thể là 48kHz — gửi sai sample rate khiến
+// engine phát âm thanh nhanh/chậm hoặc từ chối. OfflineAudioContext resample chất lượng cao
+// (linear interpolation), không cần thư viện ngoài.
+export async function resampleAudioBuffer(buffer: AudioBuffer, targetSampleRate: number): Promise<AudioBuffer> {
+  if (buffer.sampleRate === targetSampleRate) return buffer;
+  const ctx = new OfflineAudioContext(buffer.numberOfChannels, Math.ceil(buffer.duration * targetSampleRate), targetSampleRate);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start(0);
+  return ctx.startRendering();
+}
+
 export function audioBufferToWav(buffer: AudioBuffer, startSec: number, endSec: number): Blob {
   const sampleRate = buffer.sampleRate;
   const startFrame = Math.floor(startSec * sampleRate);

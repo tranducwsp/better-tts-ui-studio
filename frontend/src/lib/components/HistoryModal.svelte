@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchHistory } from '../api';
+  import { fetchHistory, authFetch } from '../api';
   import type { HistoryCursor } from '../api';
   import { toast } from '../toast.svelte';
   import type { HistoryItem, JobDetailResponse } from '../types';
@@ -35,7 +35,7 @@
         params.set('before_id', before.job_id);
       }
       const qs = params.toString();
-      const res = await fetch(`/api/admin/users/${targetUserId}/history${qs ? `?${qs}` : ''}`, { credentials: 'include' });
+      const res = await authFetch(`/api/admin/users/${targetUserId}/history${qs ? `?${qs}` : ''}`);
       if (!res.ok) throw new Error('Failed to load user history');
       return await res.json();
     }
@@ -85,7 +85,7 @@
 
   async function reloadJob(jobId: string) {
     try {
-      const res = await fetch(`/api/history/${jobId}`, { credentials: 'include' });
+      const res = await authFetch(`/api/history/${jobId}`);
       if (!res.ok) throw new Error('Failed to reload task');
       const job = await res.json();
       onReloadJob(job);

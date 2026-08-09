@@ -91,7 +91,14 @@
   }
 
   // Load engine voices & user custom saved clone voices from DB
+  //
+  // Guard bằng bộ đếm: mỗi lần gọi tăng generation, fetch xong kiểm tra generation có còn
+  // đúng không — nếu đổi tab giữa chừng thì kết quả cũ bị bỏ. AbortController cũng được
+  // nhưng cần truyền signal qua hai hàm fetchVoices/fetchPresets; bộ đếm chỉ cần một biến.
+  let voiceLoadGeneration = 0;
+
   async function loadVoicesForMode(modeId: string) {
+    const gen = ++voiceLoadGeneration;
     modeVoices = [];
     try {
       let combined: VoiceOption[] = [];
@@ -132,6 +139,9 @@
           uniqueVoices.push(v);
         }
       }
+
+      // Mode đổi giữa chừng — fetch cũ về sau nhưng không ghi đè.
+      if (gen !== voiceLoadGeneration) return;
 
       modeVoices = uniqueVoices;
       if (uniqueVoices.length > 0 && (!selectedVoice || !uniqueVoices.some(v => (v.id || v.name) === selectedVoice))) {
