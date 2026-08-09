@@ -167,8 +167,8 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if ok, err := storage.Global.Exists(r.Context(), storage.TempKey(taskID, format)); err == nil && ok {
-			if h.serveFromStore(w, r, storage.TempKey(taskID, format), format) {
+		if ok, err := storage.Global.Exists(r.Context(), storage.AudioKey(taskID, format)); err == nil && ok {
+			if h.serveFromStore(w, r, storage.AudioKey(taskID, format), format) {
 				return
 			}
 		}
@@ -205,7 +205,7 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	// nhất — không cần nạp bytes vào tiến trình này chút nào.
 	if source == nil {
 		for _, ext := range audio.KnownFormats() {
-			key := storage.TempKey(taskID, ext)
+			key := storage.AudioKey(taskID, ext)
 			ok, err := storage.Global.Exists(r.Context(), key)
 			if err != nil || !ok {
 				continue

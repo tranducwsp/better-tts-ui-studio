@@ -69,7 +69,7 @@ func TestGetTaskAudio_RedirectsWhenStoreCanPresign(t *testing.T) {
 	storage.Global = fake
 
 	const taskID = "presign-task-1"
-	if err := base.Put(context.Background(), storage.TempKey(taskID, "wav"), bytes.NewReader([]byte("RIFF....WAVE"))); err != nil {
+	if err := base.Put(context.Background(), storage.AudioKey(taskID, "wav"), bytes.NewReader([]byte("RIFF....WAVE"))); err != nil {
 		t.Fatalf("ghi đối tượng: %v", err)
 	}
 
@@ -125,7 +125,7 @@ func TestGetTaskAudio_ChecksOwnershipBeforeSigning(t *testing.T) {
 	storage.Global = fake
 
 	const taskID = "presign-task-2"
-	if err := base.Put(context.Background(), storage.TempKey(taskID, "wav"), bytes.NewReader([]byte("RIFF....WAVE"))); err != nil {
+	if err := base.Put(context.Background(), storage.AudioKey(taskID, "wav"), bytes.NewReader([]byte("RIFF....WAVE"))); err != nil {
 		t.Fatalf("ghi đối tượng: %v", err)
 	}
 

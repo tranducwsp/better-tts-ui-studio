@@ -67,17 +67,19 @@ func Init(backend, dir string, s3cfg S3Config) error {
 	}
 }
 
-// TempKey là khoá của âm thanh đã sinh cho một task.
-func TempKey(taskID, format string) string {
-	return "temp/" + safeSegment(taskID) + "." + safeSegment(format)
+// AudioKey là khoá của âm thanh đầu ra đã sinh cho một task.
+func AudioKey(taskID, format string) string {
+	return "audio/" + safeSegment(taskID) + "." + safeSegment(format)
 }
 
-// TranscodeKey là khoá của bản đã chuyển mã, cất cạnh bản gốc.
-//
-// Hậu tố tách bằng dấu chấm để bộ quét dọn nhìn thấy chúng như mọi tệp tạm khác, và để vòng
-// dò định dạng gốc không nhầm một bản chuyển mã là bản gốc.
+// TempKey là khoá của tệp âm thanh tạm (ví dụ file tham chiếu tải lên cho zero-shot clone).
+func TempKey(filename string) string {
+	return "temp/" + safeSegment(filename)
+}
+
+// TranscodeKey là khoá của bản đã chuyển mã, cất trong nhánh âm thanh đầu ra.
 func TranscodeKey(taskID, format string) string {
-	return "temp/" + safeSegment(taskID) + ".to." + safeSegment(format)
+	return "audio/" + safeSegment(taskID) + ".to." + safeSegment(format)
 }
 
 // VoiceKey là khoá của tệp giọng tham chiếu người dùng đã lưu, tách theo mode rồi tới user.
@@ -85,7 +87,10 @@ func VoiceKey(modeID, userID, filename string) string {
 	return safeSegment(modeID) + "/" + safeSegment(userID) + "/voice/" + safeSegment(filename)
 }
 
-// TempPrefix là nhánh chứa âm thanh tạm, thứ duy nhất bộ quét dọn được phép đụng vào.
+// AudioPrefix là nhánh chứa âm thanh đầu ra sinh từ engine.
+const AudioPrefix = "audio"
+
+// TempPrefix là nhánh chứa tệp đệm tạm (file upload zero-shot clone).
 const TempPrefix = "temp"
 
 // Root trả về gốc lưu trữ cục bộ đang có hiệu lực.

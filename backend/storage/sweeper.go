@@ -15,10 +15,15 @@ import (
 // Chỉ quét nhánh temp: giọng người dùng đã lưu nằm ở nhánh khác và không được phép xoá. Ràng
 // buộc đó do List thi hành (không đệ quy), không phải do người gọi nhớ.
 func SweepTempObjects(ctx context.Context, store Store, retention time.Duration) (int, int64, error) {
-	objects, err := store.List(ctx, TempPrefix)
+	audioObjs, err := store.List(ctx, AudioPrefix)
 	if err != nil {
-		return 0, 0, err
+		audioObjs = nil
 	}
+	tempObjs, err := store.List(ctx, TempPrefix)
+	if err != nil {
+		tempObjs = nil
+	}
+	objects := append(audioObjs, tempObjs...)
 
 	cutoff := time.Now().Add(-retention).Unix()
 	var removed int
