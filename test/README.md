@@ -1,6 +1,19 @@
 # k6 Load Test — AI Voice Studio
 
-## Cài đặt k6
+## Running with Docker (Recommended - No installation required)
+
+```bash
+# Smoke test
+docker run --rm -i --network=host -v $(pwd)/test:/test grafana/k6 run /test/smoke.js
+
+# API test
+docker run --rm -i --network=host -v $(pwd)/test:/test grafana/k6 run /test/api.js
+
+# Load test (10k VUs)
+docker run --rm -i --network=host -v $(pwd)/test:/test grafana/k6 run /test/load.js
+```
+
+## Option: Cài đặt k6 lên máy host
 
 ```bash
 # Debian/Ubuntu
