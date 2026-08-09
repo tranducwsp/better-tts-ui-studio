@@ -22,3 +22,22 @@ spec:
   {{- end }}
   {{- end }}
 {{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ui-studio.fullname" . }}-frontend-dist
+  namespace: {{ .Values.namespace | default "ui-studio" }}
+  labels:
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}
+    helm.sh/chart: {{ include "ui-studio.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  accessModes:
+    - {{ .Values.frontendDist.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.frontendDist.size | quote }}
+  {{- if .Values.frontendDist.storageClass }}
+  storageClassName: "{{ .Values.frontendDist.storageClass }}"
+  {{- end }}

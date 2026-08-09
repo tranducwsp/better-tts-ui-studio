@@ -1,0 +1,131 @@
+package middleware
+
+import (
+	"context"
+	"net/http"
+	"strings"
+	"time"
+
+	"backend/config"
+	"backend/db"
+	"backend/db/sqlc"
+	"backend/security"
+	"backend/state"
+)
+
+type contextKey string
+
+// UserContextKey là key được dùng để lưu đối tượng *sqlc.User vào trong request context.
+const UserContextKey = contextKey("current_user")
+
+// AuthMiddleware kiểm tra token JWT từ Cookie hoặc Header, giải mã token và nạp thông tin người dùng từ PostgreSQL vào Request Context.
+func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tokenString := ""
+
+			// 1. Kiểm tra Token từ Cookie "access_token" (ưu tiên tối đa cho Web Frontend)
+			if cookie, err := r.Cookie("access_token"); err == nil {
+				tokenString = cookie.Value
+			}
+
+			// 2. Nếu Cookie trống, kiểm tra Header "Authorization: Bearer <token>" (cho API Clients/Postman)
+			if tokenString == "" {
+				authHeader := r.Header.Get("Authorization")
+				if authHeader != "" {
+					tokenString = authHeader
+				}
+			}
+
+			if tokenString != "" {
+				if strings.HasPrefix(tokenString, "Bearer ") {
+					tokenString = strings.TrimPrefix(tokenString, "Bearer ")
+				}
+
+				// Validate JWT token với secret key
+				claims, err := security.ValidateAccessToken(tokenString, cfg.SecretKey)
+				if err == nil && claims.Username != "" {
+					user, ok := lookupUser(r, claims.Username)
+					if ok {
+						ctx := context.WithValue(r.Context(), UserContextKey, &user)
+						r = r.WithContext(ctx)
+
+						// Cập nhật trạng thái Online lên Redis (TTL 60s), không chặn request.
+						//
+						// Trước đây việc này dùng r.Context(), nên nó vừa nằm trong đường đi của
+						// request vừa bị huỷ giữa lúc ghi nếu client ngắt kết nối — một chỉ báo
+						// phụ trợ không đáng làm cả hai điều đó.
+						go state.TouchUserOnline(context.WithoutCancel(r.Context()), user.ID)
+					}
+				}
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// lookupUser lấy bản ghi người dùng, ưu tiên cache ngắn hạn trước khi hỏi PostgreSQL.
+func lookupUser(r *http.Request, username string) (sqlc.User, bool) {
+	now := time.Now()
+	if cached, ok := globalUserCache.get(username, now); ok {
+		return cached, true
+	}
+
+	user, err := db.Queries.GetUserByUsername(r.Context(), username)
+	if err != nil {
+		return sqlc.User{}, false
+	}
+	globalUserCache.put(username, user, now)
+	return user, true
+}
+
+// GetCurrentUser lấy đối tượng *sqlc.User đã được lưu trong Request Context bởi AuthMiddleware.
+func GetCurrentUser(r *http.Request) (*sqlc.User, bool) {
+	user, ok := r.Context().Value(UserContextKey).(*sqlc.User)
+	return user, ok
+}
+
+// RequireAuth middleware yêu cầu người dùng phải đăng nhập hợp lệ trước khi tiếp tục.
+func RequireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, ok := GetCurrentUser(r)
+		if !ok {
+			http.Error(w, `{"detail":"Not authenticated"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RequireActiveUser middleware yêu cầu người dùng đã đăng nhập VÀ tài khoản đã được Admin phê duyệt (IsApproved = true).
+func RequireActiveUser(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, ok := GetCurrentUser(r)
+		if !ok {
+			http.Error(w, `{"detail":"Not authenticated"}`, http.StatusUnauthorized)
+			return
+		}
+		if !user.IsApproved {
+			http.Error(w, `{"detail":"Inactive or unapproved user"}`, http.StatusBadRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RequireAdmin middleware yêu cầu người dùng có quyền quản trị viên (Role = "admin").
+func RequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, ok := GetCurrentUser(r)
+		if !ok {
+			http.Error(w, `{"detail":"Not authenticated"}`, http.StatusUnauthorized)
+			return
+		}
+		if user.Role != "admin" {
+			http.Error(w, `{"detail":"Not enough permissions"}`, http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}

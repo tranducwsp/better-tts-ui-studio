@@ -5,9 +5,9 @@ rather than transcribing the schema by hand.
 
 | File | Engine | What it shows |
 |---|---|---|
-| `manifest-core-tts.json` | `core-tts` (the bundled production engine) | The common case: three modes, cloning on one of them, pitch and emotion off everywhere. |
+| `manifest-engine.json` | `core-tts-example` (the bundled example engine) | The common case: three modes, cloning on one of them, pitch and emotion off everywhere. |
 
-## Reading `manifest-core-tts.json`
+## Reading `manifest-engine.json`
 
 Two things in it are worth pointing at, because they are the parts most easily got wrong.
 
@@ -43,8 +43,8 @@ discards whatever it matched, so text goes missing. Prefer lookbehind.
 ## Regenerating
 
 ```
-curl -s http://localhost:8000/api/info | python3 -m json.tool > docs/examples/manifest-core-tts.json
+curl -s http://localhost:8000/api/info | python3 -m json.tool > docs/examples/manifest-engine.json
 ```
 
-Worth redoing after any change to `core-tts/schemas.py`, so the example keeps matching what
+Worth redoing after any change to `core-tts-example/schemas.py`, so the example keeps matching what
 the engine actually serves.

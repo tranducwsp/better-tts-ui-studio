@@ -1,10 +1,12 @@
-# Default values for ui-studio Infrastructure Platform Helm Chart
+# Default values for UI Studio Infrastructure Platform Helm Chart
 namespace: ui-studio
 
 global:
   domain: studio.amoratran.id.vn
 
+# ---------------------------------------------------------------------------
 # 1. Control Plane Backend (Go Chi)
+# ---------------------------------------------------------------------------
 backend:
   replicaCount: 1
   image:
@@ -22,11 +24,43 @@ backend:
       cpu: "2"
       memory: "2Gi"
 
-# 2. Core AI Inference Engine
-coreEngine:
+# ---------------------------------------------------------------------------
+# 2. Synthesis Worker (same image as backend, different binary)
+# ---------------------------------------------------------------------------
+worker:
   replicaCount: 1
   image:
-    repository: harbor.amoratran.id.vn/tiny-src/studio-core-engine
+    repository: harbor.amoratran.id.vn/tiny-src/studio-backend
+    pullPolicy: Always
+    tag: "latest"
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+
+# ---------------------------------------------------------------------------
+# 3. Sweeper CronJob (same image as backend, different binary)
+# ---------------------------------------------------------------------------
+cron:
+  schedule: "*/15 * * * *"
+  image:
+    repository: harbor.amoratran.id.vn/tiny-src/studio-backend
+    pullPolicy: Always
+    tag: "latest"
+  tempAudioRetentionHours: 24
+  staleChunkAfterMinutes: 30
+
+# ---------------------------------------------------------------------------
+# 4. AI Inference Engine
+# ---------------------------------------------------------------------------
+engine:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: harbor.amoratran.id.vn/tiny-src/studio-engine
     pullPolicy: Always
     tag: "latest"
   service:
@@ -40,7 +74,9 @@ coreEngine:
       cpu: "4"
       memory: "8Gi"
 
-# 3. Frontend Web Studio
+# ---------------------------------------------------------------------------
+# 5. Frontend Web Studio (Nginx)
+# ---------------------------------------------------------------------------
 frontend:
   replicaCount: 1
   image:
@@ -49,11 +85,53 @@ frontend:
     tag: "latest"
   service:
     type: ClusterIP
-    port: 80
+    port: 5173
 
+# ---------------------------------------------------------------------------
+# 6. Frontend Builder (Node.js sidecar for on-demand rebuild)
+#
+# Chia PVC frontend-dist với frontend. Cần storageClass hỗ trợ ReadWriteMany
+# (NFS, CephFS, v.v.) nếu hai pod nằm trên khác node. Nếu dùng
+# storageClass chỉ hỗ trợ ReadWriteOnce, cần đảm bảo cả hai pod cùng node
+# (thêm affinity) hoặc chuyển sang S3 để không cần shared volume.
+# ---------------------------------------------------------------------------
+frontendBuilder:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: harbor.amoratran.id.vn/tiny-src/studio-frontend-builder
+    pullPolicy: Always
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 3001
+
+# ---------------------------------------------------------------------------
+# Infrastructure (optional — set enabled: true to deploy in-cluster)
+# ---------------------------------------------------------------------------
+postgresql:
+  enabled: false
+  image: postgres:16-alpine
+  storageClass: "local-path"
+  size: "10Gi"
+  auth:
+    database: ai_studio
+
+redis:
+  enabled: false
+  image: redis:alpine
+  storageClass: "local-path"
+  size: "1Gi"
+
+# ---------------------------------------------------------------------------
+# Image pull credentials
+# ---------------------------------------------------------------------------
 imagePullSecrets:
   - name: tiny-src-registry-secret
 
+# ---------------------------------------------------------------------------
+# Ingress
+# ---------------------------------------------------------------------------
 ingress:
   enabled: true
   className: "traefik"
@@ -62,9 +140,46 @@ ingress:
     ingress.kubernetes.io/proxy-body-size: "0"
   host: studio.amoratran.id.vn
 
+# ---------------------------------------------------------------------------
+# Persistence — backend storage volume (audio files, etc.)
+# ---------------------------------------------------------------------------
 persistence:
   enabled: true
   storageClass: "local-path"
   accessMode: "ReadWriteOnce"
   size: "10Gi"
   mountPath: "/app/storage"
+
+# ---------------------------------------------------------------------------
+# Frontend dist volume — shared between frontend-builder and frontend.
+# ---------------------------------------------------------------------------
+frontendDist:
+  storageClass: "local-path"
+  accessMode: "ReadWriteOnce"
+  size: "1Gi"
+
+# ---------------------------------------------------------------------------
+# Sensitive config — override via --set or values override file.
+#
+# KHÔNG đặt giá trị thật ở đây. Dùng một trong các cách sau:
+#   1. helm install --set secret.secretKey=xxx ...
+#   2. Tạo values override riêng (không commit vào git)
+#   3. Sealed Secrets (kubeseal) hoặc External Secrets Operator
+# ---------------------------------------------------------------------------
+secret:
+  secretKey: ""
+  databaseUrl: ""
+  redisUrl: ""
+  redisPassword: ""
+  cookieSecure: "1"
+  defaultAdminUsername: ""
+  defaultAdminPassword: ""
+  defaultUserUsername: ""
+  defaultUserPassword: ""
+  s3Bucket: ""
+  s3Region: "us-east-1"
+  s3Endpoint: ""
+  s3AccessKeyId: ""
+  s3SecretAccessKey: ""
+  s3ForcePathStyle: "0"
+  s3Prefix: ""

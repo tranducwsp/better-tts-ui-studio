@@ -7,7 +7,7 @@ import { DEFAULT_TEXT_LIMIT, resolveChunkSize } from './textLimits';
 import type { UniversalManifest } from './types';
 
 /**
- * The same fixture core-backend/tests/parity_test.go reads.
+ * The same fixture backend/tests/schema_parity_test.go reads.
  *
  * resolveCapabilities() and types.ResolveCapabilities() implement one rule in two
  * languages, and nothing in either toolchain notices when they stop agreeing. Driving both

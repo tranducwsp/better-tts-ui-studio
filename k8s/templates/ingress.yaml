@@ -22,11 +22,25 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
-          - path: /
+          - path: /api
             pathType: Prefix
             backend:
               service:
                 name: {{ include "ui-studio.fullname" . }}-backend
                 port:
                   number: {{ .Values.backend.service.port }}
+          - path: /storage
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ui-studio.fullname" . }}-backend
+                port:
+                  number: {{ .Values.backend.service.port }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ui-studio.fullname" . }}-frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
 {{- end }}

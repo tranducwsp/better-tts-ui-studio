@@ -6,15 +6,15 @@ kiểm thử. Thứ tự trình bày theo đường đi của một request, kh�
 Ba dịch vụ:
 
 ```
-frontend (Svelte 5)  ──HTTP──>  core-backend (Go, :8000)  ──HTTP──>  core-tts (Python, :8001)
-   giao diện                     xác thực, hạn mức, lịch sử          suy luận AI, không auth
+frontend (Svelte 5)  ──HTTP──>  backend (Go, :8000)  ──HTTP/gRPC──>  engine (external, :8001)
+   giao diện                     xác thực, hạn mức, lịch sử                suy luận AI, không auth
                                         │
                                    PostgreSQL + Redis
 ```
 
-Ranh giới tin cậy: **chỉ core-backend là biên phòng vệ.** core-tts không có xác thực và
+Ranh giới tin cậy: **chỉ backend là biên phòng vệ.** Engine không có xác thực và
 tin mọi thứ nó nhận; nó chỉ được bảo vệ bằng việc không mở cổng ra host. Mọi kiểm tra đầu
-vào có ý nghĩa an ninh đều phải nằm ở core-backend.
+vào có ý nghĩa an ninh đều phải nằm ở backend.
 
 Điểm cần nắm trước khi đọc bất cứ thứ gì: **Manifest là nguồn của mọi hạn mức.** Engine tự
 khai nó chấp nhận gì (độ dài văn bản, khoảng speed/pitch, danh sách mode, định dạng tệp), và
@@ -30,15 +30,15 @@ tổng hợp giọng nói, và nó chạm vào mọi tầng:
 
 | # | Tệp | Vì sao đọc ở bước này |
 |---|-----|----------------------|
-| 1 | `core-backend/cmd/web/main.go` | Entrypoint HTTP: nạp config, bootstrap web, mở server |
-| 2 | `core-backend/router/router.go` | Toàn bộ danh sách route và middleware của từng route — bản đồ bề mặt tấn công |
-| 3 | `core-backend/middleware/auth.go` | Danh tính được xác lập thế nào, và ba mức bảo vệ khác nhau ra sao |
-| 4 | `core-backend/state/manifest.go` | Mọi hạn mức được thi hành ở đây |
-| 5 | `core-backend/handlers/unified.go` | Handler tổng hợp — nơi 4 tệp trên gặp nhau |
+| 1 | `backend/cmd/web/main.go` | Entrypoint HTTP: nạp config, bootstrap web, mở server |
+| 2 | `backend/router/router.go` | Toàn bộ danh sách route và middleware của từng route — bản đồ bề mặt tấn công |
+| 3 | `backend/middleware/auth.go` | Danh tính được xác lập thế nào, và ba mức bảo vệ khác nhau ra sao |
+| 4 | `backend/state/manifest.go` | Mọi hạn mức được thi hành ở đây |
+| 5 | `backend/handlers/unified.go` | Handler tổng hợp — nơi 4 tệp trên gặp nhau |
 
 ---
 
-## core-backend (Go) — biên phòng vệ
+## backend (Go) — biên phòng vệ
 
 ### Khởi động và cấu hình
 
@@ -119,25 +119,19 @@ Hai tệp này quyết định hành vi của phần lớn hệ thống. Đọc 
 
 | Tệp | Dòng | Chức năng |
 |-----|------|-----------|
-| `client/core_tts.go` | 200 | Client HTTP tới core-tts: `GetInfo` (manifest), `GetVoices`, `Synthesize`, `CloneVoice`. Đường đi thật đang dùng. |
-| `client/grpc_tts.go` | 136 | Client gRPC streaming. **Đã viết, chưa nối — để dành cho sau.** Bỏ qua ở lần review này; xem ghi chú cuối tệp. |
+| `client/core_tts.go` | 200 | Client HTTP tới engine: `GetInfo` (manifest), `GetVoices`, `Synthesize`, `CloneVoice`. Đường đi thật đang dùng. |
+| `client/grpc_tts.go` | 136 | Client gRPC streaming. **Đã viết, đã nối — đường streaming dùng gRPC.** |
 | `proto/*.pb.go` | 601 | **Sinh tự động** từ `.proto`, phục vụ đường gRPC ở trên. Bỏ qua khi review. |
 
 ---
 
-## core-tts (Python, FastAPI) — engine suy luận
+## engine (external) — engine suy luận
 
-Không có xác thực. Mọi endpoint mở cho bất kỳ ai gọi tới được, nên nó **phải** nằm trong
-mạng nội bộ.
+Engine là repo riêng của AI engineer, không nằm trong repo này. Nó không có xác thực, mọi
+endpoint mở cho bất kỳ ai gọi tới được, nên nó **phải** nằm trong mạng nội bộ.
 
-| Tệp | Dòng | Chức năng |
-|-----|------|-----------|
-| `schemas.py` | 283 | **Định nghĩa Manifest phía Python** — phải khớp `core-backend/types/manifest.go`. Đây là hợp đồng giữa hai dịch vụ; lệch ở đây là lệch toàn hệ thống. |
-| `routes.py` | 176 | Mọi endpoint: `/info`, `/voices`, `/synthesize`, `/tasks/{id}`, `/voices/clone`, `/health`. |
-| `engine.py` | 152 | Suy luận thật: nạp model vieneu (lười), giọng Edge TTS cho mode `fast`, và `get_preset_voices` lọc giọng theo mode. |
-| `main.py` | 46 | Dựng app FastAPI, CORS, và điểm khởi động uvicorn. |
-| `config.py` | 20 | Giới hạn luồng CPU/GPU, host/port, thư mục lưu trữ. |
-| `grpc_server.py` | 76 | Server gRPC streaming. **Đã viết, chưa nối** — `main.py` chưa gọi `serve_grpc()`. Cùng nhóm để dành với `client/grpc_tts.go`. |
+Hợp đồng giữa backend và engine được quy định ở `backend/types/manifest.go` và
+`engine/schemas.py` (bên repo engine). Lệch ở đây là lệch toàn hệ thống.
 
 `core-tts-example/` là **example engine** (không cần GPU, sinh sóng sin ngẫu nhiên) dùng để
 chạy frontend mà không cần model thật. Tự khai `engine_name="Mock Test AI Engine"` trong manifest.
@@ -192,7 +186,7 @@ Thành phần giao diện (`src/lib/components/`), theo độ lớn:
 | Tệp | Chức năng |
 |-----|-----------|
 | `docker-compose.yml` | 6 dịch vụ. **Chỉ 5173 (UI) và 8000 (API) mở ra host**; postgres, redis, engine, builder chỉ dùng `expose` trong mạng nội bộ. Bắt buộc `SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD` qua cú pháp `:?`. |
-| `.env.example` | **Sinh tự động** từ `config/settings.go`. Đừng sửa tay; chạy `cd core-backend && go generate ./config`. |
+| `.env.example` | **Sinh tự động** từ `config/settings.go`. Đừng sửa tay; chạy `cd backend && go generate ./config`. |
 | `k8s/` | Helm chart (deployment, ingress, service, pvc, sealed secret). `auth-sealedsecret.yaml` chứa ciphertext — commit là đúng thiết kế. |
 | `.gitea/workflows/ci.yml` | Hiện **comment toàn bộ** — không có gate CI nào chạy. |
 | `docs/` | Đặc tả protocol, hướng dẫn tích hợp engine, tham chiếu cấu hình, và `capability-resolution-cases.json` (fixture dùng chung cho test Go và frontend). |
@@ -209,12 +203,7 @@ và ~175 không có trần, nên tệp nén 597 KB giải nén thành 600 MB (đ
 sau proxy tin cậy, ai cũng vượt được hạn mức bằng cách đổi header mỗi request — tức lớp chống
 dò mật khẩu coi như không có. Nên chỉ đọc header này khi có cấu hình xác nhận đứng sau proxy.
 
-**3. Đường gRPC đã viết nhưng chưa nối — có chủ đích, không phải rác.** `client/grpc_tts.go`
-(136 dòng) chưa được tệp nào ngoài chính nó tham chiếu; `core-tts/grpc_server.py` chưa được
-`main.py` gọi; `CORE_ENGINE_GRPC_URL` được đọc vào `Config` rồi chưa ai dùng. Mọi lượt tổng
-hợp hiện đi qua HTTP trong `client/core_tts.go`.
-
-Đây là phần **để dành cho sau**, sẽ nối vào khi đường HTTP đã review xong và ổn định — nên
-đừng xoá, và cũng đừng tính nó vào phạm vi review lần này. Ghi ở đây chỉ để bạn không mất thời
-gian truy tại sao `StreamStandardSynthesize` không có ai gọi, và để không ai kết luận rằng
-streaming hiện đang chạy trên gRPC (nó chạy trên SSE, xem `handlers/tasks.go`).
+**3. Đường gRPC đã được nối.** `client/grpc_tts.go` được dùng cho đường streaming,
+`CORE_ENGINE_GRPC_URL` cấu hình địa chỉ gRPC endpoint. Mọi lượt tổng hợp
+streaming đi qua gRPC trong `client/grpc_tts.go`; đường HTTP trong `client/core_tts.go`
+vẫn dùng cho các yêu cầu không streaming.

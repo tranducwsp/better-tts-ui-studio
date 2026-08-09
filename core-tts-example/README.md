@@ -79,8 +79,9 @@ python main.py
 
 | Biến | Mặc định | Mục đích |
 |:---|:---|:---|
-| `CORE_PORT` | `8001` | Cổng lắng |
+| `CORE_PORT` | `8001` | Cổng lắng HTTP |
 | `CORE_HOST` | `0.0.0.0` | Host lắng |
+| `GRPC_PORT` | `0` | Cổng lắng gRPC (0 = tắt) |
 | `EXAMPLE_DELAY_SEC` | `0.0` | Giả lập độ trễ (chỉ dùng cho example) |
 
 **Lưu ý**: bản example chỉ dùng `CORE_PORT` và `CORE_HOST`. Engine thật tự quyết định

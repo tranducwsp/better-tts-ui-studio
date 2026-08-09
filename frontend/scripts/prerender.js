@@ -9,7 +9,7 @@ async function prerender() {
     appType: 'custom'
   });
 
-  // The engine's manifest has exactly one definition — core-tts/schemas.py — so there is
+  // The engine's manifest has exactly one definition — core-tts-example/schemas.py — so there is
   // no hand-written copy here to drift out of sync with it. When the backend is
   // unreachable at build time we prerender without one: App.svelte renders the shell and
   // fetches the manifest on hydrate, which is the path a cold client already takes.

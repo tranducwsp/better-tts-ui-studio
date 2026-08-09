@@ -7,7 +7,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD chưa được đặt trong .env}
       - POSTGRES_DB=${POSTGRES_DB:-ai_studio}
-    # Không publish 5432 ra host: core-backend nói chuyện với Postgres qua network nội bộ của
+    # Không publish 5432 ra host: backend nói chuyện với Postgres qua network nội bộ của
     # compose theo tên service. Mở ra host là đưa cơ sở dữ liệu lên mọi giao diện mạng của máy.
     # Cần psql từ ngoài thì dùng `docker compose exec postgres psql`.
     expose:
@@ -36,13 +36,13 @@ services:
     restart: unless-stopped
 
   # 1. AI Core Engine Microservice (Real AI Core TTS)
-  core-engine:
+  engine:
     build:
-      context: ./core-tts
+      context: ./core-tts-example
       dockerfile: Dockerfile
-    container_name: ai-core-engine
+    container_name: ai-engine
     # Engine không có lớp xác thực nào: mọi endpoint (/synthesize, /voices/clone) và cả gRPC
-    # đều mở cho bất kỳ ai gọi được tới nó. Nó chỉ nên tiếp nhận traffic từ core-backend qua
+    # đều mở cho bất kỳ ai gọi được tới nó. Nó chỉ nên tiếp nhận traffic từ backend qua
     # network nội bộ, nên cổng không ra host.
     expose:
       - "8001"
@@ -50,25 +50,25 @@ services:
     environment:
       - CORE_PORT=8001
       - CORE_HOST=0.0.0.0
+      - GRPC_PORT=50051
       # The engine owns the UI mode: it publishes this as ui_schema.ui_mode, the backend
       # forwards a rebuild webhook on manifest reload, and the frontend rebuilds against
       # the new value. "beauty" (default) or "fast" — the latter strips icons, webfonts
       # and GPU filters from the prerendered bundle.
       - UI_MODE=${UI_MODE:-beauty}
     volumes:
-      - ./core-tts:/app
-    # Không có --reload: nó theo dõi /app, mà /app là một bind mount từ host. Bất kỳ lỗi nào
-    # cho phép ghi một tệp .py vào cây nguồn sẽ được uvicorn tự nạp — biến một lỗi ghi tệp
-    # thành thực thi mã. Phát triển cục bộ thì thêm --reload trong compose override riêng.
-    command: uvicorn main:app --host 0.0.0.0 --port 8001
+      - ./core-tts-example:/app
+    # Dùng python main.py thay vì uvicorn trực tiếp: main.py khởi gRPC server khi GRPC_PORT
+    # được đặt, rồi mới gọi uvicorn. Gọi uvicorn trực tiếp thì gRPC không bao giờ start.
+    command: python main.py
     restart: unless-stopped
 
   # 2. Control Plane Web Backend (Go Chi - Auth, DB, Management, Dynamic Gateway)
-  core-backend:
+  backend:
     build:
-      context: ./core-backend
+      context: ./backend
       dockerfile: Dockerfile
-    container_name: ai-core-backend
+    container_name: ai-backend
     ports:
       - "8000:8000"
     environment:
@@ -90,8 +90,8 @@ services:
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-}
       - DEFAULT_USER_USERNAME=${DEFAULT_USER_USERNAME:-}
       - DEFAULT_USER_PASSWORD=${DEFAULT_USER_PASSWORD:-}
-      - CORE_ENGINE_URL=http://core-engine:8001
-      - CORE_ENGINE_GRPC_URL=core-engine:50051
+      - CORE_ENGINE_URL=http://engine:8001
+      - CORE_ENGINE_GRPC_URL=engine:50051
       - FE_BUILDER_URL=http://frontend-builder:3001
 
       # Kho lưu trữ. Mặc định local để `docker compose up` chạy được ngay mà không cần tài
@@ -111,13 +111,13 @@ services:
       - S3_PREFIX=${S3_PREFIX:-}
 
     volumes:
-      - ./core-backend/storage:/app/storage
+      - ./backend/storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      core-engine:
+      engine:
         condition: service_started
     command: ./web
     restart: unless-stopped
@@ -131,18 +131,18 @@ services:
   # Hàng đợi nằm trên Redis và KHÔNG bền: Redis ở đây chạy không có AOF/RDB, nên job đang chờ
   # mất khi Redis khởi động lại. Đó là lựa chọn có chủ ý — một chunk chỉ tốn vài giây để tổng
   # hợp lại, và giao diện đã tự thử lại ba lần cho mỗi chunk.
-  core-worker:
+  worker:
     build:
-      context: ./core-backend
+      context: ./backend
       dockerfile: Dockerfile
-    container_name: ai-core-worker
+    container_name: ai-worker
     environment:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY chưa được đặt trong .env}
       - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
       - REDIS_URL=redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - CORE_ENGINE_URL=http://core-engine:8001
-      - CORE_ENGINE_GRPC_URL=core-engine:50051
+      - CORE_ENGINE_URL=http://engine:8001
+      - CORE_ENGINE_GRPC_URL=engine:50051
 
       # Worker ghi âm thanh vào cùng kho mà web đọc ra. Với STORAGE_BACKEND=local, hai tiến
       # trình phải nằm trên cùng một máy và cùng volume — dùng S3 khi tách ra nhiều node.
@@ -156,24 +156,24 @@ services:
       - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-0}
       - S3_PREFIX=${S3_PREFIX:-}
     volumes:
-      - ./core-backend/storage:/app/storage
+      - ./backend/storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      core-engine:
+      engine:
         condition: service_started
     command: ./worker
     restart: unless-stopped
 
   # Sweeper dọn âm thanh tạm quá hạn. Cron, không phải worker: nó chạy theo đồng hồ
   # nên nhiều bản không chia được việc. Giữ đúng 1 replica.
-  core-cron:
+  cron:
     build:
-      context: ./core-backend
+      context: ./backend
       dockerfile: Dockerfile
-    container_name: ai-core-cron
+    container_name: ai-cron
     environment:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY chưa được đặt trong .env}
       - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
@@ -189,7 +189,7 @@ services:
       - TEMP_AUDIO_RETENTION_HOURS=${TEMP_AUDIO_RETENTION_HOURS:-24}
       - STALE_CHUNK_AFTER_MINUTES=${STALE_CHUNK_AFTER_MINUTES:-30}
     volumes:
-      - ./core-backend/storage:/app/storage
+      - ./backend/storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -203,19 +203,19 @@ services:
       dockerfile: Dockerfile.builder
     container_name: ai-studio-frontend-builder
     # /rebuild không có xác thực và mỗi lần gọi là một lượt build tốn CPU, nên nó chỉ nhận
-    # webhook từ core-backend trong network nội bộ.
+    # webhook từ backend trong network nội bộ.
     expose:
       - "3001"
     environment:
       - PORT=3001
-      # Nửa còn lại của liên kết với FE_BUILDER_URL; xem core-backend/config/settings.go.
-      - VITE_BACKEND_URL=${VITE_BACKEND_URL:-http://core-backend:8000}
+      # Nửa còn lại của liên kết với FE_BUILDER_URL; xem backend/config/settings.go.
+      - VITE_BACKEND_URL=${VITE_BACKEND_URL:-http://backend:8000}
     volumes:
       - ./frontend:/app
       - /app/node_modules
       - ./frontend/dist:/app/dist
     depends_on:
-      - core-backend
+      - backend
     restart: unless-stopped
 
   # 4. Frontend Web Studio (High-performance Nginx serving from shared frontend_dist volume)
@@ -231,7 +231,7 @@ services:
     volumes:
       - ./frontend/dist:/usr/share/nginx/html
     depends_on:
-      - core-backend
+      - backend
       - frontend-builder
     restart: unless-stopped
 

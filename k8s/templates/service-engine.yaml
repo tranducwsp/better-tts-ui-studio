@@ -1,0 +1,25 @@
+{{- if .Values.engine.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ui-studio.fullname" . }}-engine
+  namespace: {{ .Values.namespace | default "ui-studio" }}
+  labels:
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}-engine
+    helm.sh/chart: {{ include "ui-studio.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.engine.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.engine.service.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}-engine
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

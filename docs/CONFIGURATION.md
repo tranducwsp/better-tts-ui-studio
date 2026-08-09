@@ -13,10 +13,10 @@ limits? Environment. Neither? It is not configuration.
 
 ## 1. Manifest — declared by the engine
 
-**File:** `core-tts/schemas.py` (Pydantic defaults). Served at `GET /info`, cached by the
+**File:** `engine/schemas.py` (Pydantic defaults). Served at `GET /info`, cached by the
 backend, re-served at `GET /api/info`.
 
-This is the only place manifest *values* exist. `core-backend/types/manifest.go` and
+This is the only place manifest *values* exist. `backend/types/manifest.go` and
 `frontend/src/lib/types.ts` describe the shape so each side can decode it; neither holds
 defaults of its own beyond the platform fallbacks listed in §3.
 
@@ -43,14 +43,14 @@ default.** `undefined` means inherit; `false` means this mode explicitly cannot.
 
 ## 2. Environment — decided by the deployment
 
-**Declared in:** `core-backend/config/settings.go` — one table, one row per variable, each
+**Declared in:** `backend/config/settings.go` — one table, one row per variable, each
 carrying its default, valid range, group and reason for existing.
 
 **Read from:** `.env` (git-ignored) or `environment:` in `docker-compose.yml`.
 **Template:** `.env.example`, *generated* from that table:
 
 ```
-cd core-backend && go generate ./config
+cd backend && go generate ./config
 ```
 
 Do not edit `.env.example` by hand. `config.TestEnvExampleIsUpToDate` regenerates it into a
@@ -88,7 +88,7 @@ The table below is a summary; `settings.go` and `.env.example` are authoritative
 | `CORE_ENGINE_URL` | `http://localhost:8001` | Where the manifest is fetched from. |
 | `CORE_ENGINE_GRPC_URL` | `localhost:50051` | gRPC endpoint. Read into `Config`; the gRPC path is written but not wired in yet, so nothing consumes this today. Set it now and it will be correct when that path lands. |
 | `FE_BUILDER_URL` | `http://frontend-builder:3001` | Backend → builder: signals a rebuild when the manifest changes. Carries no payload. |
-| `VITE_BACKEND_URL` | `http://core-backend:8000` | Builder → backend: where it fetches the manifest. Read by the frontend, not the backend. |
+| `VITE_BACKEND_URL` | `http://backend:8000` | Builder → backend: where it fetches the manifest. Read by the frontend, not the backend. |
 | `TTS_CLIENT_TIMEOUT_SECONDS` | `60` | |
 | `COOKIE_SECURE` | `1` | Sets Secure on the session cookie. Use `0` only for local http://localhost. |
 | `POSTGRES_PASSWORD` | **none — required** | Read by docker-compose to build `DATABASE_URL`; compose refuses to start while empty. |
@@ -116,7 +116,7 @@ point of use. Reading `manifest?.constraints?...` directly in a component is how
 fallback ends up written twice with different values.
 
 These exist twice because the two runtimes cannot share code. They are pinned together by
-`docs/capability-resolution-cases.json`, which both `core-backend/tests/parity_test.go` and
+`docs/capability-resolution-cases.json`, which both `backend/tests/schema_parity_test.go` and
 `frontend/src/lib/capabilities.test.ts` read: change one side's constant and the other
 side's test fails. Add cases to that file rather than to either test.
 

@@ -104,8 +104,7 @@ class EngineConstraints(BaseModel):
     max_text_length: int = 3000
     speed_range: RangeConstraint = Field(default_factory=RangeConstraint)
     pitch_range: RangeConstraint = Field(default_factory=lambda: RangeConstraint(min=-10.0, max=10.0, default=0.0, step=0.5))
-    # Non-empty because one mode (emotion_v2) declares supports_emotion; a mode claiming
-    # emotion support with no vocabulary to choose from would be a contradiction.
+    # Available emotion labels for modes that declare supports_emotion.
     supported_emotions: List[str] = Field(default_factory=lambda: ["neutral", "happy", "sad", "angry", "excited"])
     chunking: ChunkingSpec = Field(default_factory=ChunkingSpec)
 
@@ -167,72 +166,36 @@ class ModelOptionSpec(BaseModel):
 class UISchemaSpec(BaseModel):
     ui_mode: str = Field(default_factory=lambda: os.getenv("UI_MODE", "beauty")) # "beauty" | "fast"
     input_panel: InputPanelSpec = Field(default_factory=InputPanelSpec)
-    model_sort: List[str] = Field(default_factory=lambda: ["fast", "express", "zero_shot_clone", "multilingual", "emotion_v2", "standard", "clone"])
+    model_sort: List[str] = Field(default_factory=lambda: ["fast", "standard", "zero_shot_clone"])
     option_panel: Dict[str, ModelOptionSpec] = Field(default_factory=lambda: {
         "fast": ModelOptionSpec(
             notice_banner=NoticeBannerSpec(
-                level="info",
-                message="⚡ Cloud Fast: Ultra-fast simulated TTS responses."
+                level="warning",
+                message="⚡ Chế độ Siêu Nhanh: Tổng hợp tốc độ cao, phù hợp nghe thử nhanh."
             ),
             voice_type="radio",
             speed_type="slider",
             preset_voices=[
-                {"id": "Voice A (Female)", "name": "Voice A (Female)", "gender": "female"},
-                {"id": "Voice B (Male)", "name": "Voice B (Male)", "gender": "male"}
+                {"id": "hoai_my", "name": "Hoài Mỹ", "gender": "female"},
+                {"id": "nam_minh", "name": "Nam Minh", "gender": "male"}
             ]
         ),
-        "express": ModelOptionSpec(
-            notice_banner=NoticeBannerSpec(
-                level="success",
-                message="✅ Express Real-Time: Low-latency streaming test engine ready."
-            ),
+        "standard": ModelOptionSpec(
             voice_type="select",
             speed_type="slider"
         ),
         "zero_shot_clone": ModelOptionSpec(
             notice_banner=NoticeBannerSpec(
                 level="info",
-                message="⚡ Instant Zero-Shot Clone: Supports reference audio upload & saving voice profiles to account."
+                message="⚡ Clone Giọng: Tải âm thanh tham chiếu để sao chép giọng nói, lưu giọng vào tài khoản."
             ),
             voice_type="select",
             speed_type="slider",
             voice_metadata_schema=[
-                VoiceMetadataFieldSpec(key="name", label="Voice Name", type="text", required=True, placeholder="e.g. My Cloned Voice..."),
-                VoiceMetadataFieldSpec(key="gender", label="Gender", type="select", options=["Male", "Female", "Other"]),
-                VoiceMetadataFieldSpec(key="region", label="Accent / Region", type="select", options=["North American", "British", "Australian", "Other"]),
-                VoiceMetadataFieldSpec(key="style", label="Style", type="select", options=["Expressive", "News / Broadcast", "Audiobook / Reading", "Dramatic", "Natural / Conversational", "Commercial", "Other"])
-            ]
-        ),
-        "multilingual": ModelOptionSpec(
-            notice_banner=NoticeBannerSpec(
-                level="warning",
-                message="⚠️ Multilingual: Cross-lingual synthesis with regional accent selection."
-            ),
-            voice_type="select",
-            speed_type="slider"
-        ),
-        "emotion_v2": ModelOptionSpec(
-            notice_banner=NoticeBannerSpec(
-                level="danger",
-                message="🚨 Emotion & Style: Experimental model - dynamic pitch controls active."
-            ),
-            voice_type="select",
-            speed_type="slider",
-            pitch_type="slider",
-            emotion_type="select"
-        ),
-        "standard": ModelOptionSpec(
-            voice_type="select",
-            speed_type="slider"
-        ),
-        "clone": ModelOptionSpec(
-            voice_type="select",
-            speed_type="slider",
-            voice_metadata_schema=[
-                VoiceMetadataFieldSpec(key="name", label="Voice Name", type="text", required=True, placeholder="e.g. Test Voice..."),
-                VoiceMetadataFieldSpec(key="gender", label="Gender", type="select", options=["Male", "Female", "Other"]),
-                VoiceMetadataFieldSpec(key="region", label="Accent / Region", type="select", options=["North American", "British", "Australian", "Other"]),
-                VoiceMetadataFieldSpec(key="style", label="Style", type="select", options=["Expressive", "News / Broadcast", "Audiobook / Reading", "Dramatic", "Natural / Conversational", "Commercial", "Other"])
+                VoiceMetadataFieldSpec(key="name", label="Tên giọng", type="text", required=True, placeholder="VD: Giọng của tôi..."),
+                VoiceMetadataFieldSpec(key="gender", label="Giới tính", type="select", options=["Nam", "Nữ", "Khác"]),
+                VoiceMetadataFieldSpec(key="region", label="Vùng miền", type="select", options=["Miền Bắc", "Miền Trung", "Miền Nam", "Khác"]),
+                VoiceMetadataFieldSpec(key="style", label="Phong cách", type="select", options=["Tự nhiên", "Bản tin", "Sách nói", "Diễn xuất", "Khác"])
             ]
         )
     })
@@ -243,20 +206,10 @@ class UniversalManifest(BaseModel):
     version: str = Field(default_factory=lambda: os.getenv("ENGINE_VERSION", "1.0.0"))
     provider: str = Field(default_factory=lambda: os.getenv("ENGINE_PROVIDER", "Example Provider"))
     supported_modes: List[EngineModeSpec] = Field(default_factory=lambda: [
-        # Only what differs from the engine-wide set below is stated here; anything left
-        # unset is inherited. emotion_v2 is the interesting one: it is the sole mode that
-        # can do pitch and emotion, which the engine-wide defaults switch off.
-        EngineModeSpec(id="standard", name="Standard", description="Standard quality TTS"),
-        EngineModeSpec(id="fast", name="Fast", description="Low-latency TTS"),
-        EngineModeSpec(id="express", name="Express", description="Ultra-low latency streaming"),
-        EngineModeSpec(id="zero_shot_clone", name="Instant Zero-Shot Clone",
-                       description="Instant voice cloning from uploaded reference audio with voice saving support",
-                       capabilities=EngineCapabilities(supports_cloning=True, supports_voice_saving=True)),
-        EngineModeSpec(id="multilingual", name="Multilingual", description="Cross-lingual multi-accent voice engine"),
-        EngineModeSpec(id="emotion_v2", name="Emotion & Style",
-                       description="Dynamic prosody & pitch control",
-                       capabilities=EngineCapabilities(supports_pitch=True, supports_emotion=True)),
-        EngineModeSpec(id="clone", name="Voice Cloning", description="Speaker cloning",
+        EngineModeSpec(id="fast", name="Siêu Nhanh", description="Tổng hợp giọng nói tốc độ cao"),
+        EngineModeSpec(id="standard", name="TTS Cơ Bản", description="Tổng hợp giọng nói tiêu chuẩn"),
+        EngineModeSpec(id="zero_shot_clone", name="Giọng Clone",
+                       description="Sao chép giọng nói từ âm thanh tham chiếu",
                        capabilities=EngineCapabilities(supports_cloning=True, supports_voice_saving=True)),
     ])
     # Engine-wide defaults; modes that state nothing inherit these.

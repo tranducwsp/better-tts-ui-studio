@@ -37,9 +37,9 @@ pretrained-models/
 *.sqlite
 *.sqlite3
 /storage/
-/core-backend/storage/audio/
-/core-backend/storage/temp/
-/core-backend/storage/voice/
+/backend/storage/audio/
+/backend/storage/temp/
+/backend/storage/voice/
 
 # Backup & Temporary files
 *.orig
@@ -50,5 +50,5 @@ pretrained-models/
 *secret.yaml
 
 # Go Binaries
-core-backend/core-backend
+backend/backend
 

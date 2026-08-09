@@ -210,13 +210,13 @@ leaving the 23 files newer than the retention window in place.
 
 ## Resolved: the manifest has exactly one definition
 
-`core-tts/schemas.py` is the only place the manifest is *declared*. Everything downstream
+`engine/schemas.py` is the only place the manifest is *declared*. Everything downstream
 merely describes its shape to decode it:
 
 | Layer | Role |
 |---|---|
-| `core-tts/schemas.py` | **declares** the manifest (Pydantic defaults) |
-| `core-backend/types/manifest.go` | structs to decode it, plus `ResolveCapabilities` |
+| `engine/schemas.py` | **declares** the manifest (Pydantic defaults) |
+| `backend/types/manifest.go` | structs to decode it, plus `ResolveCapabilities` |
 | `frontend/src/lib/types.ts` | interfaces to read it, plus `lib/capabilities.ts` |
 
 Neither the Go nor the TypeScript layer holds manifest *values* — only field definitions.

@@ -82,6 +82,14 @@
   let referenceAudioPath = $state('');
 
   let isCloningTemp = $state(false);
+
+  // Synthesize button text/icon per mode — matches old core-tts UI personality.
+  let synthLabel = $derived.by(() => {
+    const id = activeMode.id;
+    if (id === 'fast' || id === 'express') return { text: 'Tổng hợp Siêu Nhanh', icon: 'fa-bolt' };
+    if (id === 'zero_shot_clone' || id === 'clone') return { text: 'Tổng hợp âm thanh', icon: 'fa-play' };
+    return { text: 'Tổng hợp âm thanh', icon: 'fa-play' };
+  });
   let isCreateModalOpen = $state(false);
   let selectedFile = $state<File | null>(null);
 
@@ -489,7 +497,7 @@
   <!-- Synthesize Actions -->
   <div class="action-buttons">
     <button onclick={handleSynthesize} class="btn primary-btn">
-      <i class="fa-solid fa-play"></i> Synthesize Audio
+      <i class="fa-solid {synthLabel.icon}"></i> {synthLabel.text}
     </button>
   </div>
 </div>

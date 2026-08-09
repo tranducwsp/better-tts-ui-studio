@@ -93,7 +93,7 @@ frontend/
 ### 4.2. Cấu Hình Nginx (`nginx.conf`)
 - **Port**: Lắng nghe tại cổng `5173`.
 - **SPA Fallback**: `try_files $uri $uri/ /index.html;` xử lý Client-side routing.
-- **Reverse Proxy**: Proxy ngược `/api/` và `/storage/` sang service `ai-core-backend:8000`.
+- **Reverse Proxy**: Proxy ngược `/api/` và `/storage/` sang service `ai-backend:8000`.
 - **Compression & Caching**: Bật `gzip` nén tài liệu văn bản/JS/CSS và đặt `Cache-Control` dài hạn cho static assets.
 
 ---

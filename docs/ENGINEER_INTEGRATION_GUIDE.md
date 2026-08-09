@@ -23,15 +23,15 @@ You only need to define your model's capabilities and UI specifications in Pytho
 └───────────────┬───────────────┘
                 │ Dynamic UI built from Manifest
 ┌───────────────▼───────────────┐
-│  Core Backend Gateway (Go)    │
+│  Backend Gateway (Go)         │
 └───────────────┬───────────────┘
                 │ Proxy / REST / gRPC
 ┌───────────────▼───────────────┐
-│  Core TTS Engine (Python)     │ ◄── [YOUR CUSTOM AI MODEL HERE]
+│  Engine (Python, external)    │ ◄── [YOUR CUSTOM AI MODEL HERE]
 └───────────────────────────────┘
 ```
 
-The Frontend & Go Backend dynamically request `/info` from your Python Core TTS service at runtime. They automatically:
+The Frontend & Go Backend dynamically request `/info` from your Python Engine service at runtime. They automatically:
 - Render tabs for each mode defined in `supported_modes`.
 - Render input sliders/dropdowns based on `capabilities` and `constraints`.
 - Build the "Create Custom Voice" modal using `voice_metadata_schema`.
@@ -40,15 +40,15 @@ The Frontend & Go Backend dynamically request `/info` from your Python Core TTS 
 ---
 
 > A captured `GET /api/info` from the bundled engine lives in
-> [`examples/manifest-core-tts.json`](./examples/manifest-core-tts.json) — quicker to adapt
+> [`examples/manifest-engine.json`](./examples/manifest-engine.json) — quicker to adapt
 > than building one from the schema.
 
 ## 2. Step-by-Step Engine Integration
 
 ### Step 1: Clone & Navigate to Core Engine
-The compute microservice resides in `/core-tts/`.
+The compute microservice resides in your engine repo (e.g. `/engine/`).
 
-### Step 2: Define your Model Schema in `core-tts/schemas.py`
+### Step 2: Define your Model Schema in `engine/schemas.py`
 In `schemas.py`, update `EngineManifestSpec`:
 
 ```python
@@ -76,7 +76,7 @@ class EngineManifestSpec(BaseModel):
     ])
 ```
 
-### Step 3: Implement your Synthesis Logic in `core-tts/engine.py`
+### Step 3: Implement your Synthesis Logic in `engine/engine.py`
 Override the `synthesize()` function to load your weights (e.g., via PyTorch or ONNX runtime):
 
 ```python

@@ -1,5 +1,5 @@
 {
-  "_comment": "Shared fixtures for the capability resolver. Both core-backend/tests/parity_test.go and frontend/src/lib/capabilities.test.ts read this file, so the Go and TypeScript resolvers are checked against identical input rather than two hand-written copies that can drift apart.",
+  "_comment": "Shared fixtures for the capability resolver. Both backend/tests/schema_parity_test.go and frontend/src/lib/capabilities.test.ts read this file, so the Go and TypeScript resolvers are checked against identical input rather than two hand-written copies that can drift apart.",
   "manifest": {
     "capabilities": {
       "supports_pitch": false,

@@ -6,6 +6,6 @@ __pycache__/
 # Âm thanh sinh ra lúc chạy, không phải thứ để dựng image.
 storage/
 
-# Không bao giờ đưa tệp môi trường vào image — xem core-backend/.dockerignore.
+# Không bao giờ đưa tệp môi trường vào image — xem backend/.dockerignore.
 .env
 .env.*

@@ -1,0 +1,47 @@
+{{- if .Values.frontendBuilder.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ui-studio.fullname" . }}-frontend-builder
+  namespace: {{ .Values.namespace | default "ui-studio" }}
+  labels:
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}-frontend-builder
+    helm.sh/chart: {{ include "ui-studio.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.frontendBuilder.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "ui-studio.name" . }}-frontend-builder
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "ui-studio.name" . }}-frontend-builder
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: frontend-builder
+          image: "{{ .Values.frontendBuilder.image.repository }}:{{ .Values.frontendBuilder.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.frontendBuilder.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3001
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "3001"
+            - name: VITE_BACKEND_URL
+              value: "http://{{ include "ui-studio.fullname" . }}-backend:{{ .Values.backend.service.port }}"
+          volumeMounts:
+            - name: frontend-dist
+              mountPath: /app/dist
+      volumes:
+        - name: frontend-dist
+          persistentVolumeClaim:
+            claimName: {{ include "ui-studio.fullname" . }}-frontend-dist
+{{- end }}
