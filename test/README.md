@@ -90,9 +90,9 @@ test/
 ├── smoke.js         # 1 VU, nhanh — verify hệ thống lên
 ├── api.js           # 1 VU — test từng endpoint đúng/sai
 ├── load.js          # 10k VU — user journey (login → duyệt → tổng hợp → nghe)
-├── auth.js          # Auth专项 — login/register/refresh/logout
-├── synth.js         # Synthesize专项 — throughput
-└── streaming.js     # SSE专项 — task streaming
+├── auth.js          # Auth — login/register/refresh/logout
+├── synth.js         # Synthesize — throughput
+└── streaming.js     # SSE — task streaming
 ```
 
 ## Stages
