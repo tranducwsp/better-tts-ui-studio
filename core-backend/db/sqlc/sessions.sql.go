@@ -126,6 +126,7 @@ UPDATE auth_sessions
 SET revoked_at = CURRENT_TIMESTAMP,
     replaced_by = $2
 WHERE id = $1
+  AND revoked_at IS NULL
 `
 
 type RotateAuthSessionParams struct {
@@ -134,6 +135,7 @@ type RotateAuthSessionParams struct {
 }
 
 // Đánh dấu token cũ đã bị thay thế bởi token mới trong cùng family (rotation).
+// Guard revoked_at IS NULL: nếu session đã bị revoke (logout, family revoke), không ghi đè replaced_by.
 func (q *Queries) RotateAuthSession(ctx context.Context, arg RotateAuthSessionParams) (int64, error) {
 	result, err := q.db.Exec(ctx, rotateAuthSession, arg.ID, arg.ReplacedBy)
 	if err != nil {

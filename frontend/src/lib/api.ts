@@ -131,11 +131,15 @@ export function parseVoiceItem(v: Record<string, unknown> | string): VoiceOption
     const idStr = String(v.id || v.voice_id || v.name || '');
     const nameStr = String(v.name || v.id || '');
     const sampleUrl = typeof v.sampleUrl === 'string' ? v.sampleUrl : undefined;
+    const gender = typeof v.gender === 'string' ? v.gender : undefined;
+    const deletable = typeof v.deletable === 'boolean' ? v.deletable : undefined;
     return {
       id: idStr,
       name: nameStr,
       descriptions,
-      sampleUrl
+      sampleUrl,
+      gender,
+      deletable
     };
   }
 

@@ -72,6 +72,7 @@
       isCancelled = true;
       sseCleanup?.();
       sseCleanup = null;
+      audioElement?.pause();
       chunks.forEach((c) => {
         if (c.blobUrl?.startsWith('blob:')) URL.revokeObjectURL(c.blobUrl);
       });
@@ -343,7 +344,8 @@
         })
       );
 
-      const finalBlob = new Blob(parts, { type: defaultMimeType(manifest, engine) });
+      const combinedMime = combinedFormat === 'mp3' ? 'audio/mpeg' : combinedFormat === 'aac' ? 'audio/aac' : defaultMimeType(manifest, engine);
+      const finalBlob = new Blob(parts, { type: combinedMime });
       const url = URL.createObjectURL(finalBlob);
       const a = document.createElement('a');
       a.href = url;

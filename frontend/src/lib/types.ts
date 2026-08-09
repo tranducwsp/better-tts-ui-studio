@@ -227,5 +227,6 @@ export interface ToastMessage {
   id: string;
   type: 'info' | 'success' | 'warning' | 'error';
   message: string;
+  timer?: ReturnType<typeof setTimeout>;
 }
 

@@ -27,7 +27,10 @@
       }
     }
     window.addEventListener('click', handleOutsideClick);
-    return () => window.removeEventListener('click', handleOutsideClick);
+    return () => {
+      window.removeEventListener('click', handleOutsideClick);
+      audioElement?.pause();
+    };
   });
 
   function handleSelect(v: VoiceOption | null) {

@@ -78,7 +78,7 @@ services:
       - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
       - REDIS_URL=redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - COOKIE_SECURE=${COOKIE_SECURE:-0}
+      - COOKIE_SECURE=${COOKIE_SECURE:-1}
 
       # Tài khoản tạo sẵn ở lần khởi động đầu, khi cơ sở dữ liệu còn trống. Để trống cả bốn
       # thì không tài khoản nào được tạo và người dùng đầu tiên tự đăng ký qua giao diện.
@@ -187,6 +187,7 @@ services:
       - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-0}
       - S3_PREFIX=${S3_PREFIX:-}
       - TEMP_AUDIO_RETENTION_HOURS=${TEMP_AUDIO_RETENTION_HOURS:-24}
+      - STALE_CHUNK_AFTER_MINUTES=${STALE_CHUNK_AFTER_MINUTES:-30}
     volumes:
       - ./core-backend/storage:/app/storage
     depends_on:
@@ -236,4 +237,3 @@ services:
 
 volumes:
   postgres_data:
-  frontend_dist:

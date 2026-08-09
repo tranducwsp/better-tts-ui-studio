@@ -216,7 +216,8 @@ func (tm *TaskManager) Get(taskID string) (*TaskItem, bool) {
 				tm.tasks[taskID] = &fetchedItem
 				tm.mu.Unlock()
 
-				return &fetchedItem, true
+				item := tm.tasks[taskID]
+				return item, true
 			}
 		}
 	}

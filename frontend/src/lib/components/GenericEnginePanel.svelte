@@ -253,11 +253,10 @@
     }
   }
 
-  function handleTrimmedAudio(blob: Blob) {
-    const file = new File([blob], 'trimmed_reference.wav', { type: 'audio/wav' });
+  function handleTrimmedAudio(_blob: Blob, trimmedFile: File) {
     isCloningTemp = true;
     toast.show('Uploading trimmed audio sample...', 'info');
-    sendReference(file)
+    sendReference(trimmedFile)
       .then((path) => {
         referenceAudioPath = path;
         toast.show('Reference audio updated from trimmer!', 'success');
@@ -365,7 +364,7 @@
         <VoiceSelect
           voices={activeVoices}
           selectedVoiceId={selectedVoice}
-          onSelect={(v) => selectedVoice = v.id || v.name}
+          onSelect={(v) => { selectedVoice = v.id || v.name; referenceAudioPath = ''; }}
           onDelete={handleDeleteVoice}
         />
       {/if}

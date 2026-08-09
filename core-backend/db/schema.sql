@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS tts_chunks (
 -- là một lần quét toàn bảng.
 CREATE INDEX IF NOT EXISTS idx_tts_chunks_job_id ON tts_chunks (job_id);
 CREATE INDEX IF NOT EXISTS idx_tts_jobs_user_created ON tts_jobs (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_voices_user_model ON user_voices (user_id, model_id);
 
 CREATE TABLE IF NOT EXISTS auth_sessions (
     id                VARCHAR(64) PRIMARY KEY,
