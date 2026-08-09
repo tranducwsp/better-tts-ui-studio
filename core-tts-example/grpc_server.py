@@ -86,7 +86,7 @@ class TTSServiceServicer(tts_pb2_grpc.TTSServiceServicer):
 
         try:
             import random
-            duration = random.uniform(5.0, 10.0)
+            duration = random.uniform(30.0, 60.0)
             wav_bytes = generate_dummy_wav(duration)
             return tts_pb2.SynthesizeResponse(audio_bytes=wav_bytes)
         except Exception as e:
