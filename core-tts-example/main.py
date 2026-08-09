@@ -100,11 +100,11 @@ async def synthesize(req: SynthesizeRequest):
     if not text_lower:
         raise HTTPException(status_code=400, detail="Empty text input")
 
-    if EXAMPLE_DELAY_SEC > 0:
-        await asyncio.sleep(EXAMPLE_DELAY_SEC)
-
-    # Hàm sinh audio PCM ngẫu nhiên phục vụ test
+    # Giả lập thời gian suy luận AI thực tế (2.0s - 5.0s)
     import random
+    processing_time = random.uniform(2.0, 5.0)
+    await asyncio.sleep(processing_time)
+
     duration = random.uniform(30.0, 60.0)
     wav_bytes = generate_dummy_wav(duration)
 
