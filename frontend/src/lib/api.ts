@@ -13,6 +13,20 @@ export async function fetchManifest(): Promise<UniversalManifest | null> {
 }
 
 export async function refreshSession(): Promise<boolean> {
+  // Deduplicate: nếu refresh đang chạy, mọi caller chia sẻ cùng Promise.
+  // Không có bước này, 10 request 401 đồng thời → 10 lần refresh riêng → token thrashing.
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = doRefresh();
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
+  }
+}
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function doRefresh(): Promise<boolean> {
   try {
     let res = await fetch('/api/auth/refresh', {
       method: 'POST',
@@ -63,10 +77,12 @@ export async function loginUser(username: string, password: string): Promise<Use
     credentials: 'include',
   });
 
-  const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.detail || 'Login failed');
+    let detail = 'Login failed';
+    try { const data = await res.json(); detail = data.detail || detail; } catch {}
+    throw new Error(detail);
   }
+  const data = await res.json();
   return data.user || data;
 }
 
@@ -78,10 +94,12 @@ export async function registerUser(username: string, password: string): Promise<
     credentials: 'include',
   });
 
-  const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.detail || 'Registration failed');
+    let detail = 'Registration failed';
+    try { const data = await res.json(); detail = data.detail || detail; } catch {}
+    throw new Error(detail);
   }
+  const data = await res.json();
   return data.user || data;
 }
 

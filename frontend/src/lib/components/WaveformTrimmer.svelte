@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { audioBufferToWav, resampleAudioBuffer } from '../audioWav';
   import { toast } from '../toast.svelte';
   import { referenceAudioSeconds, defaultSampleRate } from '../audioSpec';
@@ -28,27 +29,44 @@
   let wavePeaks: { min: number; max: number }[] = [];
   let rafPending = false;
 
+  // Generation counter: prevents stale loadAudioFile results from overwriting newer ones
+  // when the file prop changes rapidly.
+  let loadGeneration = 0;
+
   $effect(() => {
     if (file) {
       loadAudioFile(file);
     }
   });
 
+  // Revoke old blob URL and create new one, preventing Object URL leaks.
+  function setPreviewUrl(url: string | null) {
+    if (previewAudioUrl?.startsWith('blob:')) URL.revokeObjectURL(previewAudioUrl);
+    previewAudioUrl = url;
+  }
+
   async function loadAudioFile(f: File) {
+    const gen = ++loadGeneration;
     try {
       const arrayBuffer = await f.arrayBuffer();
+      if (gen !== loadGeneration) return;
+
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const audioCtx = new AudioCtx();
-      audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-      duration = audioBuffer.duration;
+      const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+      audioCtx.close(); // Release system audio resources immediately after decode.
+      if (gen !== loadGeneration) return;
+
+      audioBuffer = decoded;
+      duration = decoded.duration;
       trimStart = 0;
       trimEnd = Math.min(TRIM_LENGTH, duration);
-      previewAudioUrl = URL.createObjectURL(f);
+      setPreviewUrl(URL.createObjectURL(f));
 
       // Precalculate waveform peaks ONCE for 600px width
       if (canvasElement) {
         const width = canvasElement.width;
-        const data = audioBuffer.getChannelData(0);
+        const data = decoded.getChannelData(0);
         const step = Math.ceil(data.length / width);
         wavePeaks = [];
         for (let i = 0; i < width; i++) {
@@ -178,10 +196,17 @@
     const blob = audioBufferToWav(resampled, trimStart, trimEnd);
     const newFileName = file.name.replace(/\.[^/.]+$/, '') + '_trimmed.wav';
     const trimmedFile = new File([blob], newFileName, { type: 'audio/wav' });
-    previewAudioUrl = URL.createObjectURL(blob);
+    setPreviewUrl(URL.createObjectURL(blob));
     onTrimmed(blob, trimmedFile);
     toast.show(`${TRIM_LENGTH}s audio segment trimmed!`, 'success');
   }
+
+  // Clean up blob URLs on unmount to prevent memory leaks.
+  onMount(() => {
+    return () => {
+      setPreviewUrl(null);
+    };
+  });
 </script>
 
 <div style="background: rgba(15, 23, 42, 0.4); padding: 1rem; border-radius: 12px; margin-top: 1rem; border: 1px dashed var(--primary);">

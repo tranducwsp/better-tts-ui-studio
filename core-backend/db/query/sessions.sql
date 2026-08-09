@@ -9,10 +9,12 @@ WHERE id = $1;
 
 -- name: RotateAuthSession :execrows
 -- Đánh dấu token cũ đã bị thay thế bởi token mới trong cùng family (rotation).
+-- Guard revoked_at IS NULL: nếu session đã bị revoke (logout, family revoke), không ghi đè replaced_by.
 UPDATE auth_sessions
 SET revoked_at = CURRENT_TIMESTAMP,
     replaced_by = $2
-WHERE id = $1;
+WHERE id = $1
+  AND revoked_at IS NULL;
 
 -- name: RevokeAuthSession :execrows
 -- Logout: thu hồi token đang dùng. Không đặt replaced_by, nên mọi token khác cùng family

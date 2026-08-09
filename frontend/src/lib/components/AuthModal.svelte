@@ -31,6 +31,7 @@
       } else {
         await register(username, password);
         toast.show('Registration successful! Please wait for Admin approval.', 'success');
+        password = '';
         mode = 'login';
       }
     } catch (err: unknown) {

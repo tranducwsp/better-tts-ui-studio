@@ -58,10 +58,17 @@
 
   let modeVoices = $state<VoiceOption[]>([]);
 
-  // Active voice list: use modelOption.preset_voices if specified by manifest, else modeVoices
+  // Active voice list: use modelOption.preset_voices if specified by manifest, else modeVoices.
+  // Map PresetVoiceSpec → VoiceOption to fix sample_url (snake_case) → sampleUrl (camelCase).
   let activeVoices = $derived.by(() => {
     if (modelOption?.preset_voices && modelOption.preset_voices.length > 0) {
-      return modelOption.preset_voices;
+      return modelOption.preset_voices.map((pv) => ({
+        id: pv.id,
+        name: pv.name,
+        gender: pv.gender,
+        descriptions: pv.descriptions,
+        sampleUrl: pv.sample_url,
+      }));
     }
     return modeVoices;
   });
@@ -165,6 +172,10 @@
       // may not exist in this one, so always reset it.
       selectedEmotion = '';
       selectedVoice = '';
+      // Reference audio belongs to a specific engine; stale path would be sent to
+      // the wrong engine on the next synthesis request.
+      selectedFile = null;
+      referenceAudioPath = '';
       loadVoicesForMode(activeMode.id);
     }
   });
@@ -495,8 +506,7 @@
     onClose={() => isCreateModalOpen = false}
     onSaved={(voiceId, voiceName) => {
       isCreateModalOpen = false;
-      fetchVoices(activeMode.id).then((v) => {
-        modeVoices = v || [];
+      loadVoicesForMode(activeMode.id).then(() => {
         selectedVoice = voiceId || voiceName;
       });
     }}

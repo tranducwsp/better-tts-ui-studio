@@ -10,6 +10,8 @@
     index: number;
     text: string;
     status: 'pending' | 'retrying' | 'ready' | 'playing' | 'error';
+    /** Once a chunk has exhausted all retries, mark it permanently failed. */
+    permanentError: boolean;
     blob: Blob | null;
     blobUrl: string | null;
     /** Backend task id, used to fetch alternate formats such as MP3. */
@@ -37,9 +39,11 @@
   let statusBadge = $state<string>('Initializing...');
   let isCompleted = $state(false);
   let isCancelled = $state(false);
+  let isGenerating = $state(false);
   let currentJobId = $state<string>('');
   let audioElement: HTMLAudioElement;
   let chunkListContainer: HTMLDivElement;
+  let sseCleanup: (() => void) | null = null;
 
   let readyCount = $derived(chunks.filter((c) => c.status === 'ready' || c.status === 'playing').length);
   let currentChunk = $derived(currentPlayIndex >= 0 ? chunks[currentPlayIndex] : null);
@@ -62,9 +66,12 @@
   // D1: Khi component unmount (đóng panel), dừng vòng lặp generation và thu hồi blob URL.
   // Không có bước này, 50 chunk đóng sau 5 → 45 chunk âm thầm chạy tiếp tốn GPU, mỗi chunk
   // tạo thêm một dòng lịch sử vô chủ, và blob URL rò cho đến khi trang bị nạp lại.
+  // sseCleanup đóng EventSource còn mở để Promise chờ không treo vĩnh viễn.
   onMount(() => {
     return () => {
       isCancelled = true;
+      sseCleanup?.();
+      sseCleanup = null;
       chunks.forEach((c) => {
         if (c.blobUrl?.startsWith('blob:')) URL.revokeObjectURL(c.blobUrl);
       });
@@ -98,6 +105,7 @@
           index: i,
           text: ctext,
           status: url ? 'ready' : 'pending',
+          permanentError: false,
           blob: null,
           blobUrl: url,
           taskId: c?.task_id || null,
@@ -121,6 +129,7 @@
       index: i,
       text: ctext,
       status: 'pending',
+      permanentError: false,
       blob: null,
       blobUrl: null,
       taskId: null,
@@ -154,84 +163,94 @@
   }
 
   async function generateChunksLoop() {
-    for (let i = 0; i < chunks.length; i++) {
-      if (isCancelled) break;
-      const item = chunks[i];
-
-      // Skip already ready chunks when reloaded
-      if (item.status === 'ready') continue;
-
-      statusBadge = `Generating Chunk ${i + 1}/${chunks.length}...`;
-
-      let success = false;
-      let lastError = null;
-
-      for (let attempt = 1; attempt <= 3; attempt++) {
+    isGenerating = true;
+    try {
+      for (let i = 0; i < chunks.length; i++) {
         if (isCancelled) break;
+        const item = chunks[i];
 
-        if (attempt > 1) {
-          totalRetries++;
-          item.status = 'retrying';
-          statusBadge = `Retrying Chunk ${i + 1}/${chunks.length} (Attempt ${attempt}/3)...`;
-          await new Promise((r) => setTimeout(r, 2000));
-        }
+        // Skip already ready chunks when reloaded
+        if (item.status === 'ready') continue;
+        // Skip permanently failed chunks — no more retries
+        if (item.permanentError) continue;
 
-        try {
-          const taskId = await synthesize(item.text, voice, speed, engine, {
-            jobId: currentJobId,
-            chunkIndex: i,
-            totalChunks: chunks.length,
-            pitch,
-            emotion,
-          });
+        statusBadge = `Generating Chunk ${i + 1}/${chunks.length}...`;
 
-          item.taskId = taskId;
+        let success = false;
+        let lastError = null;
 
-          const blob = await new Promise<Blob>((resolve, reject) => {
-            subscribeTaskStream(
-              taskId,
-              () => {},
-              (b) => resolve(b),
-              (err) => reject(new Error(err)),
-              defaultFmt
-            );
-          });
-
+        for (let attempt = 1; attempt <= 3; attempt++) {
           if (isCancelled) break;
 
-          item.blob = blob;
-          item.blobUrl = URL.createObjectURL(blob);
-          item.status = 'ready';
-          success = true;
-
-          // Auto-play chunk 1 when ready
-          if (currentPlayIndex === -1 && i === 0) {
-            playChunk(0);
+          if (attempt > 1) {
+            totalRetries++;
+            item.status = 'retrying';
+            statusBadge = `Retrying Chunk ${i + 1}/${chunks.length} (Attempt ${attempt}/3)...`;
+            await new Promise((r) => setTimeout(r, 2000));
           }
-          break;
-        } catch (err: unknown) {
-          lastError = err as Error;
+
+          try {
+            const taskId = await synthesize(item.text, voice, speed, engine, {
+              jobId: currentJobId,
+              chunkIndex: i,
+              totalChunks: chunks.length,
+              pitch,
+              emotion,
+            });
+
+            item.taskId = taskId;
+
+            // Store cleanup so unmount can close the EventSource
+            const blob = await new Promise<Blob>((resolve, reject) => {
+              const cleanup = subscribeTaskStream(
+                taskId,
+                () => {},
+                (b) => { sseCleanup = null; resolve(b); },
+                (err) => { sseCleanup = null; reject(new Error(err)); },
+                defaultFmt
+              );
+              sseCleanup = cleanup;
+            });
+
+            if (isCancelled) break;
+
+            item.blob = blob;
+            item.blobUrl = URL.createObjectURL(blob);
+            item.status = 'ready';
+            success = true;
+
+            // Auto-play chunk 1 when ready
+            if (currentPlayIndex === -1 && i === 0) {
+              playChunk(0);
+            }
+            break;
+          } catch (err: unknown) {
+            lastError = err as Error;
+          }
+        }
+
+        if (isCancelled) break;
+
+        if (!success) {
+          item.status = 'error';
+          item.permanentError = true;
+          const errMsg = lastError ? (lastError.message || String(lastError)) : 'Unknown error';
+          if (errMsg.includes('Not authenticated') || errMsg.includes('401')) {
+            toast.show('Please log in to start AI voice synthesis!', 'error');
+            break;
+          } else {
+            toast.show(`Chunk ${i + 1} failed: ${errMsg}`, 'error');
+          }
         }
       }
 
-      if (isCancelled) break;
-
-      if (!success) {
-        item.status = 'error';
-        const errMsg = lastError ? (lastError.message || String(lastError)) : 'Unknown error';
-        if (errMsg.includes('Not authenticated') || errMsg.includes('401')) {
-          toast.show('Please log in to start AI voice synthesis!', 'error');
-          break;
-        } else {
-          toast.show(`Chunk ${i + 1} failed: ${errMsg}`, 'error');
-        }
+      if (!isCancelled) {
+        isCompleted = true;
+        statusBadge = 'Completed!';
+        toast.show('All chunks synthesized successfully!', 'success');
       }
-    }
-
-    if (!isCancelled) {
-      isCompleted = true;
-      statusBadge = 'Completed!';
-      toast.show('All chunks synthesized successfully!', 'success');
+    } finally {
+      isGenerating = false;
     }
   }
 
@@ -270,6 +289,7 @@
   }
 
   function handleResume() {
+    if (isGenerating) return;
     isCancelled = false;
     statusBadge = 'Resuming generation...';
     toast.show('Resuming synthesis...', 'info');

@@ -17,6 +17,11 @@ FROM alpine:latest
 
 RUN apk add --no-cache ca-certificates ffmpeg
 
+# Chạy bằng non-root user. Container root không khác gì root trên host — nếu attacker
+# có code exec, mọi thứ trong container là của họ. appuser không cần quyền đặc biệt:
+# chỉ ghi vào /app/storage (do volume mount) và chạy ffmpeg.
+RUN adduser -D -u 1000 appuser
+
 WORKDIR /app
 
 COPY --from=builder /app/web /app/worker /app/cron .
@@ -27,6 +32,8 @@ COPY --from=builder /app/web /app/worker /app/cron .
 # mật khẩu tài khoản khởi tạo nằm sẵn trong mọi bản pull được. Cấu hình đến từ môi trường lúc
 # chạy — compose truyền qua `environment:`, k8s qua secretRef — và requireAll dừng tiến trình
 # nếu thiếu biến bắt buộc, nên không có gì phải điền sẵn.
+
+USER appuser
 
 EXPOSE 8000
 

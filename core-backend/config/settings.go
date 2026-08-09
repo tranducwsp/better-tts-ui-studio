@@ -53,9 +53,9 @@ var Settings = []Setting{
 	{
 		Key: "SECRET_KEY", Kind: KindSecret, Default: "", Required: true,
 		Group: "Required in production",
-		Doc: "Ký JWT phiên đăng nhập. Bỏ trống thì backend tự sinh khoá ngẫu nhiên lúc khởi động: có\n" +
-			"cảnh báo trong log, mọi phiên mất hiệu lực sau mỗi lần khởi động lại, và nhiều replica\n" +
-			"không dùng chung được phiên vì mỗi bản ký bằng một khoá khác nhau.\n" +
+		Doc: "Ký JWT phiên đăng nhập. BẮT BUỘC: bỏ trống làm backend dừng khởi động thay vì tự sinh\n" +
+			"khoá ngẫu nhiên (trước đây tự sinh, nhưng khoá mỗi lần khởi động khác nhau khiến mọi phiên\n" +
+			"mất hiệu lực và nhiều replica không dùng chung được phiên).\n" +
 			"  openssl rand -hex 32",
 	},
 

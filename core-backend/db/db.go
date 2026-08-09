@@ -267,7 +267,7 @@ func RegisterJobAndChunk(ctx context.Context, userID, jobID, engine, voice strin
 		JobID:      jobID,
 		ChunkIndex: int32(chunkIndex),
 		Text:       text,
-		Status:     "processing",
+		Status:     "pending",
 	})
 	return err
 }
