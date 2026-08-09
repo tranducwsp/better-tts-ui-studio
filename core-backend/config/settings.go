@@ -201,21 +201,28 @@ var Settings = []Setting{
 	},
 	{
 		Key: "MAX_UPLOAD_SIZE_MB", Kind: KindInt, Default: "50", Min: 1, Max: 10240,
-		Group: "Storage",
+		Group: "Storage limits",
 		Doc: "Trần cứng của hạ tầng cho một request tải lên — nói về RAM và băng thông của\n" +
 			"deployment, không phải về model. Engine khai trần riêng trong\n" +
 			"audio_spec.max_upload_bytes; cái nào chặt hơn thì thắng.",
 	},
 	{
 		Key: "TEMP_AUDIO_RETENTION_HOURS", Kind: KindInt, Default: "24", Min: 1, Max: 8760,
-		Group: "Storage",
+		Group: "Storage limits",
 		Doc: "Số giờ giữ âm thanh đã sinh trong storage/temp. Bộ quét chạy mỗi giờ và một lần lúc\n" +
 			"khởi động; không có nó thư mục sẽ phình lên suốt vòng đời triển khai.",
+	},
+	{
+		Key: "PRESERVE_FILES", Kind: KindInt, Default: "0", Min: 0, Max: 1,
+		Group: "Storage limits",
+		Doc: "Đặt 1 để giữ lại file tham chiếu trên storage khi xoá giọng clone. Mặc định 0: file\n" +
+			"bị xoá cùng bản ghi DB. Dùng 1 chỉ khi cần audit hoặc backup riêng — file mồ côi\n" +
+			"không tự xoá và phải dọn bằng tay.",
 	},
 
 	{
 		Key: "COOKIE_SECURE", Kind: KindInt, Default: "1", Min: 0, Max: 1,
-		Group: "CORS",
+		Group: "Cookie security",
 		Doc: "Đặt cờ Secure trên cookie access_token, tức chỉ gửi cookie qua HTTPS. Mặc định bật.\n" +
 			"Trước đây cờ này bị viết cứng thành false, nên kể cả khi triển khai sau TLS thì token\n" +
 			"phiên vẫn đi được qua HTTP thường. Chỉ đặt 0 khi phát triển cục bộ trên http://localhost.",

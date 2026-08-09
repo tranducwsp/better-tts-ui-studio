@@ -21,20 +21,14 @@
   - Đã gỡ hứa hẹn khỏi docs (A1). Khi làm lại: cần thêm knobs cấu hình thật (`ENABLE_AUTH` hoặc tương đương) vào `config.Settings`, route `/storage/{model_id}/shared/`, và chính sách cô lập dữ liệu rõ ràng.
 - [x] **[HIGH] [Done 2026-08-09] A2 — `.env.example` thiếu toàn bộ biến runtime của engine**
   - **Ranh giới nền tảng**: chỉ cần `CORE_ENGINE_URL` để biết địa chỉ engine. Biến nội bộ của engine (`OMP_NUM_THREADS`, `UI_MODE`, `CORE_CORS_ORIGINS`, v.v.) là việc của AI engineer — nền tảng không áp đặt. `core-tts-test` đã viết lại thành bản example engine, không còn là "mock load test" — README ghi rõ contract, AI engineer tự quyết định biến môi trường riêng.
-- [ ] **[HIGH] A3 — `PRESERVE_FILES`: env không tài liệu đổi hành vi xoá dữ liệu**
-  - `core-backend/handlers/tts_clone.go:344`
-  - `DeleteUserVoice` chỉ xoá file khi `PRESERVE_FILES` không set. Không có trong Settings table, `.env.example`, hay doc → rò rỉ audio giọng tham chiếu vĩnh viễn.
-  - Fix: đưa vào Settings table + `.env.example`, hoặc bỏ đọc env và chuyển retention thành config table-backed.
-- [ ] **[MEDIUM] A4 — `input_panel` thiếu field → default `false`, mâu thuẫn engine**
-  - `core-backend/types/manifest.go:111-116`, `frontend/src/lib/components/TextInputPanel.svelte:290,331,336,386,417`, `core-tts/schemas.py:150-156`
-  - Khác `capabilities`/`audio_spec` (resolve mode→engine→platform), `InputPanelSpec` bool omit → Go `false`/TS falsy. Fallback "all true" chỉ khi cả block vắng. Engine emit `input_panel` thiếu `replace_tool`/`enable_chunk_box` → mất công cụ upload.
-  - Fix: thêm cơ chế resolve như capabilities, hoặc document rõ hành vi omit.
-- [ ] **[MEDIUM] A5 — Dev FE local chống backend host hỏng ngay khi cài**
-  - `frontend/vite.config.ts:4` — proxy target mặc định `http://core-backend:8000` (DNS chỉ tồn tại trong compose). `npm run dev` trên host không hoạt động trừ khi `VITE_BACKEND_URL=http://localhost:8000`.
-  - Fix: doc section local-dev; thêm CORS/origin doc cho FE serve riêng.
-- [ ] **[LOW] A6 — Trùng header group trong `.env.example`**
-  - `.env.example:96,130` (2× `── Storage ──`), `:141,169` (2× `── CORS ──`).
-  - Fix: đổi tên group trong `settings.go` (`Storage (limits)` / `CORS (cookie)`...).
+- [x] **[HIGH] [Done 2026-08-09] A3 — `PRESERVE_FILES`: env không tài liệu đổi hành vi xoá dữ liệu**
+  - Đưa vào Settings table (`PRESERVE_FILES`, KindInt, default 0, min 0, max 1), thêm vào Config struct (`PreserveFiles bool`), cập nhật `tts_clone.go` đọc qua `h.Config.PreserveFiles` thay vì `os.Getenv`. `.env.example` tự sinh lại.
+- [x] **[MEDIUM] [Done 2026-08-09] A4 — `input_panel` thiếu field → default `false`, mâu thuẫn engine**
+  - Áp dụng cùng pattern `*bool`/resolve như capabilities: `InputPanelSpec` Go dùng `*bool` + `omitempty`, thêm `ResolvedInputPanel` + `PlatformDefaultInputPanel` + `ResolveInputPanel()`. Frontend thêm `inputPanel.ts` với `resolveInputPanel()`, `TextInputPanel.svelte` dùng `resolvedPanel` thay vì đọc trực tiếp.
+- [x] **[MEDIUM] [Done 2026-08-09] A5 — Dev FE local chống backend host hỏng ngay khi cài**
+  - `vite.config.ts` mặc định `http://localhost:8000` thay vì `http://core-backend:8000`.
+- [x] **[LOW] [Done 2026-08-09] A6 — Trùng header group trong `.env.example`**
+  - Đổi `"Storage"` → `"Storage limits"` cho `MAX_UPLOAD_SIZE_MB`/`TEMP_AUDIO_RETENTION_HOURS`/`PRESERVE_FILES`, `"CORS"` → `"Cookie security"` cho `COOKIE_SECURE`. `.env.example` sinh lại.
 
 ## B. Engine core-tts (Python)
 

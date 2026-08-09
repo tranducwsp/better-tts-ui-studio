@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { InputPanelSpec, UniversalManifest } from '../types';
+  import { resolveInputPanel } from '../inputPanel';
   import { resolveChunkSize, splitIntoChunks } from '../textLimits';
   import { extractTextFromFile } from '../api';
   import { toast } from '../toast.svelte';
@@ -19,6 +20,9 @@
     inputPanelSpec = null,
     manifest = null
   }: Props = $props();
+
+  // Resolved input panel: engine values → platform defaults. Never null.
+  let resolvedPanel = $derived(resolveInputPanel(inputPanelSpec));
 
   let isRegexMode = $state(false);
   let isExtracting = $state(false);
@@ -66,7 +70,7 @@
     if (!text || isReadOnly) return;
     let cleaned = text;
 
-    const rules = inputPanelSpec?.auto_format || [
+    const rules = resolvedPanel.auto_format || [
       { find: '\\r\\n', replace: '\n' },
       { find: '\\n{3,}', replace: '\n\n' },
       { find: '\\u00D0', replace: '\u0110' },
@@ -297,7 +301,7 @@
         {/if}
       </label>
       <div style="display: flex; align-items: center; gap: 8px;">
-        {#if inputPanelSpec === null || inputPanelSpec.file_serve}
+        {#if resolvedPanel.file_serve}
           <div style="display: flex; align-items: center; gap: 8px;">
             {#if uploadedFileName}
               <span style="font-size: 0.8rem; color: var(--success); font-style: italic; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
@@ -337,12 +341,12 @@
         ></textarea>
 
         <!-- Search and Replace Tools -->
-        {#if inputPanelSpec === null || inputPanelSpec.replace_tool}
+        {#if resolvedPanel.replace_tool}
           <div class="search-replace-container">
             <div class="search-replace-inputs">
               <!-- Row 1: Search -->
               <div class="search-input-group">
-                {#if inputPanelSpec === null || inputPanelSpec.find_mode === 'expert'}
+                {#if resolvedPanel.find_mode === 'expert'}
                   <button
                     onmousedown={(e) => e.preventDefault()}
                     onclick={toggleRegexMode}
@@ -392,7 +396,7 @@
 
             <!-- Mobile Action Buttons Row (3 buttons in 1 row under inputs) -->
             <div class="mobile-search-actions-row">
-              {#if inputPanelSpec === null || inputPanelSpec.find_mode === 'expert'}
+              {#if resolvedPanel.find_mode === 'expert'}
                 <button
                   onmousedown={(e) => e.preventDefault()}
                   onclick={toggleRegexMode}
@@ -423,7 +427,7 @@
         {/if}
 
         <!-- Visual Chunks Indicator -->
-        {#if chunks.length > 1 && (inputPanelSpec === null || inputPanelSpec.enable_chunk_box)}
+        {#if chunks.length > 1 && resolvedPanel.enable_chunk_box}
           <div style="margin-top: 15px; background: rgba(0,0,0,0.15); padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);">
             <div style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
               <span><i class="fa-solid fa-layer-group"></i> Text split into <strong style="color: var(--primary); font-size: 1.1em;">{chunks.length}</strong> chunks (click to locate):</span>

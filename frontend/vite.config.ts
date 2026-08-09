@@ -1,7 +1,10 @@
 import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 
-const backendTarget = process.env.VITE_BACKEND_URL || 'http://core-backend:8000'
+// Mặc định localhost:8000 cho `npm run dev` trên host. Trong Docker compose, biến
+// VITE_BACKEND_URL được đặt thành http://core-backend:8000 (DNS nội bộ), nên giá trị
+// mặc định này không ảnh hưởng.
+const backendTarget = process.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
 // https://vite.dev/config/
 export default defineConfig({

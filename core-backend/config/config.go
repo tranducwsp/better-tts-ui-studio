@@ -54,6 +54,8 @@ type Config struct {
 	// Số giờ giữ tập tin âm thanh tạm trước khi bị quét xoá.
 	TempRetentionHours         int
 	MaxUploadMB                int
+	// Giữ lại file tham chiếu khi xoá giọng clone (thay vì xoá file vật lý).
+	PreserveFiles              bool
 	CORSOrigins                []string
 	CookieSecure               bool
 	TTSClientTimeout           int
@@ -194,6 +196,7 @@ func LoadConfig() *Config {
 		S3Prefix:                   str("S3_PREFIX"),
 		TempRetentionHours:         num("TEMP_AUDIO_RETENTION_HOURS"),
 		MaxUploadMB:                num("MAX_UPLOAD_SIZE_MB"),
+			PreserveFiles:              num("PRESERVE_FILES") == 1,
 		CORSOrigins:                corsOrigins,
 		CookieSecure:               num("COOKIE_SECURE") == 1,
 		TTSClientTimeout:           num("TTS_CLIENT_TIMEOUT_SECONDS"),

@@ -155,9 +155,18 @@ export interface NoticeBannerSpec {
 }
 
 export interface InputPanelSpec {
+  file_serve?: boolean;
+  closeable?: boolean;
+  find_mode?: 'express' | 'expert' | string;
+  replace_tool?: boolean;
+  enable_chunk_box?: boolean;
+  auto_format?: AutoFormatRule[];
+}
+
+export interface ResolvedInputPanel {
   file_serve: boolean;
   closeable: boolean;
-  find_mode: 'express' | 'expert' | string;
+  find_mode: string;
   replace_tool: boolean;
   enable_chunk_box: boolean;
   auto_format?: AutoFormatRule[];

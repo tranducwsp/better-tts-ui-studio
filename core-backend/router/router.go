@@ -58,7 +58,7 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 	// Handlers
 	authHandler := handlers.NewAuthHandler(cfg)
 	historyHandler := handlers.NewHistoryHandler()
-	cloneHandler := handlers.NewTTSCloneHandler(ttsClient)
+	cloneHandler := handlers.NewTTSCloneHandler(ttsClient, cfg)
 	tasksHandler := handlers.NewTasksHandler()
 	utilsHandler := handlers.NewUtilsHandler()
 	unifiedHandler := handlers.NewUnifiedHandler(ttsClient)

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"core-backend/client"
+	"core-backend/config"
 	"core-backend/handlers"
 
 	"github.com/go-chi/chi/v5"
@@ -13,7 +14,7 @@ import (
 
 func TestTTSClone_UploadVoice_Unauthenticated(t *testing.T) {
 	ttsClient := client.NewCoreTTSClient("http://localhost:8001", 5)
-	h := handlers.NewTTSCloneHandler(ttsClient)
+	h := handlers.NewTTSCloneHandler(ttsClient, &config.Config{})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/clone/upload", nil)
 	rec := httptest.NewRecorder()
@@ -27,7 +28,7 @@ func TestTTSClone_UploadVoice_Unauthenticated(t *testing.T) {
 
 func TestTTSClone_UploadTempVoice_Unauthenticated(t *testing.T) {
 	ttsClient := client.NewCoreTTSClient("http://localhost:8001", 5)
-	h := handlers.NewTTSCloneHandler(ttsClient)
+	h := handlers.NewTTSCloneHandler(ttsClient, &config.Config{})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/clone/upload-temp", nil)
 	rec := httptest.NewRecorder()
@@ -41,7 +42,7 @@ func TestTTSClone_UploadTempVoice_Unauthenticated(t *testing.T) {
 
 func TestTTSClone_GetUserVoices_Unauthenticated(t *testing.T) {
 	ttsClient := client.NewCoreTTSClient("http://localhost:8001", 5)
-	h := handlers.NewTTSCloneHandler(ttsClient)
+	h := handlers.NewTTSCloneHandler(ttsClient, &config.Config{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/clone/voices", nil)
 	rec := httptest.NewRecorder()
@@ -55,7 +56,7 @@ func TestTTSClone_GetUserVoices_Unauthenticated(t *testing.T) {
 
 func TestTTSClone_DeleteUserVoice_Unauthenticated(t *testing.T) {
 	ttsClient := client.NewCoreTTSClient("http://localhost:8001", 5)
-	h := handlers.NewTTSCloneHandler(ttsClient)
+	h := handlers.NewTTSCloneHandler(ttsClient, &config.Config{})
 
 	r := chi.NewRouter()
 	r.Delete("/clone/voices/{clone_id}", h.DeleteUserVoice)

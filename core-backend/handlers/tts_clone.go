@@ -5,11 +5,11 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"core-backend/client"
+	"core-backend/config"
 	"core-backend/db"
 	"core-backend/db/sqlc"
 	"core-backend/state"
@@ -75,11 +75,12 @@ func extraMetadata(r *http.Request) []byte {
 // TTSCloneHandler xử lý các API liên quan đến Voice Cloning (Tải mẫu giọng mẫu, quản lý giọng và tổng hợp tiếng nói theo mẫu giọng).
 type TTSCloneHandler struct {
 	TTSClient *client.CoreTTSClient
+	Config    *config.Config
 }
 
-// NewTTSCloneHandler khởi tạo TTSCloneHandler với CoreTTSClient.
-func NewTTSCloneHandler(ttsClient *client.CoreTTSClient) *TTSCloneHandler {
-	return &TTSCloneHandler{TTSClient: ttsClient}
+// NewTTSCloneHandler khởi tạo TTSCloneHandler với CoreTTSClient và cấu hình.
+func NewTTSCloneHandler(ttsClient *client.CoreTTSClient, cfg *config.Config) *TTSCloneHandler {
+	return &TTSCloneHandler{TTSClient: ttsClient, Config: cfg}
 }
 
 // UploadVoice tải file âm thanh mẫu để nhân bản (clone) giọng nói lâu dài cho tài khoản người dùng.
@@ -358,7 +359,7 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 	// FilePath của bản ghi cũ là đường dẫn hệ thống ("storage/clone/<user>/voice/x.wav") chứ
 	// không phải khoá; storageKey bóc phần gốc ra để những giọng lưu trước lần đổi này vẫn xoá
 	// được thay vì tồn tại mãi.
-	if voice.FilePath != "" && os.Getenv("PRESERVE_FILES") == "" {
+	if voice.FilePath != "" && !h.Config.PreserveFiles {
 		if err := storage.Global.Delete(r.Context(), storageKey(voice.FilePath)); err != nil {
 			log.Printf("Bản ghi giọng %s đã xoá nhưng còn tệp %s: %v", cloneID, voice.FilePath, err)
 		}

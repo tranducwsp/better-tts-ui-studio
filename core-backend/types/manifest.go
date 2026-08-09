@@ -107,13 +107,40 @@ type NoticeBannerSpec struct {
 }
 
 // InputPanelSpec cấu hình các tính năng cho khung nhập văn bản.
+//
+// Mọi trường bool dùng con trỏ để phân biệt ba trạng thái:
+//   - nil   — Engine không nói gì, kế thừa mặc định nền tảng.
+//   - false — Engine khẳng định TẮT, kể cả khi mặc định là bật.
+//   - true  — Engine khẳng định BẬT.
+//
+// Không đọc trực tiếp các trường này. Dùng ResolveInputPanel để lấy giá trị đã hoà giải.
 type InputPanelSpec struct {
+	FileServe      *bool            `json:"file_serve,omitempty"`
+	Closeable      *bool            `json:"closeable,omitempty"`
+	FindMode       string           `json:"find_mode,omitempty"` // "expert", "express"
+	ReplaceTool    *bool            `json:"replace_tool,omitempty"`
+	EnableChunkBox *bool            `json:"enable_chunk_box,omitempty"`
+	AutoFormat     []AutoFormatRule `json:"auto_format,omitempty"`
+}
+
+// ResolvedInputPanel là kết quả sau khi hoà giải — không còn nil, dùng được ngay.
+type ResolvedInputPanel struct {
 	FileServe      bool             `json:"file_serve"`
 	Closeable      bool             `json:"closeable"`
-	FindMode       string           `json:"find_mode"` // "expert", "express"
+	FindMode       string           `json:"find_mode"`
 	ReplaceTool    bool             `json:"replace_tool"`
 	EnableChunkBox bool             `json:"enable_chunk_box"`
 	AutoFormat     []AutoFormatRule `json:"auto_format,omitempty"`
+}
+
+// PlatformDefaultInputPanel áp dụng khi Engine không khai. Phải khớp PLATFORM_DEFAULT_INPUT_PANEL
+// trong frontend/src/lib/inputPanel.ts.
+var PlatformDefaultInputPanel = ResolvedInputPanel{
+	FileServe:      true,
+	Closeable:      false,
+	FindMode:       "expert",
+	ReplaceTool:    true,
+	EnableChunkBox: true,
 }
 
 // VoiceMetadataFieldSpec định nghĩa cấu hình một trường thông tin khi tạo giọng mẫu mới.
@@ -228,6 +255,42 @@ func (m *UniversalManifest) ResolveCapabilities(modeID string) ResolvedCapabilit
 		SupportsEmotion:      pick(mode.SupportsEmotion, e.SupportsEmotion, d.SupportsEmotion),
 		SupportsSsml:         pick(mode.SupportsSsml, e.SupportsSsml, d.SupportsSsml),
 	}
+}
+
+// ResolveInputPanel hoà giải InputPanelSpec của Engine với mặc định nền tảng.
+//
+// Đây là nơi DUY NHẤT được phép quyết định "khung nhập có tính năng X không". Mọi handler
+// và tầng UI đều phải hỏi qua đây, nhờ vậy quy tắc ưu tiên chỉ tồn tại một bản.
+func (m *UniversalManifest) ResolveInputPanel() ResolvedInputPanel {
+	if m == nil || m.UISchema == nil {
+		return PlatformDefaultInputPanel
+	}
+	ip := m.UISchema.InputPanel
+	d := PlatformDefaultInputPanel
+	return ResolvedInputPanel{
+		FileServe:      pickBool(ip.FileServe, d.FileServe),
+		Closeable:      pickBool(ip.Closeable, d.Closeable),
+		FindMode:       pickStr(ip.FindMode, d.FindMode),
+		ReplaceTool:    pickBool(ip.ReplaceTool, d.ReplaceTool),
+		EnableChunkBox: pickBool(ip.EnableChunkBox, d.EnableChunkBox),
+		AutoFormat:     ip.AutoFormat,
+	}
+}
+
+// pickBool trả về giá trị Engine khai nếu có, ngược lại lấy mặc định.
+func pickBool(v *bool, fallback bool) bool {
+	if v != nil {
+		return *v
+	}
+	return fallback
+}
+
+// pickStr trả về giá trị Engine khai nếu không rỗng, ngược lại lấy mặc định.
+func pickStr(v, fallback string) string {
+	if v != "" {
+		return v
+	}
+	return fallback
 }
 
 // ChunkSize trả về kích thước một đoạn văn bản, đã kẹp theo MaxTextLength để không bao giờ
