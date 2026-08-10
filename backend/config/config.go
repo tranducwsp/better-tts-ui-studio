@@ -20,6 +20,7 @@ type Config struct {
 	// Số giây ghi nhớ bản ghi người dùng sau khi xác thực token. 0 nghĩa là không cache.
 	AuthUserCacheSeconds      int
 	TaskMemoryRetentionSeconds int
+	EnableRequestLogging      bool
 	CoreTTSURL           string
 	CoreTTSGrpcURL       string
 	FEBuilderURL         string
@@ -167,6 +168,7 @@ func LoadConfig() *Config {
 		RefreshTokenExpireMinutes: num("REFRESH_TOKEN_EXPIRE_MINUTES"),
 		AuthUserCacheSeconds:      num("AUTH_USER_CACHE_SECONDS"),
 		TaskMemoryRetentionSeconds: num("TASK_MEMORY_RETENTION_SECONDS"),
+		EnableRequestLogging:      strings.ToLower(str("ENABLE_REQUEST_LOGGING")) != "false" && str("ENABLE_REQUEST_LOGGING") != "0",
 		CoreTTSURL:                str("CORE_ENGINE_URL"),
 		CoreTTSGrpcURL:            str("CORE_ENGINE_GRPC_URL"),
 		FEBuilderURL:              str("FE_BUILDER_URL"),

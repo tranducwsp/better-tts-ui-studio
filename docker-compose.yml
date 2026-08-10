@@ -79,6 +79,8 @@ services:
       - REDIS_URL=redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - COOKIE_SECURE=${COOKIE_SECURE:-1}
+      - TASK_MEMORY_RETENTION_SECONDS=${TASK_MEMORY_RETENTION_SECONDS:-600}
+      - ENABLE_REQUEST_LOGGING=${ENABLE_REQUEST_LOGGING:-true}
 
       # Tài khoản tạo sẵn ở lần khởi động đầu, khi cơ sở dữ liệu còn trống. Để trống cả bốn
       # thì không tài khoản nào được tạo và người dùng đầu tiên tự đăng ký qua giao diện.

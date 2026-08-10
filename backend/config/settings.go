@@ -107,6 +107,12 @@ var Settings = []Setting{
 			"Đặt 0 để TẮT HOÀN TOÀN In-Memory Task Cache; khi đó task hoàn thành sẽ được thu hồi khỏi RAM ngay lập tức\n" +
 			"và các lượt truy vấn trạng thái/tải file sau đó sẽ đọc trực tiếp từ Redis/Database/Storage.",
 	},
+	{
+		Key: "ENABLE_REQUEST_LOGGING", Kind: KindString, Default: "true",
+		Group: "Server",
+		Doc: "Bật hoặc Tắt Request Logger (chiMiddleware.Logger) của HTTP Server.\n" +
+			"Đặt false để tắt log từng HTTP Request ra stdout, giúp tối ưu hiệu năng và bộ nhớ RAM dưới tải cao.",
+	},
 
 	{Key: "DATABASE_URL", Kind: KindString, Default: "postgres://postgres:<change>@localhost:5432/ai_studio?sslmode=disable", Group: "Database", Doc: "Connection string PostgreSQL. Khi dùng docker-compose, giá trị này được dựng từ POSTGRES_PASSWORD;\n\t\tđể <change> nếu tự triển khai và thay bằng credential thật."},
 	{Key: "DB_MAX_CONNS", Kind: KindInt, Default: "25", Min: 1, Max: 10000, Group: "Database"},

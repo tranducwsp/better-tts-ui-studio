@@ -32,7 +32,9 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 	r := chi.NewRouter()
 
 	// Base middlewares (Global)
-	r.Use(chiMiddleware.Logger)
+	if cfg.EnableRequestLogging {
+		r.Use(chiMiddleware.Logger)
+	}
 	r.Use(chiMiddleware.Recoverer)
 
 	allowedOrigins := cfg.CORSOrigins
@@ -51,9 +53,10 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 
 	r.Use(middleware.AuthMiddleware(cfg))
 
-	// Health check endpoints
+	// Health check & debug endpoints
 	r.Get("/health", handlers.HealthCheck)
 	r.Get("/ready", handlers.ReadinessCheck)
+	r.Mount("/debug", chiMiddleware.Profiler())
 
 	// Handlers
 	authHandler := handlers.NewAuthHandler(cfg)
