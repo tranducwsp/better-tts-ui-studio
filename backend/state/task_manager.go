@@ -306,6 +306,11 @@ func (tm *TaskManager) Cleanup() {
 		}
 		delete(tm.tasks, id)
 	}
+
+	// Nếu map đã được dọn sạch hoàn toàn, tái khởi tạo map để giải phóng các buckets cũ của Go map cho GC thu hồi.
+	if len(tm.tasks) == 0 {
+		tm.tasks = make(map[string]*TaskItem)
+	}
 }
 
 // finishedAndIdle cho biết task đã tới trạng thái cuối và không còn ai theo dõi.
