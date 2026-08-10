@@ -21,6 +21,8 @@ type Config struct {
 	AuthUserCacheSeconds      int
 	TaskMemoryRetentionSeconds int
 	EnableRequestLogging      bool
+	EnablePprof               bool
+	EnableSwagger             bool
 	CoreTTSURL           string
 	CoreTTSGrpcURL       string
 	FEBuilderURL         string
@@ -169,6 +171,8 @@ func LoadConfig() *Config {
 		AuthUserCacheSeconds:      num("AUTH_USER_CACHE_SECONDS"),
 		TaskMemoryRetentionSeconds: num("TASK_MEMORY_RETENTION_SECONDS"),
 		EnableRequestLogging:      strings.ToLower(str("ENABLE_REQUEST_LOGGING")) != "false" && str("ENABLE_REQUEST_LOGGING") != "0",
+		EnablePprof:               strings.ToLower(str("ENABLE_PPROF")) == "true" || str("ENABLE_PPROF") == "1",
+		EnableSwagger:             strings.ToLower(str("ENABLE_SWAGGER")) != "false" && str("ENABLE_SWAGGER") != "0",
 		CoreTTSURL:                str("CORE_ENGINE_URL"),
 		CoreTTSGrpcURL:            str("CORE_ENGINE_GRPC_URL"),
 		FEBuilderURL:              str("FE_BUILDER_URL"),

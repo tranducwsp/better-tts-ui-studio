@@ -113,6 +113,18 @@ var Settings = []Setting{
 		Doc: "Bật hoặc Tắt Request Logger (chiMiddleware.Logger) của HTTP Server.\n" +
 			"Đặt false để tắt log từng HTTP Request ra stdout, giúp tối ưu hiệu năng và bộ nhớ RAM dưới tải cao.",
 	},
+	{
+		Key: "ENABLE_PPROF", Kind: KindString, Default: "false",
+		Group: "Server",
+		Doc: "Bật hoặc Tắt Go Profiler endpoint (/debug/pprof). Mặc định false để bảo mật và tối ưu Production.\n" +
+			"Đặt true khi cần soi Heap/Goroutine memory profile tại /debug/pprof.",
+	},
+	{
+		Key: "ENABLE_SWAGGER", Kind: KindString, Default: "true",
+		Group: "Server",
+		Doc: "Bật hoặc Tắt Swagger UI API documentation (/swagger). Mặc định true.\n" +
+			"Đặt false để ẩn endpoint tài liệu Swagger trên môi trường Production.",
+	},
 
 	{Key: "DATABASE_URL", Kind: KindString, Default: "postgres://postgres:<change>@localhost:5432/ai_studio?sslmode=disable", Group: "Database", Doc: "Connection string PostgreSQL. Khi dùng docker-compose, giá trị này được dựng từ POSTGRES_PASSWORD;\n\t\tđể <change> nếu tự triển khai và thay bằng credential thật."},
 	{Key: "DB_MAX_CONNS", Kind: KindInt, Default: "25", Min: 1, Max: 10000, Group: "Database"},

@@ -53,10 +53,19 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 
 	r.Use(middleware.AuthMiddleware(cfg))
 
-	// Health check & debug endpoints
+	// Health check & optional debug / swagger endpoints
 	r.Get("/health", handlers.HealthCheck)
 	r.Get("/ready", handlers.ReadinessCheck)
-	r.Mount("/debug", chiMiddleware.Profiler())
+
+	if cfg.EnablePprof {
+		r.Mount("/debug", chiMiddleware.Profiler())
+	}
+
+	if cfg.EnableSwagger {
+		r.Get("/swagger", handlers.ServeSwaggerUI)
+		r.Get("/swagger/", handlers.ServeSwaggerUI)
+		r.Get("/swagger/doc.json", handlers.ServeSwaggerDoc)
+	}
 
 	// Handlers
 	authHandler := handlers.NewAuthHandler(cfg)
