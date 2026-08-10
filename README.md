@@ -78,8 +78,7 @@ that can reach it can spend your GPU and read other users' tasks. Reach them for
 
 ## 📚 Documentation
 
-Detailed documentation is available in the [`docs/`](./docs/) directory:
-
+- 🛠️ [**Developer Technical README**](./TECHNICAL_README.md): Comprehensive developer guide for software engineers covering Go Control Plane architecture, memory tuning, auth, database, and scaling.
 - 🗺️ [**Code Map**](./docs/CODE_MAP.md): Which file does what, and the order to read them in. Start here before reviewing.
 - 📖 [**Frontend Overview (Giới thiệu chung FE)**](./docs/frontend_overview.md): High-level overview of the Svelte 5 Studio interface, features, and UI/UX design.
 - 🛠️ [**Frontend Technical & Engineering Spec**](./docs/frontend_tech_and_engineering.md): Detailed technical spec on Svelte 5 Runes, Web Audio API binary handling, streaming, and build pipeline.
