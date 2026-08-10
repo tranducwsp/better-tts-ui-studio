@@ -292,7 +292,7 @@ func (tm *TaskManager) Cleanup() {
 
 	now := time.Now()
 	for id, t := range tm.tasks {
-		if now.Sub(t.CreatedAt) <= taskRetention {
+		if taskRetention > 0 && now.Sub(t.CreatedAt) <= taskRetention {
 			continue
 		}
 		if !t.finishedAndIdle() {

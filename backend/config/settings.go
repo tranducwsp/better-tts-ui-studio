@@ -100,6 +100,13 @@ var Settings = []Setting{
 			"độ trễ vài giây là chấp nhận được; duyệt tài khoản sẽ xoá cache ngay lập tức.\n" +
 			"Đặt 0 để tắt cache và quay về truy vấn từng request.",
 	},
+	{
+		Key: "TASK_MEMORY_RETENTION_SECONDS", Kind: KindInt, Default: "600", Min: 0, Max: 86400,
+		Group: "Server",
+		Doc: "Số giây giữ trạng thái task đã hoàn thành trong RAM cache của TaskManager. Mặc định 600 (10 phút).\n" +
+			"Đặt 0 để TẮT HOÀN TOÀN In-Memory Task Cache; khi đó task hoàn thành sẽ được thu hồi khỏi RAM ngay lập tức\n" +
+			"và các lượt truy vấn trạng thái/tải file sau đó sẽ đọc trực tiếp từ Redis/Database/Storage.",
+	},
 
 	{Key: "DATABASE_URL", Kind: KindString, Default: "postgres://postgres:<change>@localhost:5432/ai_studio?sslmode=disable", Group: "Database", Doc: "Connection string PostgreSQL. Khi dùng docker-compose, giá trị này được dựng từ POSTGRES_PASSWORD;\n\t\tđể <change> nếu tự triển khai và thay bằng credential thật."},
 	{Key: "DB_MAX_CONNS", Kind: KindInt, Default: "25", Min: 1, Max: 10000, Group: "Database"},

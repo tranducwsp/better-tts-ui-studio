@@ -20,29 +20,29 @@ var (
 const redisTaskTTL = 1 * time.Hour
 
 // taskRetention là tuổi tối thiểu trước khi một task đã kết thúc được thu hồi khỏi RAM.
-//
-// Giữ một lúc sau khi xong để lượt tải ngay sau đó còn đọc được định dạng và bytes từ RAM
-// thay vì phải đi Redis hay kho.
-const taskRetention = 10 * time.Minute
+// Có thể tùy chỉnh bằng biến ENV TASK_MEMORY_RETENTION_SECONDS (đặt 0 để tắt In-Memory Cache).
+var taskRetention = 10 * time.Minute
+
+// ConfigureTaskRetention cập nhật thời gian giữ task trong RAM từ cấu hình ENV.
+func ConfigureTaskRetention(d time.Duration) {
+	taskRetention = d
+	if d == 0 {
+		log.Println("⚡ In-Memory Task Cache bị TẮT (TASK_MEMORY_RETENTION_SECONDS=0): Task hoàn thành sẽ được giải phóng khỏi RAM ngay sau khi xử lý.")
+	} else {
+		log.Printf("🧠 In-Memory Task Cache retention được cấu hình: %v", d)
+	}
+}
 
 // taskMaxLifetime là trần tuyệt đối cho một task ở trong RAM, kể cả khi chưa kết thúc.
-//
-// Tồn tại vì worker chết giữa chừng không để lại ai đặt task về trạng thái cuối: không có
-// trần thì những task đó ở lại vĩnh viễn. Rộng hơn hạn tổng hợp dài nhất
-// (TTS_CLIENT_TIMEOUT_SECONDS tối đa một giờ) để không cắt nhầm một job đang chạy thật.
 const taskMaxLifetime = 2 * time.Hour
 
 // taskRedisTimeout chặn thời gian một lượt đọc/ghi trạng thái task trên Redis.
-//
-// Get nằm trên đường đi của ownsTask, tức là mọi lượt hỏi tiến độ, mở SSE, huỷ và tải. Với
-// context.Background() không hạn, một Redis treo — còn mở TCP nhưng không trả lời — giữ mỗi
-// goroutine request lại vô hạn, và ReadTimeout của http.Server không cứu được vì nó không
-// đánh thức được một goroutine đang chờ đọc socket. Cùng lý do và cùng con số với
-// middleware.cacheOpTimeout.
 const taskRedisTimeout = 100 * time.Millisecond
 
 // InitRedis khởi tạo kết nối Redis Client từ cấu hình ENV.
 func InitRedis(cfg *config.Config) {
+	ConfigureTaskRetention(time.Duration(cfg.TaskMemoryRetentionSeconds) * time.Second)
+
 	if cfg.RedisURL == "" {
 		log.Println("RedisURL không được cấu hình, TaskManager sử dụng In-Memory Mode.")
 		return

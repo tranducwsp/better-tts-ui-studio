@@ -18,7 +18,8 @@ type Config struct {
 	AccessTokenExpireMinutes  int
 	RefreshTokenExpireMinutes int
 	// Số giây ghi nhớ bản ghi người dùng sau khi xác thực token. 0 nghĩa là không cache.
-	AuthUserCacheSeconds int
+	AuthUserCacheSeconds      int
+	TaskMemoryRetentionSeconds int
 	CoreTTSURL           string
 	CoreTTSGrpcURL       string
 	FEBuilderURL         string
@@ -165,6 +166,7 @@ func LoadConfig() *Config {
 		AccessTokenExpireMinutes:  num("ACCESS_TOKEN_EXPIRE_MINUTES"),
 		RefreshTokenExpireMinutes: num("REFRESH_TOKEN_EXPIRE_MINUTES"),
 		AuthUserCacheSeconds:      num("AUTH_USER_CACHE_SECONDS"),
+		TaskMemoryRetentionSeconds: num("TASK_MEMORY_RETENTION_SECONDS"),
 		CoreTTSURL:                str("CORE_ENGINE_URL"),
 		CoreTTSGrpcURL:            str("CORE_ENGINE_GRPC_URL"),
 		FEBuilderURL:              str("FE_BUILDER_URL"),
