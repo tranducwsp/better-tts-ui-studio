@@ -36,10 +36,10 @@ type UnifiedSynthesizeRequest struct {
 
 // UnifiedVoiceResponse cấu trúc gọn tối giản cho Frontend: ID, Name, Descriptions.
 type UnifiedVoiceResponse struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Descriptions []string `json:"descriptions,omitempty"`
-	CreatedAt    string   `json:"created_at,omitempty"`
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+	CreatedAt string            `json:"created_at,omitempty"`
 }
 
 type UnifiedHandler struct {
@@ -90,9 +90,9 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, v := range presetVoices {
 			unifiedList = append(unifiedList, UnifiedVoiceResponse{
-				ID:           v.ID,
-				Name:         v.Name,
-				Descriptions: v.Descriptions,
+				ID:       v.ID,
+				Name:     v.Name,
+				Metadata: v.Metadata,
 			})
 		}
 	}
@@ -112,15 +112,9 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 
 	if err == nil {
 		for _, v := range userVoices {
-			var desc []string
-			if v.Gender.Valid && v.Gender.String != "" {
-				desc = append(desc, v.Gender.String)
-			}
-			if v.Region.Valid && v.Region.String != "" {
-				desc = append(desc, v.Region.String)
-			}
-			if v.Style.Valid && v.Style.String != "" {
-				desc = append(desc, v.Style.String)
+			meta := map[string]string{}
+			if len(v.Metadata) > 0 && string(v.Metadata) != "{}" {
+				_ = sonic.Unmarshal(v.Metadata, &meta)
 			}
 
 			createdStr := ""
@@ -129,10 +123,10 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 			}
 
 			unifiedList = append(unifiedList, UnifiedVoiceResponse{
-				ID:           v.ID,
-				Name:         v.Name,
-				Descriptions: desc,
-				CreatedAt:    createdStr,
+				ID:        v.ID,
+				Name:      v.Name,
+				Metadata:  meta,
+				CreatedAt: createdStr,
 			})
 		}
 	}

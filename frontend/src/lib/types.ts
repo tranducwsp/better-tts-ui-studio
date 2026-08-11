@@ -1,16 +1,10 @@
 export interface VoiceOption {
   id: string;
   name: string;
-  /** Drives the venus/mars icon in radio-style voice pickers, when the engine states it. */
-  gender?: string;
+  metadata?: Record<string, string>;
   descriptions?: string[];
   sampleUrl?: string;
   createdAt?: string;
-  /**
-   * True only for a voice this user saved, which is the only kind that can be deleted.
-   * Engine presets sit in the same list; offering a delete button on those would promise
-   * an action the backend has no route for.
-   */
   deletable?: boolean;
 }
 
@@ -19,9 +13,8 @@ export interface Preset {
   name: string;
   speaker: string;
   speed: number;
-  gender?: string;
-  region?: string;
-  style?: string;
+  /** Các trường metadata động từ voice_metadata_schema. */
+  metadata?: Record<string, string>;
   created_at?: string;
 }
 
@@ -185,7 +178,7 @@ export interface VoiceMetadataFieldSpec {
 export interface PresetVoiceSpec {
   id: string;
   name: string;
-  gender?: string;
+  metadata?: Record<string, string>;
   descriptions?: string[];
   sample_url?: string;
 }

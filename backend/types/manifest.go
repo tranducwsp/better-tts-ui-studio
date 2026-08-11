@@ -155,11 +155,10 @@ type VoiceMetadataFieldSpec struct {
 
 // PresetVoiceSpec là giọng đọc Engine kèm sẵn, khai ngay trong Manifest thay vì qua /voices.
 type PresetVoiceSpec struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Gender       string   `json:"gender,omitempty"`
-	Descriptions []string `json:"descriptions,omitempty"`
-	SampleURL    string   `json:"sample_url,omitempty"`
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+	SampleURL string            `json:"sample_url,omitempty"`
 }
 
 // ModelOptionSpec chỉ mô tả CÁCH VẼ điều khiển, không quyết định điều khiển có tồn tại hay

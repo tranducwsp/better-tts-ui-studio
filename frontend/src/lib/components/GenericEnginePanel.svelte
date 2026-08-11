@@ -58,18 +58,38 @@
 
   let modeVoices = $state<VoiceOption[]>([]);
 
-  // Active voice list: use modelOption.preset_voices if specified by manifest, else modeVoices.
+  // Active voice list: merge preset_voices from manifest (SSG-sync) with modeVoices
+  // (async-loaded user clone voices). Preset voices are available immediately during SSR;
+  // user clone voices are fetched after hydration and prepended before presets.
   // Map PresetVoiceSpec → VoiceOption to fix sample_url (snake_case) → sampleUrl (camelCase).
   let activeVoices = $derived.by(() => {
-    if (modelOption?.preset_voices && modelOption.preset_voices.length > 0) {
-      return modelOption.preset_voices.map((pv) => ({
-        id: pv.id,
-        name: pv.name,
-        gender: pv.gender,
-        descriptions: pv.descriptions,
-        sampleUrl: pv.sample_url,
-      }));
+    // 1. Preset voices from manifest (available ngay trong SSR — không cần async fetch)
+    const preset: VoiceOption[] = (modelOption?.preset_voices || []).map((pv) => ({
+      id: pv.id,
+      name: pv.name,
+      metadata: pv.metadata,
+      descriptions: pv.descriptions || (pv.metadata ? Object.values(pv.metadata).filter((d): d is string => typeof d === 'string' && d.trim() !== '') : []),
+      sampleUrl: pv.sample_url,
+    }));
+
+    // 2. Nếu có preset_voices, merge với user clone voices (modeVoices, loaded async)
+    if (preset.length > 0) {
+      // User clone voices (loaded async, deletable=true)
+      const user = modeVoices.filter((v) => v.deletable);
+      // Merge: user voices lên trước, preset_voices sau, deduplicate by id/name
+      const combined = [...user, ...preset];
+      const seen = new Set<string>();
+      return combined.filter((v) => {
+        const key = v.id || v.name;
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          return true;
+        }
+        return false;
+      });
     }
+
+    // 3. Không có preset_voices: dùng modeVoices (từ API fallback hoặc user presets)
     return modeVoices;
   });
 
@@ -119,18 +139,16 @@
       let combined: VoiceOption[] = [];
       const currentOption = manifest?.ui_schema?.option_panel?.[modeId] || null;
 
-      // 1. Static preset voices from manifest schema if defined
-      if (currentOption?.preset_voices && currentOption.preset_voices.length > 0) {
-        combined = [...currentOption.preset_voices];
-      } else {
-        // 2. Fetch engine preset voices from /api/voices/{modeId}
+      // Chỉ fetch từ API nếu không có preset_voices trong manifest.
+      // preset_voices được xử lý sync bởi activeVoices derivation nên không cần duplicate ở đây.
+      if (!currentOption?.preset_voices || currentOption.preset_voices.length === 0) {
         const engineVoices = await fetchVoices(modeId);
         if (engineVoices && engineVoices.length > 0) {
           combined = [...engineVoices];
         }
       }
 
-      // 3. Fetch custom saved voices if mode supports voice saving
+      // Fetch user clone voices if mode supports voice saving
       if (resolveCapabilities(manifest, modeId).supports_voice_saving) {
         const userPresets = await fetchPresets(modeId);
         if (userPresets && userPresets.length > 0) {
@@ -138,7 +156,8 @@
             id: p.id,
             name: p.name,
             deletable: true,
-            descriptions: [p.gender, p.region, p.style].filter((d): d is string => typeof d === 'string' && d.trim() !== '')
+            metadata: p.metadata,
+            descriptions: p.metadata ? Object.values(p.metadata).filter((d): d is string => typeof d === 'string' && d.trim() !== '') : []
           }));
           combined = [...userVoices, ...combined];
         }
@@ -200,6 +219,15 @@
       if (reloadedJob.chunks && reloadedJob.chunks.length > 0) {
         requestStreaming();
       }
+    }
+  });
+
+  // Auto-select voice đầu tiên khi danh sách voices thay đổi (preset_voices từ SSR
+  // hoặc sau khi user voices load async). Tránh trường hợp selectedVoice rỗng trong
+  // khi activeVoices đã có dữ liệu.
+  $effect(() => {
+    if (activeVoices.length > 0 && !selectedVoice) {
+      selectedVoice = activeVoices[0].id || activeVoices[0].name;
     }
   });
 

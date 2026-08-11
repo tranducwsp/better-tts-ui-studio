@@ -7,26 +7,21 @@ package sqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUserVoice = `-- name: CreateUserVoice :one
-INSERT INTO user_voices (id, user_id, model_id, name, gender, region, style, file_path, metadata)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, user_id, model_id, name, gender, region, style, file_path, metadata, created_at
+INSERT INTO user_voices (id, user_id, model_id, name, file_path, metadata)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, user_id, model_id, name, file_path, metadata, created_at
 `
 
 type CreateUserVoiceParams struct {
-	ID       string      `json:"id"`
-	UserID   string      `json:"user_id"`
-	ModelID  string      `json:"model_id"`
-	Name     string      `json:"name"`
-	Gender   pgtype.Text `json:"gender"`
-	Region   pgtype.Text `json:"region"`
-	Style    pgtype.Text `json:"style"`
-	FilePath string      `json:"file_path"`
-	Metadata []byte      `json:"metadata"`
+	ID       string `json:"id"`
+	UserID   string `json:"user_id"`
+	ModelID  string `json:"model_id"`
+	Name     string `json:"name"`
+	FilePath string `json:"file_path"`
+	Metadata []byte `json:"metadata"`
 }
 
 func (q *Queries) CreateUserVoice(ctx context.Context, arg CreateUserVoiceParams) (UserVoice, error) {
@@ -35,9 +30,6 @@ func (q *Queries) CreateUserVoice(ctx context.Context, arg CreateUserVoiceParams
 		arg.UserID,
 		arg.ModelID,
 		arg.Name,
-		arg.Gender,
-		arg.Region,
-		arg.Style,
 		arg.FilePath,
 		arg.Metadata,
 	)
@@ -47,9 +39,6 @@ func (q *Queries) CreateUserVoice(ctx context.Context, arg CreateUserVoiceParams
 		&i.UserID,
 		&i.ModelID,
 		&i.Name,
-		&i.Gender,
-		&i.Region,
-		&i.Style,
 		&i.FilePath,
 		&i.Metadata,
 		&i.CreatedAt,
@@ -73,7 +62,7 @@ func (q *Queries) DeleteUserVoice(ctx context.Context, arg DeleteUserVoiceParams
 }
 
 const getUserVoiceByID = `-- name: GetUserVoiceByID :one
-SELECT id, user_id, model_id, name, gender, region, style, file_path, metadata, created_at FROM user_voices
+SELECT id, user_id, model_id, name, file_path, metadata, created_at FROM user_voices
 WHERE id = $1 AND user_id = $2 LIMIT 1
 `
 
@@ -90,9 +79,6 @@ func (q *Queries) GetUserVoiceByID(ctx context.Context, arg GetUserVoiceByIDPara
 		&i.UserID,
 		&i.ModelID,
 		&i.Name,
-		&i.Gender,
-		&i.Region,
-		&i.Style,
 		&i.FilePath,
 		&i.Metadata,
 		&i.CreatedAt,
@@ -101,7 +87,7 @@ func (q *Queries) GetUserVoiceByID(ctx context.Context, arg GetUserVoiceByIDPara
 }
 
 const listUserVoices = `-- name: ListUserVoices :many
-SELECT id, user_id, model_id, name, gender, region, style, file_path, metadata, created_at FROM user_voices
+SELECT id, user_id, model_id, name, file_path, metadata, created_at FROM user_voices
 WHERE user_id = $1
 ORDER BY created_at DESC
 `
@@ -120,9 +106,6 @@ func (q *Queries) ListUserVoices(ctx context.Context, userID string) ([]UserVoic
 			&i.UserID,
 			&i.ModelID,
 			&i.Name,
-			&i.Gender,
-			&i.Region,
-			&i.Style,
 			&i.FilePath,
 			&i.Metadata,
 			&i.CreatedAt,
@@ -138,7 +121,7 @@ func (q *Queries) ListUserVoices(ctx context.Context, userID string) ([]UserVoic
 }
 
 const listUserVoicesByModel = `-- name: ListUserVoicesByModel :many
-SELECT id, user_id, model_id, name, gender, region, style, file_path, metadata, created_at FROM user_voices
+SELECT id, user_id, model_id, name, file_path, metadata, created_at FROM user_voices
 WHERE user_id = $1 AND model_id = $2
 ORDER BY created_at DESC
 `
@@ -162,9 +145,6 @@ func (q *Queries) ListUserVoicesByModel(ctx context.Context, arg ListUserVoicesB
 			&i.UserID,
 			&i.ModelID,
 			&i.Name,
-			&i.Gender,
-			&i.Region,
-			&i.Style,
 			&i.FilePath,
 			&i.Metadata,
 			&i.CreatedAt,

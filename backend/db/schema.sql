@@ -14,9 +14,6 @@ CREATE TABLE IF NOT EXISTS user_voices (
     user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     model_id VARCHAR(50) NOT NULL DEFAULT 'clone',
     name VARCHAR(255) NOT NULL,
-    gender VARCHAR(50),
-    region VARCHAR(50),
-    style VARCHAR(50),
     file_path VARCHAR(512) NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP

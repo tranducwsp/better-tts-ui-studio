@@ -26,13 +26,13 @@ EXAMPLE_DELAY_SEC = float(os.getenv("EXAMPLE_DELAY_SEC", "0.0"))
 # Giọng đọc theo từng Model / Mode — cùng danh sách với main.py
 MODEL_VOICES = {
     "fast": [
-        {"id": "hoai_my", "name": "Hoài Mỹ", "descriptions": ["Nữ", "Miền Bắc", "Tự nhiên"]},
-        {"id": "nam_minh", "name": "Nam Minh", "descriptions": ["Nam", "Miền Nam", "Bản tin"]},
+        {"id": "hoai_my", "name": "Hoài Mỹ", "metadata": {"gender": "Nữ", "region": "Miền Bắc", "style": "Tự nhiên"}},
+        {"id": "nam_minh", "name": "Nam Minh", "metadata": {"gender": "Nam", "region": "Miền Nam", "style": "Bản tin"}},
     ],
     "standard": [
-        {"id": "hoai_my", "name": "Hoài Mỹ", "descriptions": ["Nữ", "Miền Bắc", "Tự nhiên"]},
-        {"id": "nam_minh", "name": "Nam Minh", "descriptions": ["Nam", "Miền Nam", "Bản tin"]},
-        {"id": "thu_hien", "name": "Thu Hiền", "descriptions": ["Nữ", "Miền Trung", "Dịu dàng"]},
+        {"id": "hoai_my", "name": "Hoài Mỹ", "metadata": {"gender": "Nữ", "region": "Miền Bắc", "style": "Tự nhiên"}},
+        {"id": "nam_minh", "name": "Nam Minh", "metadata": {"gender": "Nam", "region": "Miền Nam", "style": "Bản tin"}},
+        {"id": "thu_hien", "name": "Thu Hiền", "metadata": {"gender": "Nữ", "region": "Miền Trung", "style": "Dịu dàng"}},
     ],
 }
 

@@ -35,7 +35,7 @@ class VoiceInfo(BaseModel):
     """
     id: str
     name: str
-    descriptions: List[str] = Field(default_factory=list)
+    metadata: Dict[str, str] = Field(default_factory=dict)
     modes: List[str]
 
 class EngineCapabilities(BaseModel):
@@ -145,8 +145,7 @@ class PresetVoiceSpec(BaseModel):
     """A voice the engine ships with, listed in the manifest instead of via /voices."""
     id: str
     name: str
-    gender: Optional[str] = None
-    descriptions: List[str] = Field(default_factory=list)
+    metadata: Dict[str, str] = Field(default_factory=dict)
     sample_url: Optional[str] = None
 
 class ModelOptionSpec(BaseModel):
@@ -176,13 +175,18 @@ class UISchemaSpec(BaseModel):
             voice_type="radio",
             speed_type="slider",
             preset_voices=[
-                {"id": "hoai_my", "name": "Hoài Mỹ", "gender": "female"},
-                {"id": "nam_minh", "name": "Nam Minh", "gender": "male"}
+                {"id": "hoai_my", "name": "Hoài Mỹ", "metadata": {"gender": "Nữ"}},
+                {"id": "nam_minh", "name": "Nam Minh", "metadata": {"gender": "Nam"}}
             ]
         ),
         "standard": ModelOptionSpec(
             voice_type="select",
-            speed_type="slider"
+            speed_type="slider",
+            preset_voices=[
+                {"id": "hoai_my", "name": "Hoài Mỹ", "metadata": {"gender": "Nữ", "region": "Miền Bắc", "style": "Tự nhiên"}},
+                {"id": "nam_minh", "name": "Nam Minh", "metadata": {"gender": "Nam", "region": "Miền Nam", "style": "Bản tin"}},
+                {"id": "thu_hien", "name": "Thu Hiền", "metadata": {"gender": "Nữ", "region": "Miền Trung", "style": "Dịu dàng"}},
+            ]
         ),
         "zero_shot_clone": ModelOptionSpec(
             notice_banner=NoticeBannerSpec(

@@ -58,9 +58,6 @@ type UserVoice struct {
 	UserID    string             `json:"user_id"`
 	ModelID   string             `json:"model_id"`
 	Name      string             `json:"name"`
-	Gender    pgtype.Text        `json:"gender"`
-	Region    pgtype.Text        `json:"region"`
-	Style     pgtype.Text        `json:"style"`
 	FilePath  string             `json:"file_path"`
 	Metadata  []byte             `json:"metadata"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`

@@ -123,22 +123,26 @@ export async function approveUser(userId: string): Promise<void> {
 }
 
 export function parseVoiceItem(v: Record<string, unknown> | string): VoiceOption {
-  let descriptions: string[] = [];
   if (typeof v === 'object' && v !== null) {
-    if (Array.isArray(v.descriptions)) {
-      descriptions = v.descriptions.filter((d: unknown): d is string => typeof d === 'string' && d.trim() !== '');
-    }
     const idStr = String(v.id || v.voice_id || v.name || '');
     const nameStr = String(v.name || v.id || '');
-    const sampleUrl = typeof v.sampleUrl === 'string' ? v.sampleUrl : undefined;
-    const gender = typeof v.gender === 'string' ? v.gender : undefined;
+    const sampleUrl = typeof v.sampleUrl === 'string' ? v.sampleUrl : (typeof v.sample_url === 'string' ? v.sample_url : undefined);
+    const metadata = typeof v.metadata === 'object' && v.metadata !== null ? (v.metadata as Record<string, string>) : undefined;
+
+    let descriptions: string[] = [];
+    if (Array.isArray(v.descriptions)) {
+      descriptions = v.descriptions.filter((d: unknown): d is string => typeof d === 'string' && d.trim() !== '');
+    } else if (metadata) {
+      descriptions = Object.values(metadata).filter((d: unknown): d is string => typeof d === 'string' && d.trim() !== '');
+    }
+
     const deletable = typeof v.deletable === 'boolean' ? v.deletable : undefined;
     return {
       id: idStr,
       name: nameStr,
+      metadata,
       descriptions,
       sampleUrl,
-      gender,
       deletable
     };
   }
@@ -181,9 +185,9 @@ export async function fetchPresets(modelId?: string): Promise<Preset[]> {
         name: String(v.name || ''),
         speaker: String(v.name || ''),
         speed: 1.0,
-        gender: typeof v.gender === 'string' ? v.gender : undefined,
-        region: typeof v.region === 'string' ? v.region : undefined,
-        style: typeof v.style === 'string' ? v.style : undefined,
+        metadata: typeof v.metadata === 'object' && v.metadata !== null
+          ? (v.metadata as Record<string, string>)
+          : undefined,
         created_at: typeof v.created_at === 'string' ? v.created_at : undefined
       }));
     }

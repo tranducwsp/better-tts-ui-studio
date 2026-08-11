@@ -18,7 +18,6 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // firstCloningMode trả về Mode đầu tiên mà Manifest khai là hỗ trợ cloning, dùng khi client
@@ -37,11 +36,9 @@ func firstCloningMode() string {
 	return ""
 }
 
-// reservedVoiceFields là các trường đã có cột riêng trong bảng user_voices, nên không lặp
-// lại chúng trong metadata JSONB.
+// reservedVoiceFields là các trường do hệ thống dùng riêng, không đi vào metadata JSONB.
 var reservedVoiceFields = map[string]bool{
-	"name": true, "gender": true, "region": true, "style": true,
-	"model_id": true, "file": true,
+	"name": true, "model_id": true, "file": true,
 }
 
 // extraMetadata gom mọi trường form ngoài các trường đã có cột riêng thành JSON.
@@ -115,12 +112,6 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	}
 	defer upload.File.Close()
 
-	// gender/region/style có cột riêng vì chúng được lọc và hiển thị. Mọi trường khác mà
-	// Engine khai trong voice_metadata_schema đi vào cột metadata JSONB — nếu không, một
-	// Engine khai năm trường sẽ thấy hai trường biến mất mà người dùng không hay biết.
-	gender := r.FormValue("gender")
-	region := r.FormValue("region")
-	style := r.FormValue("style")
 	extra := extraMetadata(r)
 
 	// 1. Save reference audio under the storage tier
@@ -176,17 +167,8 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		ModelID:  upload.ModelID,
 		Name:     name,
 		FilePath: voiceKey,
+		Metadata: extra,
 	}
-	if gender != "" {
-		params.Gender = pgtype.Text{String: gender, Valid: true}
-	}
-	if region != "" {
-		params.Region = pgtype.Text{String: region, Valid: true}
-	}
-	if style != "" {
-		params.Style = pgtype.Text{String: style, Valid: true}
-	}
-	params.Metadata = extra
 
 	_, err = db.Queries.CreateUserVoice(r.Context(), params)
 	if err != nil {
@@ -257,12 +239,10 @@ func storageKey(filePath string) string {
 
 // UserVoiceResponse cấu trúc phản hồi danh sách giọng nhân bản của người dùng.
 type UserVoiceResponse struct {
-	ID        string  `json:"id"`
-	Name      string  `json:"name"`
-	Gender    *string `json:"gender"`
-	Region    *string `json:"region"`
-	Style     *string `json:"style"`
-	CreatedAt string  `json:"created_at"`
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Metadata  map[string]string `json:"metadata"`
+	CreatedAt string            `json:"created_at"`
 }
 
 // GetUserVoices lấy danh sách tất cả các giọng nhân bản của người dùng hiện tại (lọc theo model_id nếu có).
@@ -294,15 +274,10 @@ func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) 
 
 	res := make([]UserVoiceResponse, len(voices))
 	for i, v := range voices {
-		var genderPtr, regionPtr, stylePtr *string
-		if v.Gender.Valid {
-			genderPtr = &v.Gender.String
-		}
-		if v.Region.Valid {
-			regionPtr = &v.Region.String
-		}
-		if v.Style.Valid {
-			stylePtr = &v.Style.String
+		// Giải mã metadata JSONB thành map
+		meta := map[string]string{}
+		if len(v.Metadata) > 0 && string(v.Metadata) != "{}" {
+			_ = sonic.Unmarshal(v.Metadata, &meta)
 		}
 
 		createdStr := ""
@@ -313,9 +288,7 @@ func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) 
 		res[i] = UserVoiceResponse{
 			ID:        v.ID,
 			Name:      v.Name,
-			Gender:    genderPtr,
-			Region:    regionPtr,
-			Style:     stylePtr,
+			Metadata:  meta,
 			CreatedAt: createdStr,
 		}
 	}

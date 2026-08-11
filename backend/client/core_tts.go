@@ -69,9 +69,9 @@ func (c *CoreTTSClient) Close() {
 }
 
 type CoreVoice struct {
-	ID           string   `json:"id,omitempty"`
-	Name         string   `json:"name"`
-	Descriptions []string `json:"descriptions,omitempty"`
+	ID       string            `json:"id,omitempty"`
+	Name     string            `json:"name"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 type SynthesizeRequest struct {
