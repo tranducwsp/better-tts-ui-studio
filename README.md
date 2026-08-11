@@ -1,103 +1,174 @@
-# 🎙️ AI Voice Studio - Universal Schema-Driven TTS Platform
+# 🎙️ Better TTS UI Studio - Universal Dynamic Schema-Driven TTS Platform
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Svelte 5](https://img.shields.io/badge/Frontend-Svelte%205-orange.svg)
 ![Go Chi](https://img.shields.io/badge/Control%20Plane-Go%201.22-00ADD8.svg)
-![Python FastAPI](https://img.shields.io/badge/Compute%20Engine-Python%203.10-green.svg)
+![Python FastAPI](https://img.shields.io/badge/Compute%20Engine-Python%203.10+-green.svg)
 ![Docker Compose](https://img.shields.io/badge/Deployment-Docker%20Compose-2496ED.svg)
 
-**AI Voice Studio** is a modern, high-performance, dynamic schema-driven Text-to-Speech (TTS) web application and control plane platform. Designed for AI Engineers, researchers, and enterprises, it allows integrating **ANY** custom AI Speech Synthesis engine (XTTS, GPT-SoVITS, VITS, Fish-Speech, Piper, Kokoro, etc.) without writing a single line of frontend or backend control code.
+**Better TTS UI Studio** là một nền tảng Web UI & Control Plane hiện đại, hiệu năng cao dành cho các **Kỹ sư AI (AI Engineers)** và nhóm phát triển mô hình tổng hợp giọng nói (Text-to-Speech - TTS). 
+
+Nền tảng được thiết kế theo kiến trúc **Dynamic Schema-Driven (Manifest-Driven)**: Cho phép tích hợp **BẤT KỲ** mô hình AI Speech Synthesis nào (XTTS, GPT-SoVITS, VITS, Fish-Speech, Piper, Kokoro, F5-TTS, VieNeu,...) vào hệ thống giao diện và quản lý chuyên nghiệp **mà không cần viết hay chỉnh sửa bất kỳ dòng mã nguồn Go Gateway hay Svelte Frontend nào!**
 
 ---
 
-## 🌟 Key Features
+## 🌟 Tại Sao Chọn Better TTS UI Studio?
 
-- ⚡ **Dynamic Schema-Driven UI**: The entire user interface (options, sliders, tabs, notice banners, input rules) is generated dynamically at runtime from the AI engine's manifest (`GET /info`).
-- 🪄 **Manifest Auto-Format Regex Rules**: Text hygiene and text normalization (gantry stripping, footnote removal, Vietnamese unicode fixes) are centralized in the Core TTS manifest.
-- 🎙️ **Dynamic Voice Cloning Metadata**: Customize the voice creation form fields (Accent, Gender, Style, Age) directly via engine configuration schemas.
-- 🔒 **Authentication & Multi-tenant Storage**: JWT HttpOnly session security (access + refresh token pair), mandatory authentication, per-user isolation of voices and history, and an Admin dashboard.
-- ⚡ **High Concurrency Go Chi Control Plane**: Sub-millisecond latency router managing task queues, PostgreSQL database history, SSE progress streaming, and audio caching.
-- 🎨 **Modern Futuristic UI**: Built with Svelte 5 (Runes), glassmorphism styling, real-time chunk audio playback, and intuitive search/replace text tools.
+Dành cho các AI Engineer muốn đưa mô hình của mình từ notebook/local script ra sản phẩm thực tế:
+
+- ⚡ **Giao Diện Động 100% (Schema-Driven UI)**: Toàn bộ bảng điều khiển tham số (sliders, dropdowns, switches, notice banners, quy tắc nhập liệu) được tự động sinh ra tại thời điểm runtime thông qua file **Manifest (`GET /info`)** do AI Model của bạn khai báo.
+- 🪄 **Tự Động Làm Sạch Văn Bản (Regex Rule Engine)**: Khai báo các quy tắc chuẩn hóa văn bản (loại bỏ ký tự đặc biệt, sửa lỗi Unicode Tiếng Việt, xóa gantry,...) trực tiếp trong Manifest để Gateway và Frontend tự xử lý trước khi gửi đến model.
+- 🎙️ **Voice Cloning Linh Hoạt**: Định nghĩa các trường thuộc tính mẫu giọng đọc (Accent, Gender, Style, Age,...) hoàn toàn qua JSON Schema.
+- 🔒 **Đầy Đủ Tính Năng Enterprise**: Tích hợp sẵn Authentication (JWT HttpOnly Cookies), Phân quyền người dùng (User / Admin), Quản lý lịch sử tổng hợp, Lưu trữ đa nền tảng (Local Disk / AWS S3 / MinIO).
+- ⚡ **Xử Lý Hàng Đợi Concurrency Cao**: Backend Go Chi kết hợp Redis Task Queue, cho phép streaming tiến độ realtime qua SSE (Server-Sent Events) và phát âm thanh từng chunk trên giao diện.
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ Tổng Quan Kiến Trúc Nền Tảng
 
 ```
  ┌────────────────────────────────────────────────────────┐
  │                   Frontend (Svelte 5)                  │
- │   - Dynamic UI Builder & Reactive Text Input Panel      │
- │   - Chunk Audio Player & Real-time Progress Streaming  │
+ │   - Tự động dựng UI từ Manifest                        │
+ │   - Realtime Audio Chunk Player & SSE Streaming        │
  └───────────────────────────┬────────────────────────────┘
-                             │ REST & SSE
+                             │ REST API / SSE
  ┌───────────────────────────▼────────────────────────────┐
  │              Control Plane Gateway (Go Chi)            │
- │   - Authentication (JWT HttpOnly Cookies)              │
- │   - PostgreSQL Metadata & Job Task Queue Manager       │
- │   - User Voice Storage & Per-User Isolation              │
+ │   - Auth & Session Security (JWT HttpOnly)             │
+ │   - Task Queue (Redis Stream) & Job Manager            │
+ │   - Multi-tenant Voice & Audio Storage (Local / S3)   │
  └───────────────────────────┬────────────────────────────┘
-                             │ gRPC / REST Core Protocol
+                             │ HTTP REST / gRPC Core Protocol
  ┌───────────────────────────▼────────────────────────────┐
- │             Compute Engine Microservice (Python)       │
- │   - PyTorch / ONNX / CUDA Speech Synthesis Model       │
- │   - Dynamic Manifest (`GET /info`) & Metadata Schemas  │
+ │        Dịch Vụ AI Model Của Bạn (Python Core TTS)      │
+ │   - PyTorch / ONNX / CUDA Speech Model                 │
+ │   - Cung cấp Manifest qua `GET /info`                  │
  └────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Quick Start with Docker Compose
+## 🚀 Hướng Dẫn Nhanh Dành Cho AI Engineer Triển Khai Model
 
-Ensure you have **Docker** and **Docker Compose** installed.
+### Bước 1: Chuẩn Bị Microservice AI Model Của Bạn
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/your-username/better-tts-ui-studio.git
-cd better-tts-ui-studio
+Nền tảng giao tiếp với mô hình AI của bạn thông qua một HTTP REST (hoặc gRPC) Service chuẩn mực. Chúng tôi đã cung cấp sẵn mã nguồn mẫu hoàn chỉnh tại thư mục [`core-tts-example/`](./core-tts-example).
 
-# 2. Set the required secrets
-cp .env.example .env
-# Fill in at least SECRET_KEY, POSTGRES_PASSWORD and REDIS_PASSWORD —
-# docker compose refuses to start while any of them is empty.
-#   openssl rand -hex 32
+Dịch vụ AI của bạn chỉ cần triển khai 3 endpoint chính:
+1. `GET /info` (Bắt buộc): Trả về JSON Manifest định nghĩa thông tin mô hình, bảng tham số UI, quy tắc regex và tính năng Voice Cloning.
+2. `GET /voices` (Bắt buộc): Trả về danh sách các giọng đọc có sẵn của mô hình.
+3. `POST /tts` (Hoặc gRPC `Synthesize`): Nhận đoạn văn bản + cấu hình tham số và trả về file âm thanh (WAV/MP3/FLAC/OGG).
+4. `POST /clone` (Tùy chọn): Nhận file âm thanh mẫu và metadata để đăng ký giọng đọc clone mới.
 
-# 3. Launch services using Docker Compose
-docker compose up -d --build
+### Bước 2: Viết Manifest (`GET /info`) Để Dựng Giao Diện
+
+Đây là điểm mấu chốt: **Giao diện người dùng sẽ phản ánh chính xác cấu trúc JSON bạn trả về từ `GET /info`**.
+
+Ví dụ cấu trúc Manifest cơ bản:
+
+```json
+{
+  "engine": {
+    "id": "my-custom-tts",
+    "name": "My Custom Neural TTS",
+    "version": "1.0.0",
+    "description": "Mô hình tổng hợp giọng nói AI tốc độ cao"
+  },
+  "models": [
+    {
+      "id": "my-model-v1",
+      "name": "Model Tiếng Việt Chuẩn",
+      "sample_rate": 24000,
+      "supported_formats": ["wav", "mp3"]
+    }
+  ],
+  "ui_schema": {
+    "components": [
+      {
+        "id": "temperature",
+        "label": "Độ Sáng Tạo (Temperature)",
+        "type": "slider",
+        "default": 0.7,
+        "min": 0.1,
+        "max": 1.0,
+        "step": 0.05
+      },
+      {
+        "id": "speed",
+        "label": "Tốc Độ Nối (Speed)",
+        "type": "slider",
+        "default": 1.0,
+        "min": 0.5,
+        "max": 2.0,
+        "step": 0.1
+      }
+    ]
+  }
+}
 ```
 
-Access the application in your browser:
-- 🌐 **Web Studio UI**: [http://localhost:5173](http://localhost:5173)
-- ⚙️ **Control Plane API**: [http://localhost:8000](http://localhost:8000)
+👉 Xem chi tiết cấu trúc Manifest và tất cả các component hỗ trợ tại [docs/GATEWAY.md](./docs/GATEWAY.md).
 
-Only those two ports are published. The compute engine, frontend builder, Postgres and Redis
-stay on the internal compose network: the engine has no authentication of its own, so anything
-that can reach it can spend your GPU and read other users' tasks. Reach them for debugging with
-`docker compose exec` (e.g. `docker compose exec core-engine curl localhost:8001/health`).
+### Bước 3: Khởi Chạy Nền Tảng Với Docker Compose
+
+1. **Clone repository**:
+   ```bash
+   git clone https://github.com/your-username/better-tts-ui-studio.git
+   cd better-tts-ui-studio
+   ```
+
+2. **Cấu hình File `.env`**:
+   ```bash
+   cp .env.example .env
+   ```
+   Mở file `.env` và điền các khóa bảo mật (có thể sinh bằng lệnh `openssl rand -hex 32`):
+   - `SECRET_KEY`: Khóa ký JWT.
+   - `POSTGRES_PASSWORD`: Mật khẩu cơ sở dữ liệu.
+   - `REDIS_PASSWORD`: Mật khẩu Redis cache/queue.
+   - `CORE_ENGINE_URL`: URL tới dịch vụ AI Model của bạn (mặc định trong docker compose là `http://core-engine:8001`).
+
+3. **Khởi chạy hệ thống**:
+   ```bash
+   docker compose up -d --build
+   ```
+
+4. **Truy cập ứng dụng**:
+   - 🌐 **Web Studio UI**: [http://localhost:5173](http://localhost:5173)
+   - ⚙️ **Control Plane API**: [http://localhost:8000](http://localhost:8000)
+
+Khi bạn thay đổi Manifest hoặc nâng cấp AI Model, chỉ cần gọi endpoint re-sync:
+```bash
+curl -X POST http://localhost:8000/api/internal/engine/reload
+```
+Nền tảng sẽ tự động cập nhật UI mới nhất cho toàn bộ người dùng ngay lập tức!
 
 ---
 
-## 📚 Documentation
+## 📚 Hệ Thống Tài Liệu Kỹ Thuật Đầy Đủ
 
-- 🛠️ [**Developer Technical README**](./TECHNICAL_README.md): Comprehensive developer guide for software engineers covering Go Control Plane architecture, memory tuning, auth, database, and scaling.
-- 🗺️ [**Code Map**](./docs/CODE_MAP.md): Which file does what, and the order to read them in. Start here before reviewing.
-- 📖 [**Frontend Overview (Giới thiệu chung FE)**](./docs/frontend_overview.md): High-level overview of the Svelte 5 Studio interface, features, and UI/UX design.
-- 🛠️ [**Frontend Technical & Engineering Spec**](./docs/frontend_tech_and_engineering.md): Detailed technical spec on Svelte 5 Runes, Web Audio API binary handling, streaming, and build pipeline.
-- 📖 [**AI Engineer Integration Guide**](./docs/ENGINEER_INTEGRATION_GUIDE.md): How to plug your custom AI Model into the system using Python schemas.
-- 📜 [**Universal TTS Core Protocol Specification**](./docs/core_tts_protocol_spec.md): Complete REST API protocol reference.
-- ⚙️ [**Configuration Reference**](./docs/CONFIGURATION.md): Which knob lives in the manifest, which in the environment, and why.
-- 📦 [**Manifest Examples**](./docs/examples/): Real `/api/info` responses to adapt.
-- 🕳️ [**Platform Gaps**](./docs/PLATFORM_GAPS.md): Manifest fields the platform does not honour yet, and what was already resolved.
+Để tìm hiểu sâu hơn về từng thành phần trong hệ thống, hãy tham khảo các tài liệu chuyên sâu trong thư mục `docs/`:
 
----
-
-## 🛠️ Tech Stack
-
-- **Frontend**: Svelte 5 (Runes), Vite, FontAwesome 6, Vanilla CSS Glassmorphism.
-- **Control Plane**: Go 1.22, Chi Router, Sonic JSON, PostgreSQL 16, Redis.
-- **Compute Engine**: Python 3.10, PyTorch, FastAPI / Uvicorn.
+| File Tài Liệu | Nội Dung Chính |
+| :--- | :--- |
+| 🗺️ [**docs/SOURCE.md**](./docs/SOURCE.md) | Giải thích cấu trúc mã nguồn toàn bộ dự án (`backend`, `frontend`, `core-tts-example`, `k8s`). |
+| 🏗️ [**docs/ARCHITECTURE.md**](./docs/ARCHITECTURE.md) | Kiến trúc hệ thống triển khai production, luồng dữ liệu truyền tải, Task Workers và Cron/Sweeper jobs. |
+| 🌐 [**docs/GATEWAY.md**](./docs/GATEWAY.md) | Chi tiết các REST API Endpoints của Gateway và hướng dẫn toàn tập cách viết Manifest (`GET /info`). |
+| ⚙️ [**docs/CONFIG.md**](./docs/CONFIG.md) | Hướng dẫn chi tiết thiết lập các biến môi trường (Environment Variables) cho Backend. |
+| 🎨 [**docs/FRONTEND.md**](./docs/FRONTEND.md) | Đặc tả kỹ thuật Frontend (Svelte 5 Runes, Web Audio API binary player, SSE streaming, Dynamic UI rendering). |
+| 🔧 [**docs/BACKEND.md**](./docs/BACKEND.md) | Đặc tả kỹ thuật Backend (Go Chi, Task Queue Redis Stream, Storage Abstraction, JWT Auth & Database Connection Pool). |
 
 ---
 
-## 📄 License
+## 🛠️ Công Nghệ Sử Dụng
 
-This project is licensed under the [MIT License](LICENSE).
+- **Frontend**: Svelte 5 (Runes state management), Vite, FontAwesome 6, Vanilla CSS Glassmorphism.
+- **Control Plane Gateway**: Go 1.22, Chi Router, Sonic JSON, PostgreSQL 16 (pgxpool), Redis Stream & Cache.
+- **Compute Engine**: Python 3.10+, PyTorch / ONNX / CUDA, FastAPI / Uvicorn / gRPC.
+- **Orchestration**: Docker, Docker Compose, Kubernetes (K3s manifests).
+
+---
+
+## 📄 Giấy Phép (License)
+
+Dự án được phát hành theo giấy phép [MIT License](LICENSE).

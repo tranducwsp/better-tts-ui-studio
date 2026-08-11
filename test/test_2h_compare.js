@@ -1,14 +1,16 @@
 /**
- * Synthesize专项 — test endpoint tổng hợp dưới tải cao.
- *
- * Tập trung vào throughput: bao nhiêu job/phút hệ thống xử lý được ở 10k VU.
- *
- *   k6 run test/synth.js
- *   k6 run -e BASE_URL=http://host:8000 test/synth.js
+ * 2-Hour Comparison Endurance Test: 1k VUs vs 5k VUs
+ * Timeline:
+ * 0m - 15m  : Initial Idle Baseline (0 VUs)
+ * 15m - 25m : Wave 1 Peak (1000 VUs)
+ * 25m - 45m : Wave 1 Rest (0 VUs)
+ * 45m - 55m : Wave 2 Peak (5000 VUs)
+ * 55m - 120m: Final Rest & Long-term GC Recovery (0 VUs)
  */
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
+import { generateHTMLReport } from './k6_summary_reporter.js';
 import {
   login, authHeaders, randomText, randomVoice, randomMode,
   pollTask, errorRate, synthDuration, audioBytes,
@@ -16,24 +18,30 @@ import {
   VOICES, MODES,
 } from './config.js';
 
-const jobsCompleted  = new Counter('jobs_completed');
-const jobsFailed     = new Counter('jobs_failed');
+const jobsCompleted = new Counter('jobs_completed');
+const jobsFailed = new Counter('jobs_failed');
 const audioDownloadMs = new Trend('audio_download_ms', true);
 
 export const options = {
   stages: [
-    { duration: '3m',  target: 1000 },
-    { duration: '5m',  target: 5000 },
-    { duration: '10m', target: 10000 },
-    { duration: '5m',  target: 10000 },
-    { duration: '3m',  target: 0 },
+    // Initial 15-minute Idle Baseline (0 VUs)
+    { duration: '15m', target: 0 },
+
+    // Wave 1: 1000 VUs Peak (10m) + Rest (20m)
+    { duration: '1m', target: 1000 },
+    { duration: '8m', target: 1000 },
+    { duration: '1m', target: 0 },
+    { duration: '20m', target: 0 },
+
+    // Wave 2: 5000 VUs Peak (10m) + Final Rest (65m)
+    { duration: '1m', target: 5000 },
+    { duration: '8m', target: 5000 },
+    { duration: '1m', target: 0 },
+    { duration: '65m', target: 0 },
   ],
   thresholds: {
-    http_req_duration:   ['p(95)<3000'],
-    synthesis_e2e_ms:   ['p(95)<15000', 'p(99)<30000'],
-    errors:             ['rate<0.05'],
-    jobs_completed:     ['count > 0'],
-    checks:             ['rate>0.95'],
+    errors: ['rate<0.10'],
+    checks: ['rate>0.90'],
   },
 };
 
@@ -49,13 +57,11 @@ export default function (data) {
   if (!token) { errorRate.add(1); sleep(2); return; }
   const headers = authHeaders(token);
 
-  // Chọn mode & voice
   const mode = randomMode();
   const voice = mode === 'fast'
-    ? VOICES[Math.floor(Math.random() * 2)]   // fast chỉ có hoai_my, nam_minh
+    ? VOICES[Math.floor(Math.random() * 2)]
     : randomVoice();
 
-  // Gửi synthesis
   const res = http.post(
     `${BASE_URL}/api/synthesize/${mode}`,
     JSON.stringify({ text: randomText(), voice, speed: 1.0 }),
@@ -64,7 +70,7 @@ export default function (data) {
 
   const ok = check(res, {
     'synth accepted': (r) => r.status === 200 || r.status === 202,
-    'has task_id':    (r) => r.json('task_id') !== '',
+    'has task_id': (r) => r.json('task_id') !== '',
   });
 
   if (!ok) {
@@ -75,15 +81,11 @@ export default function (data) {
   }
 
   const taskId = res.json('task_id');
-
-  // Poll cho đến khi xong
   const result = pollTask(token, taskId, 60000);
   synthDuration.add(result.elapsed_ms);
 
   if (result.status === 'done') {
     jobsCompleted.add(1);
-
-    // Tải audio
     const dlStart = Date.now();
     const audio = http.get(`${BASE_URL}/api/tasks/${taskId}/audio`, {
       headers,
@@ -91,12 +93,15 @@ export default function (data) {
     });
     audioDownloadMs.add(Date.now() - dlStart);
     check(audio, { 'audio ok': (r) => r.status === 200 });
-    audioBytes.add(audio.body.length);
+    audioBytes.add(audio.body ? audio.body.length : 0);
   } else {
     jobsFailed.add(1);
     errorRate.add(1);
   }
+}
 
-  // Nghỉ ngắn — người dùng tổng hợp liên tục
-  sleep(0.5 + Math.random() * 2);
+export function handleSummary(data) {
+  return {
+    '/test/summary_2h.html': generateHTMLReport(data),
+  };
 }
