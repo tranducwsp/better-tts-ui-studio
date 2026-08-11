@@ -140,9 +140,16 @@ func (c *CoreTTSClient) GetVoices(modelID string) ([]CoreVoice, error) {
 // giây — và là thứ duy nhất đáng huỷ khi người dùng bấm dừng. Không có nó, cờ cancel chỉ đổi
 // được con số hiện trên giao diện còn GPU vẫn chạy hết lượt.
 func (c *CoreTTSClient) Synthesize(ctx context.Context, text, voice string, speed float64, engine string, pitch *float64, emotion *string) ([]byte, error) {
-	// Dispatch to gRPC when available; otherwise fall back to HTTP.
+	// Dispatch to gRPC when available; fall back to HTTP REST if gRPC call fails.
 	if c.grpcClient != nil {
-		return c.grpcClient.Synthesize(ctx, text, voice, speed, engine, pitch, emotion)
+		audio, err := c.grpcClient.Synthesize(ctx, text, voice, speed, engine, pitch, emotion)
+		if err == nil {
+			return audio, nil
+		}
+		// If context was cancelled by user, return immediately without fallback
+		if ctx.Err() != nil {
+			return nil, err
+		}
 	}
 
 	payload := SynthesizeRequest{

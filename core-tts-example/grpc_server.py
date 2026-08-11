@@ -121,7 +121,7 @@ def serve_grpc(port=50051):
         ],
     )
     tts_pb2_grpc.add_TTSServiceServicer_to_server(TTSServiceServicer(), server)
-    server.add_insecure_port(f"[::]:{port}")
+    server.add_insecure_port(f"0.0.0.0:{port}")
     server.start()
     logger.info("gRPC Example TTS Server running on port %d", port)
     return server
