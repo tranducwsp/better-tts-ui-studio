@@ -1,14 +1,14 @@
 package types
 
-// EngineCapabilities mô tả những gì một Engine (hoặc một Mode của nó) làm được.
+// EngineCapabilities describes what an Engine (or one of its Modes) can do.
 //
-// Mọi trường dùng con trỏ để phân biệt ba trạng thái, chứ không phải hai:
-//   - nil   — Mode không nói gì, kế thừa giá trị toàn Engine.
-//   - false — Mode khẳng định KHÔNG hỗ trợ, kể cả khi Engine nói có.
-//   - true  — Mode khẳng định có hỗ trợ.
+// Every field uses a pointer to distinguish three states, not two:
+//   - nil   — Mode says nothing, inherits the Engine-wide value.
+//   - false — Mode explicitly declares NOT supported, even if the Engine says yes.
+//   - true  — Mode explicitly declares supported.
 //
-// Không đọc trực tiếp các trường này. Dùng ResolveCapabilities để lấy giá trị đã hoà giải
-// giữa hai tầng, nếu không mỗi nơi lại tự bịa một quy tắc ưu tiên khác nhau.
+// Do not read these fields directly. Use ResolveCapabilities to get the resolved value
+// between the two layers; otherwise every consumer invents its own priority rule.
 type EngineCapabilities struct {
 	SupportsPresetVoices *bool `json:"supports_preset_voices,omitempty"`
 	SupportsCloning      *bool `json:"supports_cloning,omitempty"`
@@ -20,7 +20,7 @@ type EngineCapabilities struct {
 	SupportsSsml         *bool `json:"supports_ssml,omitempty"`
 }
 
-// ResolvedCapabilities là kết quả sau khi hoà giải hai tầng — không còn nil, dùng được ngay.
+// ResolvedCapabilities is the result after resolving the two layers — no more nil, ready to use.
 type ResolvedCapabilities struct {
 	SupportsPresetVoices bool `json:"supports_preset_voices"`
 	SupportsCloning      bool `json:"supports_cloning"`
@@ -32,18 +32,18 @@ type ResolvedCapabilities struct {
 	SupportsSsml         bool `json:"supports_ssml"`
 }
 
-// EngineModeSpec mô tả một chế độ xử lý của AI Engine (ví dụ: standard, fast, clone).
+// EngineModeSpec describes a processing mode of the AI Engine (e.g. standard, fast, clone).
 type EngineModeSpec struct {
 	ID           string             `json:"id"`          // "standard", "fast", "clone"
 	Name         string             `json:"name"`        // "Standard Neural", "Fast Streaming"
-	Description  string             `json:"description"` // Mô tả ngắn về mode
+	Description  string             `json:"description"` // Short description of the mode
 	Capabilities EngineCapabilities `json:"capabilities"`
 
-	// Chỉ chứa những trường khác với audio_spec toàn Engine.
+	// Only contains fields that differ from the Engine-wide audio_spec.
 	AudioSpec AudioSpec `json:"audio_spec"`
 }
 
-// RangeConstraint định nghĩa giới hạn tham số số (Min, Max, Default, Step) cho UI Sliders.
+// RangeConstraint defines limits for a numeric parameter (Min, Max, Default, Step) for UI Sliders.
 type RangeConstraint struct {
 	Min     float64 `json:"min"`
 	Max     float64 `json:"max"`
@@ -51,17 +51,17 @@ type RangeConstraint struct {
 	Step    float64 `json:"step"`
 }
 
-// ChunkingSpec quy định cách chia nhỏ văn bản vượt quá MaxTextLength.
+// ChunkingSpec defines how to split text that exceeds MaxTextLength.
 //
-// Đặt trong Constraints chứ không phải UISchema vì nó quyết định dữ liệu thực sự được gửi
-// đi, không phải cách hiển thị. Delimiters là danh sách điểm cắt xếp theo mức ưu tiên
-// giảm dần; nền tảng thử lần lượt trên các mảnh còn quá dài rồi cắt cứng phần còn lại.
+// Placed in Constraints rather than UISchema because it determines the actual data sent,
+// not how it is displayed. Delimiters is a list of split points in descending priority order;
+// the platform tries each on fragments that are still too long, then hard-cuts the remainder.
 type ChunkingSpec struct {
 	MaxChunkSize int      `json:"max_chunk_size,omitempty"`
 	Delimiters   []string `json:"delimiters,omitempty"`
 }
 
-// EngineConstraints định nghĩa các ràng buộc về kỹ thuật và tham số của AI Engine.
+// EngineConstraints defines the technical and parameter constraints of the AI Engine.
 type EngineConstraints struct {
 	MaxTextLength     int             `json:"max_text_length"`
 	SpeedRange        RangeConstraint `json:"speed_range"`
@@ -70,50 +70,50 @@ type EngineConstraints struct {
 	Chunking          ChunkingSpec    `json:"chunking"`
 }
 
-// AudioSpec định nghĩa thông số kỹ thuật âm thanh xuất ra.
-// AudioSpec mô tả định dạng âm thanh Engine sinh ra và ràng buộc âm thanh tham chiếu.
+// AudioSpec defines the technical specifications of the output audio.
+// AudioSpec describes the audio format the Engine produces and the reference audio constraints.
 //
-// Giống EngineCapabilities, khối này xuất hiện hai tầng — toàn Engine và theo từng Mode.
-// Trường rỗng (nil / chuỗi rỗng / 0) nghĩa là kế thừa tầng trên. Dùng ResolveAudioSpec để
-// lấy giá trị đã hoà giải; đọc thẳng sẽ bỏ sót phần Mode ghi đè.
+// Like EngineCapabilities, this block appears at two layers — Engine-wide and per-Mode.
+// Empty fields (nil / empty string / 0) mean inherit from the layer above. Use ResolveAudioSpec
+// to get the resolved value; reading directly will miss Mode overrides.
 type AudioSpec struct {
 	SupportedFormats     []string `json:"supported_formats,omitempty"`
 	SupportedSampleRates []int    `json:"supported_sample_rates,omitempty"`
 	DefaultFormat        string   `json:"default_format,omitempty"`
 	DefaultSampleRate    int      `json:"default_sample_rate,omitempty"`
 
-	// Âm thanh tham chiếu NHẬN VÀO. Khác các trường trên, thứ mô tả định dạng Engine XUẤT
-	// RA — Engine xuất MP3 không có nghĩa nó đọc được MP3.
+	// Reference audio INPUT. Unlike the fields above, which describe the format the Engine
+	// OUTPUTS — an Engine that outputs MP3 does not necessarily read MP3.
 	ReferenceAudioFormats []string `json:"reference_audio_formats,omitempty"`
 	ReferenceAudioSeconds float64  `json:"reference_audio_seconds,omitempty"`
 
-	// Hai trần cho hai thời điểm: MaxUploadBytes là tệp thô người dùng kéo vào (cao hơn, vì
-	// họ có thể kéo cả bản ghi dài rồi chỉ lấy vài giây), MaxReferenceBytes là clip sau khi
-	// cắt — thứ Engine thực sự nhận.
+	// Two ceilings for two moments: MaxUploadBytes is the raw file the user drags in (higher,
+	// because they may drag a long recording and only use a few seconds), MaxReferenceBytes is
+	// the clip after trimming — what the Engine actually receives.
 	MaxUploadBytes    int64 `json:"max_upload_bytes,omitempty"`
 	MaxReferenceBytes int64 `json:"max_reference_bytes,omitempty"`
 }
 
-// AutoFormatRule định nghĩa quy tắc thay thế văn bản Regex tự động.
+// AutoFormatRule defines an automatic Regex text replacement rule.
 type AutoFormatRule struct {
 	Find    string `json:"find"`
 	Replace string `json:"replace"`
 }
 
-// NoticeBannerSpec định nghĩa thông báo cảnh báo hiển thị trên UI.
+// NoticeBannerSpec defines a warning notice displayed on the UI.
 type NoticeBannerSpec struct {
 	Level   string `json:"level"`   // "info", "warning", "danger", "success"
-	Message string `json:"message"` // Nội dung cảnh báo
+	Message string `json:"message"` // Notice content
 }
 
-// InputPanelSpec cấu hình các tính năng cho khung nhập văn bản.
+// InputPanelSpec configures the features for the text input panel.
 //
-// Mọi trường bool dùng con trỏ để phân biệt ba trạng thái:
-//   - nil   — Engine không nói gì, kế thừa mặc định nền tảng.
-//   - false — Engine khẳng định TẮT, kể cả khi mặc định là bật.
-//   - true  — Engine khẳng định BẬT.
+// Every bool field uses a pointer to distinguish three states:
+//   - nil   — Engine says nothing, inherits the platform default.
+//   - false — Engine explicitly declares OFF, even if the default is on.
+//   - true  — Engine explicitly declares ON.
 //
-// Không đọc trực tiếp các trường này. Dùng ResolveInputPanel để lấy giá trị đã hoà giải.
+// Do not read these fields directly. Use ResolveInputPanel to get the resolved value.
 type InputPanelSpec struct {
 	FileServe      *bool            `json:"file_serve,omitempty"`
 	Closeable      *bool            `json:"closeable,omitempty"`
@@ -123,7 +123,7 @@ type InputPanelSpec struct {
 	AutoFormat     []AutoFormatRule `json:"auto_format,omitempty"`
 }
 
-// ResolvedInputPanel là kết quả sau khi hoà giải — không còn nil, dùng được ngay.
+// ResolvedInputPanel is the result after resolution — no more nil, ready to use.
 type ResolvedInputPanel struct {
 	FileServe      bool             `json:"file_serve"`
 	Closeable      bool             `json:"closeable"`
@@ -133,8 +133,8 @@ type ResolvedInputPanel struct {
 	AutoFormat     []AutoFormatRule `json:"auto_format,omitempty"`
 }
 
-// PlatformDefaultInputPanel áp dụng khi Engine không khai. Phải khớp PLATFORM_DEFAULT_INPUT_PANEL
-// trong frontend/src/lib/inputPanel.ts.
+// PlatformDefaultInputPanel applies when the Engine declares nothing. Must match
+// PLATFORM_DEFAULT_INPUT_PANEL in frontend/src/lib/inputPanel.ts.
 var PlatformDefaultInputPanel = ResolvedInputPanel{
 	FileServe:      true,
 	Closeable:      false,
@@ -143,7 +143,7 @@ var PlatformDefaultInputPanel = ResolvedInputPanel{
 	EnableChunkBox: true,
 }
 
-// VoiceMetadataFieldSpec định nghĩa cấu hình một trường thông tin khi tạo giọng mẫu mới.
+// VoiceMetadataFieldSpec defines the configuration of a metadata field when creating a new voice sample.
 type VoiceMetadataFieldSpec struct {
 	Key         string   `json:"key"`
 	Label       string   `json:"label"`
@@ -153,7 +153,7 @@ type VoiceMetadataFieldSpec struct {
 	Options     []string `json:"options,omitempty"`
 }
 
-// PresetVoiceSpec là giọng đọc Engine kèm sẵn, khai ngay trong Manifest thay vì qua /voices.
+// PresetVoiceSpec is a voice bundled with the Engine, declared in the Manifest rather than via /voices.
 type PresetVoiceSpec struct {
 	ID        string            `json:"id"`
 	Name      string            `json:"name"`
@@ -161,9 +161,8 @@ type PresetVoiceSpec struct {
 	SampleURL string            `json:"sample_url,omitempty"`
 }
 
-// ModelOptionSpec chỉ mô tả CÁCH VẼ điều khiển, không quyết định điều khiển có tồn tại hay
-// không — việc đó thuộc về Capabilities. PitchType trên một Mode có SupportsPitch = false
-// sẽ không có tác dụng gì.
+// ModelOptionSpec only describes HOW TO DRAW the control, not whether the control exists —
+// that is determined by Capabilities. PitchType on a Mode with SupportsPitch = false has no effect.
 type ModelOptionSpec struct {
 	NoticeBanner        *NoticeBannerSpec        `json:"notice_banner,omitempty"`
 	VoiceType           string                   `json:"voice_type,omitempty"`   // "select", "radio"
@@ -174,7 +173,7 @@ type ModelOptionSpec struct {
 	VoiceMetadataSchema []VoiceMetadataFieldSpec `json:"voice_metadata_schema,omitempty"`
 }
 
-// UISchemaSpec chứa toàn bộ cấu hình bố trí giao diện động do Core Engine quy định.
+// UISchemaSpec contains the full dynamic UI layout configuration dictated by the Core Engine.
 type UISchemaSpec struct {
 	UIMode      string                     `json:"ui_mode,omitempty"` // "beauty", "fast"
 	InputPanel  InputPanelSpec             `json:"input_panel"`
@@ -182,7 +181,7 @@ type UISchemaSpec struct {
 	OptionPanel map[string]ModelOptionSpec `json:"option_panel,omitempty"`
 }
 
-// UniversalManifest là bản thiết kế tiêu chuẩn đầy đủ đại diện cho bất kỳ AI Engine nào.
+// UniversalManifest is the complete standard blueprint representing any AI Engine.
 type UniversalManifest struct {
 	EngineID       string             `json:"engine_id"`
 	EngineName     string             `json:"engine_name"`
@@ -195,8 +194,8 @@ type UniversalManifest struct {
 	UISchema       *UISchemaSpec      `json:"ui_schema,omitempty"`
 }
 
-// Giá trị áp dụng khi cả Mode lẫn Engine đều không khai. Phải khớp với PLATFORM_DEFAULTS
-// trong frontend/src/lib/capabilities.ts — cặp này được đối chiếu bằng test ở cả hai phía.
+// The value applied when neither Mode nor Engine declares anything. Must match
+// PLATFORM_DEFAULTS in frontend/src/lib/capabilities.ts — this pair is verified by tests on both sides.
 var PlatformDefaultCapabilities = ResolvedCapabilities{
 	SupportsPresetVoices: true,
 	SupportsCloning:      false,
@@ -208,11 +207,11 @@ var PlatformDefaultCapabilities = ResolvedCapabilities{
 	SupportsSsml:         false,
 }
 
-// DefaultMaxTextLength dùng khi Manifest chưa nạp được. Phải khớp DEFAULT_TEXT_LIMIT
-// trong frontend/src/lib/textLimits.ts.
+// DefaultMaxTextLength is used when the Manifest has not been loaded. Must match DEFAULT_TEXT_LIMIT
+// in frontend/src/lib/textLimits.ts.
 const DefaultMaxTextLength = 3000
 
-// pick trả về giá trị Mode khai nếu có, ngược lại lấy của Engine, cuối cùng là mặc định.
+// pick returns the Mode-declared value if present, otherwise the Engine-level value, and finally the default.
 func pick(mode, engine *bool, fallback bool) bool {
 	if mode != nil {
 		return *mode
@@ -223,12 +222,12 @@ func pick(mode, engine *bool, fallback bool) bool {
 	return fallback
 }
 
-// ResolveCapabilities hoà giải Capabilities của một Mode với Capabilities toàn Engine.
+// ResolveCapabilities resolves a Mode's Capabilities against the Engine-wide Capabilities.
 //
-// Đây là nơi DUY NHẤT được phép quyết định "mode này có làm được X không". Mọi handler,
-// validator và tầng UI đều phải hỏi qua đây, nhờ vậy quy tắc ưu tiên chỉ tồn tại một bản.
+// This is the ONLY place allowed to decide "can this mode do X". Every handler, validator,
+// and UI layer must ask through here, so the priority rule exists in a single copy.
 //
-// modeID rỗng hoặc không khớp Mode nào thì trả về Capabilities toàn Engine.
+// An empty modeID or one that matches no Mode returns the Engine-wide Capabilities.
 func (m *UniversalManifest) ResolveCapabilities(modeID string) ResolvedCapabilities {
 	if m == nil {
 		return PlatformDefaultCapabilities
@@ -256,10 +255,10 @@ func (m *UniversalManifest) ResolveCapabilities(modeID string) ResolvedCapabilit
 	}
 }
 
-// ResolveInputPanel hoà giải InputPanelSpec của Engine với mặc định nền tảng.
+// ResolveInputPanel resolves the Engine's InputPanelSpec against the platform defaults.
 //
-// Đây là nơi DUY NHẤT được phép quyết định "khung nhập có tính năng X không". Mọi handler
-// và tầng UI đều phải hỏi qua đây, nhờ vậy quy tắc ưu tiên chỉ tồn tại một bản.
+// This is the ONLY place allowed to decide "does the input panel have feature X". Every handler
+// and UI layer must ask through here, so the priority rule exists in a single copy.
 func (m *UniversalManifest) ResolveInputPanel() ResolvedInputPanel {
 	if m == nil || m.UISchema == nil {
 		return PlatformDefaultInputPanel
@@ -276,7 +275,7 @@ func (m *UniversalManifest) ResolveInputPanel() ResolvedInputPanel {
 	}
 }
 
-// pickBool trả về giá trị Engine khai nếu có, ngược lại lấy mặc định.
+// pickBool returns the Engine-declared value if present, otherwise the default.
 func pickBool(v *bool, fallback bool) bool {
 	if v != nil {
 		return *v
@@ -284,7 +283,7 @@ func pickBool(v *bool, fallback bool) bool {
 	return fallback
 }
 
-// pickStr trả về giá trị Engine khai nếu không rỗng, ngược lại lấy mặc định.
+// pickStr returns the Engine-declared value if non-empty, otherwise the default.
 func pickStr(v, fallback string) string {
 	if v != "" {
 		return v
@@ -292,8 +291,8 @@ func pickStr(v, fallback string) string {
 	return fallback
 }
 
-// ChunkSize trả về kích thước một đoạn văn bản, đã kẹp theo MaxTextLength để không bao giờ
-// sinh ra đoạn mà chính Engine sẽ từ chối.
+// ChunkSize returns the size of a text chunk, clamped to MaxTextLength so it never produces
+// a chunk the Engine itself would reject.
 func (m *UniversalManifest) ChunkSize() int {
 	if m == nil || m.Constraints.MaxTextLength <= 0 {
 		return DefaultMaxTextLength
@@ -305,12 +304,13 @@ func (m *UniversalManifest) ChunkSize() int {
 	return ceiling
 }
 
-// TextLimit trả về trần độ dài văn bản đang có hiệu lực.
+// TextLimit returns the effective text length ceiling.
 //
-// Engine khai 0 (hoặc số âm) nghĩa là "không nói", không phải "không giới hạn": validate.go
-// chỉ cảnh báo chứ không từ chối một manifest như vậy, nên nếu người kiểm tra đọc thẳng
-// Constraints.MaxTextLength và bỏ qua khi nó bằng 0 thì trần biến mất trong im lặng. Cùng một
-// mặc định với ChunkSize, để đoạn văn bản nền tảng cắt ra không bao giờ vượt trần nó áp.
+// An Engine declaring 0 (or negative) means "unspecified", not "unlimited": validate.go
+// only warns rather than rejecting such a manifest, so if the checker reads
+// Constraints.MaxTextLength directly and skips when it is zero, the ceiling silently
+// disappears. Same default as ChunkSize, so the chunks the platform splits never exceed
+// the limit it applies.
 func (m *UniversalManifest) TextLimit() int {
 	if m == nil || m.Constraints.MaxTextLength <= 0 {
 		return DefaultMaxTextLength
@@ -318,9 +318,9 @@ func (m *UniversalManifest) TextLimit() int {
 	return m.Constraints.MaxTextLength
 }
 
-// PlatformDefaultAudioSpec áp dụng khi cả Mode lẫn Engine đều không khai.
+// PlatformDefaultAudioSpec applies when neither Mode nor Engine declares anything.
 //
-// Phải khớp các fallback trong frontend/src/lib/audioSpec.ts.
+// Must match the fallbacks in frontend/src/lib/audioSpec.ts.
 var PlatformDefaultAudioSpec = AudioSpec{
 	SupportedFormats:      []string{"wav"},
 	SupportedSampleRates:  []int{24000},
@@ -332,12 +332,12 @@ var PlatformDefaultAudioSpec = AudioSpec{
 	MaxReferenceBytes:     10 * 1024 * 1024,
 }
 
-// ResolveAudioSpec hoà giải AudioSpec của một Mode với AudioSpec toàn Engine.
+// ResolveAudioSpec resolves a Mode's AudioSpec against the Engine-wide AudioSpec.
 //
-// Cùng quy tắc như ResolveCapabilities: Mode khai gì thì theo Mode, không khai thì theo
-// Engine, cuối cùng là mặc định nền tảng. Cần thiết vì các Mode có thể chạy trên backend
-// khác nhau — một Mode dùng Edge TTS trả MP3 trong khi Mode khác dùng mô hình cục bộ trả
-// WAV, và gắn nhầm Content-Type sinh ra tập tin không trình phát nào mở được.
+// Same rule as ResolveCapabilities: what the Mode declares takes priority, otherwise the
+// Engine, and finally the platform default. Necessary because different Modes may run on
+// different backends — one Mode using Edge TTS returns MP3 while another using a local model
+// returns WAV, and assigning the wrong Content-Type produces a file no player can open.
 func (m *UniversalManifest) ResolveAudioSpec(modeID string) AudioSpec {
 	if m == nil {
 		return PlatformDefaultAudioSpec

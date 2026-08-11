@@ -8,28 +8,30 @@ import (
 	"backend/state"
 )
 
-// voiceCacheTTL là tuổi tối đa của một bản nạp giọng preset trước khi bị coi là cũ.
+// voiceCacheTTL is the maximum age of a preset voice fetch before it is considered stale.
 //
-// Danh sách giọng của engine đổi hiếm, nên 30 giây dài hơn mọi lần mở/đóng voice picker mà
-// vẫn giữ được phản hồi khi engine đổi giọng. Ngắn hơn nghĩa là nhiều lượt gọi HTTP vô ích
-// về engine; dài hơn nghĩa là người vận hành thấy giọng mới mãi không kịp xuất hiện.
+// The engine's voice list changes rarely, so 30 seconds is longer than any voice picker
+// open/close cycle while still catching up when the engine does change voices. Shorter means
+// more useless HTTP calls to the engine; longer means the operator waits forever for new
+// voices to appear.
 const voiceCacheTTL = 30 * time.Second
 
-// voiceCacheEntry là một bản nạp giọng preset theo mode, kèm chứng nhận thời điểm và version.
+// voiceCacheEntry is a preset voice fetch per mode, with timestamp and version attestation.
 type voiceCacheEntry struct {
 	voices          []client.CoreVoice
 	manifestVersion string
 	fetched         time.Time
 }
 
-// presetVoiceCache là kho cache chung cho mọi người dùng — giọng preset không thuộc về cá
-// nhân, nên một bản cache chia sẻ là an toàn (khác với giọng clone, vốn phải tách theo user).
+// presetVoiceCache is a shared cache for all users — preset voices don't belong to any
+// individual, so a shared cache is safe (unlike cloned voices, which must be scoped per user).
 var presetVoiceCache = struct {
 	mu   sync.Mutex
 	mode map[string]*voiceCacheEntry
 }{mode: make(map[string]*voiceCacheEntry)}
 
-// voiceCacheKey chuẩn hoá mode trống (hỏi "toàn cảnh") về "all" để không giữ hai bản dư thừa.
+// voiceCacheKey normalizes an empty mode ("full view" query) to "all" to avoid keeping two
+// redundant entries.
 func voiceCacheKey(mode string) string {
 	if mode == "" {
 		return "all"
@@ -37,14 +39,15 @@ func voiceCacheKey(mode string) string {
 	return mode
 }
 
-// getCachedPresetVoices lấy giọng preset đã cache nếu vẫn còn mới qua HAI lớp:
+// getCachedPresetVoices returns cached preset voices if still fresh across TWO layers:
 //
-//   - manifestVersion: admin reload manifest (engine có thể lúc đó đổi giọng) khiến bản cache
-//     lấy theo manifest cũ hết giá trị ngay — không phải chờ tới lúc TTL hết.
-//   - voiceCacheTTL: phòng trường hợp manifest không bump version dù giọng đã đổi.
+//   - manifestVersion: admin reload manifest (engine may have changed voices at that point)
+//     invalidates any cache taken under the old manifest immediately — no need to wait for TTL.
+//   - voiceCacheTTL: guards against the case where the manifest doesn't bump its version
+//     despite voices having changed.
 //
-// Bản hết hạn bị xoá khỏi map luôn, không để tồn lại tích tụ. Trả về voices và true khi đọc
-// được; false nghĩa là caller nên nạp lại.
+// Expired entries are deleted from the map on the spot rather than accumulating. Returns
+// voices and true when a hit; false means the caller should re-fetch.
 func getCachedPresetVoices(mode string, now time.Time) ([]client.CoreVoice, bool) {
 	presetVoiceCache.mu.Lock()
 	defer presetVoiceCache.mu.Unlock()
@@ -60,18 +63,19 @@ func getCachedPresetVoices(mode string, now time.Time) ([]client.CoreVoice, bool
 	return e.voices, true
 }
 
-// storeCachedPresetVoices lưu một bản nạp giọng preset thành cache.
+// storeCachedPresetVoices saves a preset voice fetch as cache.
 func storeCachedPresetVoices(mode string, voices []client.CoreVoice, now time.Time) {
 	presetVoiceCache.mu.Lock()
 	presetVoiceCache.mode[voiceCacheKey(mode)] = &voiceCacheEntry{
-		voices:           voices,
-		manifestVersion:  currentManifestVersion(),
-		fetched:          now,
+		voices:          voices,
+		manifestVersion: currentManifestVersion(),
+		fetched:         now,
 	}
 	presetVoiceCache.mu.Unlock()
 }
 
-// currentManifestVersion lấy version của manifest đang dùng; rỗng khi chưa có.
+// currentManifestVersion returns the version of the currently active manifest; empty when
+// none is loaded.
 func currentManifestVersion() string {
 	if m := state.GlobalManifestState.Get(); m != nil {
 		return m.Version

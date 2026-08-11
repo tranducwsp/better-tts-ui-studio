@@ -7,67 +7,71 @@ import (
 	"time"
 )
 
-// ErrNotFound là câu trả lời chung khi một khoá không tồn tại.
+// ErrNotFound is the common answer when a key does not exist.
 //
-// Có kiểu lỗi riêng vì người gọi cần phân biệt "chưa có" với "hỏng": task vừa tạo chưa có
-// âm thanh là chuyện bình thường và trả 404, còn S3 từ chối quyền là sự cố và phải hiện ra.
-// Không có nó, người gọi sẽ so sánh chuỗi lỗi, mà chuỗi của os và của S3 không giống nhau.
-var ErrNotFound = errors.New("storage: không tìm thấy đối tượng")
+// A dedicated error type because callers need to distinguish "not yet" from "broken": a newly
+// created task having no audio is normal and returns 404, while S3 denying permission is an
+// incident and must be surfaced. Without this, callers would compare error strings, and
+// os's string and S3's string are not the same.
+var ErrNotFound = errors.New("storage: object not found")
 
-// Store là nơi nền tảng cất tệp nhị phân.
+// Store is where the platform keeps binary files.
 //
-// Tồn tại để chỗ lưu trữ trở thành một lựa chọn triển khai chứ không phải một giả định nằm
-// rải rác trong handler. Trước đây mỗi handler tự gọi os.WriteFile và tự ghép đường dẫn, nên
-// "để tệp ở đâu" bị viết lại ở năm chỗ và không đổi được nếu không sửa cả năm.
+// Exists so storage becomes a deployment choice rather than an assumption scattered across
+// handlers. Previously each handler called os.WriteFile and assembled paths on its own, so
+// "where to put files" was rewritten in five places and could not be changed without editing
+// all five.
 //
-// Khoá là đường dẫn tương đối dùng dấu "/" (ví dụ "temp/<task>.mp3"), giống hình dạng khoá
-// của S3. Bản local tự đổi sang dấu phân cách của hệ điều hành; người gọi không cần biết.
+// Keys are relative paths using "/" separators (e.g. "temp/<task>.mp3"), matching the key
+// shape of S3. The local backend converts to the OS separator internally; callers do not need
+// to know.
 //
-// Mọi phương thức nhận Context vì bản S3 là I/O qua mạng và phải huỷ được. Bản local bỏ qua
-// nó, nhưng người gọi thì viết một kiểu cho cả hai.
+// Every method accepts a Context because the S3 backend is network I/O and must be
+// cancellable. The local backend ignores it, but callers write one signature for both.
 type Store interface {
-	// Put ghi nội dung từ src vào khoá. Chấp nhận io.Reader thay vì []byte để người gọi có thể
-	// stream một tệp lớn từ đĩa/khác xuống mà không dựng toàn bộ trong RAM (đường upload giọng
-	// nói trước đây đọc hết tệp vào bộ nhớ chỉ để chuyển vào đây).
+	// Put writes content from src to the key. Accepts io.Reader instead of []byte so callers
+	// can stream a large file from disk/elsewhere without building it entirely in RAM (the
+	// voice upload path previously read the entire file into memory just to pass it here).
 	Put(ctx context.Context, key string, src io.Reader) error
 
-	// Get đọc toàn bộ nội dung. Trả ErrNotFound nếu khoá không tồn tại.
+	// Get reads the full contents. Returns ErrNotFound if the key does not exist.
 	Get(ctx context.Context, key string) ([]byte, error)
 
-	// Open mở luồng đọc, dành cho tệp lớn không nên nạp hết vào RAM.
-	// Người gọi có trách nhiệm đóng. Trả ErrNotFound nếu khoá không tồn tại.
+	// Open opens a read stream, for large files that should not be loaded entirely into RAM.
+	// The caller is responsible for closing. Returns ErrNotFound if the key does not exist.
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
 
-	// Exists cho biết khoá có tồn tại không, không tải nội dung về.
+	// Exists reports whether the key exists, without downloading the contents.
 	Exists(ctx context.Context, key string) (bool, error)
 
-	// Delete xoá khoá. Khoá không tồn tại KHÔNG phải lỗi: người gọi muốn nó biến mất, và nó
-	// đã biến mất — bắt họ tự xử lý ErrNotFound ở đây chỉ tạo ra mã lặp lại ở mọi chỗ xoá.
+	// Delete removes the key. A non-existent key is NOT an error: the caller wants it gone,
+	// and it is gone — forcing them to handle ErrNotFound here only creates boilerplate at
+	// every deletion site.
 	Delete(ctx context.Context, key string) error
 
-	// List liệt kê các khoá bắt đầu bằng prefix, kèm thời điểm sửa và kích thước, để bộ quét
-	// dọn quyết định xoá gì mà không phải tải nội dung.
+	// List enumerates keys starting with the prefix, along with modification time and size,
+	// so the sweeper can decide what to delete without downloading the contents.
 	List(ctx context.Context, prefix string) ([]ObjectInfo, error)
 }
 
-// Presigner là một Store biết phát URL tải trực tiếp có thời hạn.
+// Presigner is a Store that can issue time-limited direct download URLs.
 //
-// Interface tuỳ chọn, tách khỏi Store vì không phải kho nào cũng làm được: bản đĩa cục bộ
-// không có URL nào để phát. Người gọi kiểm bằng type assertion, nên thêm một backend không
-// hỗ trợ presign về sau không phải viết một phương thức trả lỗi cho có.
+// Optional interface, separated from Store because not every backend can do it: the local
+// disk backend has no URL to issue. Callers check via type assertion, so adding a backend
+// without presign support later does not require writing a stub method that returns an error.
 //
-// Kiểu này cũng là lý do handler không cần so sánh STORAGE_BACKEND với chuỗi "s3": nó hỏi
-// "kho này phát URL được không" thay vì "kho này tên gì", nên thêm backend mới không phải
-// sửa handler.
+// This type is also why handlers do not need to compare STORAGE_BACKEND against the string
+// "s3": they ask "can this store issue URLs" instead of "what is this store's name", so
+// adding a new backend does not require handler changes.
 type Presigner interface {
-	// PresignGet trả về URL tải trực tiếp, hết hiệu lực sau ttl.
+	// PresignGet returns a direct download URL, expiring after ttl.
 	//
-	// Không kiểm khoá có tồn tại: ký là phép tính cục bộ, còn kiểm tồn tại là một lượt gọi
-	// mạng. Người gọi biết rõ hơn liệu có cần kiểm hay không.
+	// Does not check whether the key exists: signing is a local computation, while existence
+	// checking is a network call. The caller knows better whether the check is needed.
 	PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
 }
 
-// ObjectInfo là phần siêu dữ liệu bộ quét dọn cần.
+// ObjectInfo is the metadata the sweeper needs.
 type ObjectInfo struct {
 	Key      string
 	Size     int64

@@ -12,34 +12,36 @@ import (
 	"backend/storage"
 )
 
-// Run thực hiện một lượt tổng hợp và ghi lại kết quả.
+// Run performs a synthesis job and records the result.
 //
-// Tách khỏi handler vì bây giờ có hai người gọi: worker đọc từ hàng đợi, và chính tiến trình
-// web khi không có Redis để xếp hàng. Trước đây đoạn này là một goroutine ẩn danh giữa
-// Synthesize, nên không có cách nào chạy nó từ nơi khác.
+// Separated from the handler because there are now two callers: the worker reading from the
+// queue, and the web process itself when there is no Redis to queue work. Previously this
+// was an anonymous goroutine inside Synthesize, so there was no way to run it from elsewhere.
 //
-// Không trả về lỗi: không có ai để trả. Người dùng theo dõi qua SSE và bảng tts_chunks, nên
-// mọi nhánh hỏng đều phải tự ghi lại trạng thái ở đó — trả lỗi lên trên chỉ khiến người gọi
-// phải lặp lại đúng việc này.
+// Does not return an error: there is no one to return it to. The user tracks progress via SSE
+// and the tts_chunks table, so every failure branch must record its own status there — bubbling
+// the error up would only force the caller to repeat the same work.
 func Run(ctx context.Context, tts *client.CoreTTSClient, job queue.Job) {
 	taskItem := state.GlobalTaskManager.GetOrCreate(job.TaskID)
 	taskItem.SetOwner(job.UserID)
 
-	// Lệnh dừng tới từ tiến trình khác: người dùng bấm huỷ trên web, còn lượt này chạy ở
-	// worker. WatchCancel nghe kênh Redis của task nên cắt được lượt gọi Engine đang chạy —
-	// trước đây cờ cancel không có ai đọc, nên GPU vẫn chạy hết lượt rồi mới báo "done" đè
-	// lên trạng thái "cancelled" mà người dùng đã nhìn thấy.
+	// A stop command arrives from another process: the user clicks cancel on the web UI, while
+	// this job is running in a worker. WatchCancel listens on the task's Redis channel so it can
+	// cut off an in-flight Engine call — previously the cancel flag had no reader, so the GPU
+	// would run the full job and then report "done", overwriting the "cancelled" status the user
+	// had already seen.
 	synthCtx, stopWatch := taskItem.WatchCancel(ctx)
 	defer stopWatch()
 
 	audioBytes, err := tts.Synthesize(synthCtx, job.Text, job.Voice, job.Speed, job.Engine, job.Pitch, job.Emotion)
 	if err != nil {
-		// Bị huỷ không phải hỏng: trạng thái "cancelled" đã do người huỷ ghi, và ghi đè bằng
-		// "error" ở đây chỉ biến một hành động cố ý thành một sự cố trong lịch sử.
+		// Cancelled is not a failure: the "cancelled" status was already written by whoever
+		// cancelled, and overwriting it with "error" here would turn a deliberate action into
+		// an incident in the history.
 		if taskItem.IsCancelled() {
-			errMsg := "Đã huỷ theo yêu cầu"
+			errMsg := "Cancelled as requested"
 			if dbErr := db.UpdateChunkStatus(ctx, job.TaskID, "cancelled", nil, &errMsg); dbErr != nil {
-				log.Printf("Chunk %s bị huỷ nhưng không ghi được trạng thái vào DB: %v", job.TaskID, dbErr)
+				log.Printf("Chunk %s was cancelled but failed to write status to DB: %v", job.TaskID, dbErr)
 			}
 			return
 		}
@@ -52,44 +54,44 @@ func Run(ctx context.Context, tts *client.CoreTTSClient, job queue.Job) {
 		})
 		errMsg := err.Error()
 		if dbErr := db.UpdateChunkStatus(ctx, job.TaskID, "error", nil, &errMsg); dbErr != nil {
-			log.Printf("Chunk %s lỗi nhưng không ghi được trạng thái vào DB: %v", job.TaskID, dbErr)
+			log.Printf("Chunk %s errored but failed to write status to DB: %v", job.TaskID, dbErr)
 		}
 		return
 	}
 
-	// Huỷ có thể tới đúng lúc Engine vừa trả kết quả. Không kiểm lại ở đây thì lượt đó vẫn
-	// báo "done" đè lên "cancelled" — người dùng thấy task mình đã dừng lại hiện ra như đã
-	// chạy xong. Âm thanh đã sinh vẫn cất vào kho: nó đã tốn GPU rồi, và bộ quét dọn thu hồi
-	// theo cùng chính sách với mọi tệp tạm khác.
+	// Cancellation can arrive right as the Engine returns a result. If we don't re-check here
+	// the job would still report "done" over "cancelled" — the user sees a task they stopped
+	// appear as if it completed. The generated audio is still stored: GPU time was already
+	// spent, and the cleanup scanner reclaims it under the same policy as all other temp files.
 	if taskItem.IsCancelled() {
-		errMsg := "Đã huỷ theo yêu cầu"
+		errMsg := "Cancelled as requested"
 		if dbErr := db.UpdateChunkStatus(ctx, job.TaskID, "cancelled", nil, &errMsg); dbErr != nil {
-			log.Printf("Chunk %s bị huỷ nhưng không ghi được trạng thái vào DB: %v", job.TaskID, dbErr)
+			log.Printf("Chunk %s was cancelled but failed to write status to DB: %v", job.TaskID, dbErr)
 		}
 		return
 	}
 
-	// Định dạng do Mode quyết định: Edge TTS trả MP3, mô hình cục bộ trả WAV. Ghi lại để
-	// GetTaskAudio biết mình đang giữ gì thay vì đoán, và chỉ chuyển mã khi client hỏi định
-	// dạng khác.
+	// Format is determined by Mode: Edge TTS returns MP3, local models return WAV. Record it
+	// so GetTaskAudio knows what it holds instead of guessing, and only transcodes when the
+	// client requests a different format.
 	sourceFormat := state.GlobalManifestState.Get().ResolveAudioSpec(job.Engine).DefaultFormat
 	taskItem.SetSourceFormat(sourceFormat)
 
-	// Ghi vào kho thất bại không phải lỗi chí tử — bản trong RAM là phương án dự phòng ngay
-	// dưới đây — nhưng nó cần để lại dấu vết: kho đầy biểu hiện thành RSS tăng dần thay vì một
-	// lỗi, và không có dòng log này thì nguyên nhân không thể truy ra từ triệu chứng.
+	// A failed store write is not a fatal error — the in-RAM copy is the fallback right below
+	// — but it needs to leave a trace: a full store manifests as gradually increasing RSS rather
+	// than an error, and without this log line the cause cannot be traced from the symptom.
 	audioKey := storage.AudioKey(job.TaskID, sourceFormat)
 	wroteToStore := true
 	if err := storage.Global.Put(ctx, audioKey, bytes.NewReader(audioBytes)); err != nil {
-		log.Printf("Không ghi được âm thanh task %s vào kho (%s): %v — giữ trong RAM", job.TaskID, audioKey, err)
+		log.Printf("Failed to write audio for task %s to store (%s): %v — keeping in RAM", job.TaskID, audioKey, err)
 		wroteToStore = false
 	}
 
-	// Kho là nơi giữ âm thanh; RAM chỉ giữ khi chưa ghi được vào kho.
+	// The store is the canonical audio holder; RAM only holds when the store write failed.
 	//
-	// Với worker chạy ở tiến trình riêng, bản trong RAM còn ít giá trị hơn trước: tiến trình
-	// web phục vụ lượt tải không nhìn thấy RAM của worker. Đường đọc thật là kho, và Redis là
-	// lớp đệm giữa hai tiến trình.
+	// With workers running in a separate process, the in-RAM copy is even less valuable than
+	// before: the web process serving downloads cannot see the worker's RAM. The real read path
+	// is the store, with Redis as the buffer between the two processes.
 	if wroteToStore {
 		taskItem.ReleaseAudio()
 	} else {
@@ -97,23 +99,23 @@ func Run(ctx context.Context, tts *client.CoreTTSClient, job queue.Job) {
 	}
 	taskItem.CacheAudio(ctx, sourceFormat, audioBytes)
 
-	// Không có client nào để báo ở đây — công việc đã xong và âm thanh đã có. Nhưng lịch sử
-	// đọc trạng thái từ DB, nên một lượt ghi thất bại trong im lặng để chunk mãi ở
-	// "processing": giao diện hiển thị một job không bao giờ hoàn thành dù tệp đã nằm sẵn
-	// trong kho.
+	// There is no client to notify here — the work is done and the audio is ready. But history
+	// reads status from the DB, so a silent write failure leaves the chunk forever at
+	// "processing": the UI shows a job that never completes even though the file is already in
+	// the store.
 	//
-	// audio_path chỉ ghi khi kho đã nhận thật. Ghi khoá của một đối tượng không tồn tại nghĩa
-	// là lịch sử báo "done" trỏ vào hư không: tiến trình web phục vụ lượt tải không thấy RAM
-	// của worker, nên bản dự phòng trong RAM không cứu được gì, và người dùng nhận 404 mãi mãi
-	// cho một chunk mà hệ thống khẳng định là đã xong.
+	// audio_path is only written when the store has actually received the file. Writing the key
+	// of a non-existent object means history reports "done" pointing into the void: the web
+	// process serving downloads cannot see the worker's RAM, so the in-RAM fallback cannot save
+	// anything, and the user gets 404 forever for a chunk the system claims is done.
 	if wroteToStore {
 		if err := db.UpdateChunkStatus(ctx, job.TaskID, "done", &audioKey, nil); err != nil {
-			log.Printf("Chunk %s đã xong nhưng không ghi được trạng thái vào DB: %v", job.TaskID, err)
+			log.Printf("Chunk %s completed but failed to write status to DB: %v", job.TaskID, err)
 		}
 	} else {
-		errMsg := "Không lưu được âm thanh vào kho"
+		errMsg := "Failed to save audio to store"
 		if err := db.UpdateChunkStatus(ctx, job.TaskID, "error", nil, &errMsg); err != nil {
-			log.Printf("Chunk %s hỏng khi lưu nhưng không ghi được trạng thái vào DB: %v", job.TaskID, err)
+			log.Printf("Chunk %s failed on save but failed to write status to DB: %v", job.TaskID, err)
 		}
 		taskItem.Notify(state.TaskUpdate{
 			Status:   "error",

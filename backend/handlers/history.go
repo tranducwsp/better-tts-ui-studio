@@ -14,15 +14,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// HistoryHandler xử lý các API xem lịch sử chuyển đổi TTS và chi tiết các Job/Task.
+// HistoryHandler handles APIs for viewing TTS conversion history and Job/Task details.
 type HistoryHandler struct{}
 
-// NewHistoryHandler khởi tạo HistoryHandler.
+// NewHistoryHandler creates a new HistoryHandler.
 func NewHistoryHandler() *HistoryHandler {
 	return &HistoryHandler{}
 }
 
-// JobSummaryResponse cấu trúc dữ liệu tóm tắt công việc TTS trong lịch sử.
+// JobSummaryResponse is the data structure for summarizing TTS jobs in history.
 type JobSummaryResponse struct {
 	JobID      string  `json:"job_id"`
 	Engine     string  `json:"engine"`
@@ -35,16 +35,18 @@ type JobSummaryResponse struct {
 	IsComplete bool    `json:"is_complete"`
 }
 
-// HistoryPageResponse là một trang lịch sử: danh sách item cùng cờ báo còn trang sau.
+// HistoryPageResponse is a single page of history: the list of items plus a flag indicating
+// whether there are more pages.
 //
-// Giao diện cần HasMore để quyết định có hiện "tải tiếp" không; trước đây API trả trần một
-// mảng nên client chỉ biết có 200 mục và không biết đã hết thật chưa.
+// The UI needs HasMore to decide whether to show a "load more" button; previously the API
+// returned a plain array so the client only knew there were up to 200 items and had no way
+// to tell whether the list was truly exhausted.
 type HistoryPageResponse struct {
 	Items   []JobSummaryResponse `json:"items"`
 	HasMore bool                 `json:"has_more"`
 }
 
-// GetUserHistory lấy danh sách lịch sử tạo TTS của chính người dùng đang đăng nhập.
+// GetUserHistory retrieves the TTS creation history of the currently logged-in user.
 func (h *HistoryHandler) GetUserHistory(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := currentUser(w, r)
@@ -55,30 +57,32 @@ func (h *HistoryHandler) GetUserHistory(w http.ResponseWriter, r *http.Request) 
 	h.getHistoryForUser(w, r, user.ID)
 }
 
-// GetUserHistoryAdmin (Admin API) lấy lịch sử chuyển đổi TTS của một người dùng bất kỳ theo user_id.
+// GetUserHistoryAdmin (Admin API) retrieves the TTS conversion history of any user by user_id.
 func (h *HistoryHandler) GetUserHistoryAdmin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	userID := chi.URLParam(r, "user_id")
 	h.getHistoryForUser(w, r, userID)
 }
 
-// historyPageSize là số job trả về cho một lần xem lịch sử.
+// historyPageSize is the number of jobs returned per history view.
 //
-// Trước đây truy vấn không có LIMIT, nên người dùng lâu năm khiến mỗi lần mở lịch sử phải
-// tổng hợp và truyền về toàn bộ job từ trước tới nay. Giao diện chỉ hiển thị một danh sách
-// cuộn, nên trần này là thứ người dùng không nhìn thấy còn máy chủ thì thấy rõ.
+// Previously the query had no LIMIT, so long-time users caused every history open to
+// aggregate and transfer all jobs from the beginning. The UI only displays a scrollable
+// list, so this ceiling is invisible to the user but very visible to the server.
 const historyPageSize = 200
 
-// historyFetchLimit là số job truy vấn thật sự: trang cần để tính HasMore chỉ bằng cách hỏi
-// một dòng hơn trần. Nếu cùng đủ, phần dư bị cắt — không ai thấy một trang có 201 mục.
+// historyFetchLimit is the actual number of jobs queried: the page needs to compute HasMore
+// only by asking for one row more than the ceiling. When the bins are full, the excess is
+// trimmed — no one ever sees a page with 201 items.
 const historyFetchLimit = historyPageSize + 1
 
-// getHistoryForUser hàm nội bộ tổng hợp dữ liệu lịch sử các Job và tiến độ hoàn thành các Chunk của User.
+// getHistoryForUser is an internal function that aggregates history data for Jobs and the
+// completion progress of the User's Chunks.
 //
-// Phân trang theo con trỏ: client gửi `before` (RFC3339) và `before_id` của item cuối cùng
-// trang trước, để lần hỏi sau trả những job cũ hơn. Thiếu tham số hoặc `before` rỗng nghĩa là
-// trang đầu tiên. Trường `before_id` thường đi kèm nhưng predicate chỉ dựa vào nó khi hai job
-// trùng timestamp.
+// Cursor-based pagination: the client sends `before` (RFC3339) and `before_id` of the last
+// item from the previous page, so the next request returns older jobs. Missing parameters or
+// an empty `before` means the first page. The `before_id` field is usually sent alongside
+// but the predicate only relies on it when two jobs share the same timestamp.
 func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Request, userID string) {
 	params := sqlc.ListUserHistorySummariesParams{
 		UserID: userID,
@@ -129,11 +133,12 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 			actualTotal = int(s.ActualChunksCount)
 		}
 
-		// strconv.Itoa thay cho fmt.Sprintf ở hai chỗ dưới đây: vòng lặp này chạy tới
-		// historyPageSize (200) lần mỗi lần mở lịch sử, và Sprintf phải phân tích chuỗi định
-		// dạng rồi đi qua reflection cho mỗi tham số. Đo được 60µs xuống 34µs cho một trang
-		// 200 job — nhỏ so với một lượt truy vấn, nhưng đây là hai chỗ duy nhất trong repo mà
-		// định dạng chuỗi nằm trong vòng lặp, nên cũng là hai chỗ duy nhất đáng đổi.
+		// strconv.Itoa instead of fmt.Sprintf in the two places below: this loop runs up to
+		// historyPageSize (200) times per history open, and Sprintf must parse the format
+		// string then go through reflection for each argument. Measured 60µs down to 34µs
+		// for a page of 200 jobs — small compared to a query round-trip, but these are the
+		// only two places in the repo where string formatting sits inside a loop, so they
+		// are also the only two places worth changing.
 		timeAgo := "Just now"
 		if s.CreatedAt.Valid {
 			diff := now.Sub(s.CreatedAt.Time)
@@ -146,10 +151,11 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 			}
 		}
 
-		// Định dạng đủ microsecond thay vì RFC3339 rút gọn: created_at này được client gửi ngược
-		// lại làm cursor phân trang, và bỏ phần dưới giây khiến những job cùng timestamp đứng
-		// đúng hàng rào trang bị nhảy mất. Sáu chữ số khớp độ phân giải microsecond của Postgres,
-		// nên round-trip qua client không làm lệch thứ tự.
+		// Full-microsecond format instead of truncated RFC3339: this created_at is sent back
+		// by the client as a pagination cursor, and dropping sub-second precision causes jobs
+		// that share the same timestamp and land right on the page boundary to be silently
+		// skipped. Six digits match Postgres microsecond resolution, so the round-trip through
+		// the client does not distort ordering.
 		createdAt := ""
 		if s.CreatedAt.Valid {
 			createdAt = s.CreatedAt.Time.Format("2006-01-02T15:04:05.000000Z")
@@ -174,14 +180,14 @@ func (h *HistoryHandler) getHistoryForUser(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// ChunkItemResponse thông tin từng đoạn audio chunk trong job.
-// ChunkItemResponse KHÔNG mang đường dẫn lưu trữ.
+// ChunkItemResponse contains information for each audio chunk segment within a job.
+// ChunkItemResponse does NOT carry a storage path.
 //
-// Trường audio_path từng được trả ra và giao diện ghép nó thành URL trực tiếp. Đó là khoá nội
-// bộ của kho, nên với backend không phải đĩa thì nó vô nghĩa, và kể cả với đĩa thì trình duyệt
-// cũng không phục vụ được. Quan trọng hơn: một URL trỏ thẳng vào kho sẽ đi vòng qua ownsTask,
-// tức là bỏ đúng lớp kiểm quyền sở hữu vừa được thêm cho task. Client dùng
-// /api/tasks/{task_id}/audio, nơi quyền được kiểm mỗi lần.
+// The audio_path field used to be returned and the UI would concatenate it into a direct URL.
+// That is an internal key of the store, so with a non-disk backend it is meaningless, and even
+// with disk the browser cannot serve it. More importantly: a URL pointing directly at the store
+// would bypass ownsTask, i.e. skip the very ownership-check layer that was just added for
+// tasks. The client uses /api/tasks/{task_id}/audio, where ownership is checked every time.
 type ChunkItemResponse struct {
 	TaskID     string `json:"task_id"`
 	ChunkIndex int    `json:"chunk_index"`
@@ -189,7 +195,7 @@ type ChunkItemResponse struct {
 	Text       string `json:"text"`
 }
 
-// JobDetailResponse chi tiết đầy đủ của một Job TTS bao gồm tất cả các đoạn Chunks ghép lại.
+// JobDetailResponse contains the full details of a TTS Job including all assembled Chunks.
 type JobDetailResponse struct {
 	JobID       string              `json:"job_id"`
 	Engine      string              `json:"engine"`
@@ -202,7 +208,8 @@ type JobDetailResponse struct {
 	Chunks      []ChunkItemResponse `json:"chunks"`
 }
 
-// GetJobDetail lấy chi tiết một Job TTS cụ thể theo job_id (bao gồm tiến độ từng đoạn văn bản).
+// GetJobDetail retrieves details of a specific TTS Job by job_id (including progress of each
+// text segment).
 func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	jobID := chi.URLParam(r, "job_id")
@@ -226,18 +233,21 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 
 	chunks, _ := db.Queries.ListTTSChunksByJobID(r.Context(), job.ID)
 
-	// Một chunk_index có thể có nhiều dòng (thử lại), nên giữ dòng ở trạng thái tiến xa nhất.
+	// A single chunk_index can have multiple rows (retries), so keep the row at the most
+	// advanced status.
 	//
-	// Một lượt quét tiến, không map và không sắp xếp lại: truy vấn đã trả về theo
-	// ORDER BY chunk_index ASC, nên dựng map rồi rải ra rồi sort lại chỉ để có đúng thứ tự
-	// vốn đã có — mà mỗi lần vào/ra map là một lần sao chép cả struct, kể cả trường Text.
+	// A single forward scan, no map and no re-sort: the query already returns rows ordered by
+	// ORDER BY chunk_index ASC, so building a map then spreading then sorting only to get the
+	// order that was already there — and each map entry/exit copies the entire struct,
+	// including the Text field.
 	statusPriority := map[string]int{
 		"done":       4,
 		"processing": 3,
 		"pending":    2,
 		"error":      1,
-		// "cancelled" phải có mặt: thiếu nó thì map trả 0 và một chunk đã huỷ luôn thua
-		// "error" ở cùng chunk_index — người dùng huỷ rồi thử lại sẽ thấy job hiện ra là lỗi.
+		// "cancelled" must be present: without it the map returns 0 and a cancelled chunk
+		// always loses to "error" at the same chunk_index — a user who cancels then retries
+		// would see the job appear as errored.
 		"cancelled": 1,
 	}
 
@@ -302,7 +312,7 @@ func (h *HistoryHandler) GetJobDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// JobInitRequest yêu cầu khởi tạo thông tin cho một Job TTS lớn.
+// JobInitRequest is the request to initialize information for a large TTS Job.
 type JobInitRequest struct {
 	JobID       string   `json:"job_id"`
 	Engine      string   `json:"engine"`
@@ -314,7 +324,8 @@ type JobInitRequest struct {
 	Text        string   `json:"text"`
 }
 
-// InitJob khởi tạo thông tin ban đầu của Job TTS trước khi tiến hành chia nhỏ văn bản và phát âm từng chunk.
+// InitJob initializes the base information of a TTS Job before splitting the text and
+// synthesizing each chunk.
 func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := currentUser(w, r)
@@ -329,8 +340,8 @@ func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Một câu lệnh upsert: hai request khởi tạo cùng một job đồng thời đều thấy "chưa có"
-	// rồi cùng chèn, và cái thua bị bỏ lỗi âm thầm.
+	// An upsert statement: two concurrent init requests for the same job both see
+	// "does not exist" and both insert, and the loser is silently discarded.
 	audio := db.JobAudioParams{Speed: req.Speed, Pitch: req.Pitch, Emotion: req.Emotion}
 	owner, err := db.Queries.EnsureTTSJob(r.Context(), sqlc.EnsureTTSJobParams{
 		ID:          req.JobID,
@@ -344,13 +355,13 @@ func (h *HistoryHandler) InitJob(w http.ResponseWriter, r *http.Request) {
 		Text:        req.Text,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Không khởi tạo được job")
+		writeError(w, http.StatusInternalServerError, "Failed to initialize job")
 		return
 	}
 
-	// job_id do client gửi lên. Upsert giữ nguyên job đã có, nên không kiểm ở đây thì một
-	// người "khởi tạo" trúng job của người khác và nhận về thông báo thành công — rồi mọi
-	// chunk sau đó đi vào lịch sử của người kia.
+	// job_id is sent by the client. Upsert keeps the existing job, so without this check a
+	// person "initializing" someone else's job would receive a success message — and every
+	// subsequent chunk would land in that other person's history.
 	if owner != user.ID {
 		writeError(w, http.StatusForbidden, "Forbidden")
 		return

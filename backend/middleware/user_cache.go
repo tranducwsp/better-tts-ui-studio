@@ -12,19 +12,20 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-// userCache ghi nhớ bản ghi người dùng trong thời gian rất ngắn sau khi token được xác thực.
+// userCache remembers user records for a very short time after token validation.
 //
-// Không có nó, mỗi request đã đăng nhập là một câu SELECT tới PostgreSQL để suy ra lại thứ
-// gần như đã nằm trong token đã ký. Middleware này chạy trên chain toàn cục, nên nó đánh cả
-// /health, /ready và preflight CORS; endpoint hỏi tiến độ task còn bị trình duyệt gọi liên
-// tục trong lúc job chạy. Ở vài trăm request mỗi giây, phần lớn pool kết nối (mặc định 25)
-// bị tiêu cho việc tra cùng một dòng.
+// Without it, every authenticated request is a SELECT to PostgreSQL to re-derive what is
+// essentially already in the signed token. This middleware runs on the global chain, so it
+// hits /health, /ready and CORS preflight as well; the task progress endpoint is also polled
+// continuously by the browser while a job runs. At a few hundred requests per second, most of
+// the connection pool (default 25) is spent querying the same row.
 //
-// Bộ nhớ nằm trên Redis khi có, RAM tiến trình khi không. Khác biệt không chỉ là chỗ chứa:
-// InvalidateUser trước đây chỉ xoá bản sao của CHÍNH tiến trình đang chạy, nên với nhiều
-// replica, admin duyệt một tài khoản ở replica A trong khi replica B vẫn từ chối người đó cho
-// tới khi TTL hết — và người dùng bấm lại vài lần thì lúc được lúc không, tuỳ load balancer.
-// Xoá trên Redis là xoá cho mọi replica cùng lúc.
+// The cache lives on Redis when available, in-process RAM otherwise. The difference is not
+// just storage location: InvalidateUser previously only cleared the copy in the CURRENT
+// process, so with multiple replicas, an admin approving an account on replica A would still
+// be rejected by replica B until the TTL expired — and the user clicking retry would
+// sometimes succeed, sometimes not, depending on the load balancer. Deleting on Redis deletes
+// for all replicas at once.
 type userCache struct {
 	mu      sync.RWMutex
 	ttl     time.Duration
@@ -36,12 +37,12 @@ type userCacheEntry struct {
 	expiresAt time.Time
 }
 
-// cachedUser là hình dạng được ghi lên Redis.
+// cachedUser is the shape written to Redis.
 //
-// Không mang PasswordHash: mọi thứ ngoài tiến trình đều là một bản sao nữa của thông tin
-// nhạy cảm cần bảo vệ, và bcrypt hash nằm trong một Redis không mã hoá là chỗ rò rỉ không
-// đổi lại lợi ích nào. Đã kiểm: chỉ Login đọc trường này, và nó đọc thẳng từ PostgreSQL chứ
-// không qua context.
+// Does not carry PasswordHash: anything outside the process is another copy of sensitive
+// information that needs protection, and a bcrypt hash sitting in an unencrypted Redis is a
+// leak with no compensating benefit. Verified: only Login reads this field, and it reads
+// directly from PostgreSQL, not through the context.
 type cachedUser struct {
 	ID         string `json:"id"`
 	Username   string `json:"username"`
@@ -67,13 +68,13 @@ func fromUser(u sqlc.User) cachedUser {
 	}
 }
 
-// globalUserCache được cấu hình một lần lúc khởi động qua ConfigureUserCache.
+// globalUserCache is configured once at startup via ConfigureUserCache.
 var globalUserCache = &userCache{entries: make(map[string]userCacheEntry)}
 
-// userCacheKey đặt tiền tố để khoá của cache này không đụng khoá nào khác trên cùng Redis.
+// userCacheKey adds a prefix so this cache's keys don't collide with other keys on the same Redis.
 func userCacheKey(username string) string { return "auth:user:" + username }
 
-// ConfigureUserCache đặt thời gian sống của cache. ttl <= 0 tắt cache hoàn toàn.
+// ConfigureUserCache sets the cache TTL. ttl <= 0 disables the cache entirely.
 func ConfigureUserCache(ttl time.Duration) {
 	globalUserCache.mu.Lock()
 	globalUserCache.ttl = ttl
@@ -81,13 +82,14 @@ func ConfigureUserCache(ttl time.Duration) {
 	globalUserCache.mu.Unlock()
 }
 
-// InvalidateUser xoá một người dùng khỏi cache, để lần xác thực sau đọc lại từ DB.
+// InvalidateUser removes a user from the cache, so the next authentication reads from the DB.
 //
-// Gọi ở mọi nơi làm thay đổi role hoặc trạng thái duyệt: nếu không, một tài khoản vừa được
-// duyệt vẫn bị từ chối cho tới khi TTL hết, và người dùng không hiểu vì sao.
+// Call everywhere that changes role or approval status: otherwise, a newly approved account
+// would still be rejected until the TTL expires, and the user would not understand why.
 //
-// Xoá cả hai chỗ, không chỉ chỗ đang dùng: một tiến trình có thể đã ghi vào RAM trước khi
-// Redis kết nối được, và bỏ sót bản đó nghĩa là bản ghi cũ vẫn sống thêm một TTL nữa.
+// Delete from both places, not just whichever is in use: a process may have written to RAM
+// before Redis became available, and missing that copy means the stale record lives for
+// another full TTL.
 func InvalidateUser(username string) {
 	globalUserCache.mu.Lock()
 	delete(globalUserCache.entries, username)
@@ -97,21 +99,22 @@ func InvalidateUser(username string) {
 		ctx, cancel := context.WithTimeout(context.Background(), cacheOpTimeout)
 		defer cancel()
 		if err := rdb.Del(ctx, userCacheKey(username)).Err(); err != nil {
-			// Đáng ghi log: bản ghi cũ sẽ sống thêm tới hết TTL trên mọi replica, nên một tài
-			// khoản vừa đổi quyền có thể vẫn hành xử theo quyền cũ trong vài giây.
-			log.Printf("cache người dùng: không xoá được %q trên Redis: %v", username, err)
+			// Worth logging: the stale record will live for the remainder of the TTL on every
+			// replica, so a newly permission-changed account may still behave with the old
+			// permissions for a few seconds.
+			log.Printf("user cache: failed to delete %q from Redis: %v", username, err)
 		}
 	}
 }
 
-// cacheOpTimeout chặn thời gian một thao tác cache.
+// cacheOpTimeout bounds the time of a cache operation.
 //
-// Cache nằm trên đường đi của MỌI request đã xác thực, nên một Redis chậm không được phép
-// trở thành độ trễ của cả hệ thống: quá hạn thì coi như trượt cache và đi thẳng xuống
-// PostgreSQL, chậm hơn nhưng vẫn đúng.
+// The cache sits on the path of EVERY authenticated request, so a slow Redis must not become
+// system-wide latency: on timeout, treat it as a cache miss and go straight to PostgreSQL,
+// slower but still correct.
 const cacheOpTimeout = 100 * time.Millisecond
 
-// get trả về bản ghi còn hiệu lực, hoặc ok=false nếu chưa có/đã hết hạn/cache đang tắt.
+// get returns a valid cached record, or ok=false if missing/expired/cache is disabled.
 func (c *userCache) get(username string, now time.Time) (sqlc.User, bool) {
 	c.mu.RLock()
 	ttl := c.ttl
@@ -127,7 +130,7 @@ func (c *userCache) get(username string, now time.Time) (sqlc.User, bool) {
 
 		raw, err := rdb.Get(ctx, userCacheKey(username)).Bytes()
 		if err != nil {
-			// Bao gồm cả redis.Nil (chưa có khoá) — cả hai đều chỉ nghĩa là phải hỏi DB.
+			// Includes redis.Nil (key not present) — both just mean we must query the DB.
 			return sqlc.User{}, false
 		}
 		var cu cachedUser
@@ -147,11 +150,12 @@ func (c *userCache) get(username string, now time.Time) (sqlc.User, bool) {
 	return entry.user, true
 }
 
-// put ghi nhớ một bản ghi.
+// put remembers a record.
 //
-// Trên Redis, TTL của chính khoá lo việc hết hạn. Ở nhánh RAM thì phải tự dọn, và việc đó
-// làm ngay trong lúc ghi thay vì bằng một goroutine hẹn giờ: số khoá bị chặn bởi số người
-// dùng hoạt động trong một khoảng TTL vài giây, nên map không kịp lớn đến mức cần bộ quét riêng.
+// On Redis, the key's own TTL handles expiry. The RAM branch must clean up on its own, and
+// that is done inline during writes rather than via a scheduled goroutine: the number of keys
+// is bounded by the number of active users within a TTL of a few seconds, so the map will not
+// grow large enough to need a dedicated sweeper.
 func (c *userCache) put(username string, user sqlc.User, now time.Time) {
 	c.mu.RLock()
 	ttl := c.ttl
@@ -168,8 +172,8 @@ func (c *userCache) put(username string, user sqlc.User, now time.Time) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), cacheOpTimeout)
 		defer cancel()
-		// Ghi hỏng chỉ làm mất một lần tăng tốc, không làm sai kết quả — request kế tiếp đọc
-		// lại từ PostgreSQL.
+		// A failed write only loses one cache speedup, never yields wrong results — the next
+		// request re-reads from PostgreSQL.
 		_ = rdb.Set(ctx, userCacheKey(username), raw, ttl).Err()
 		return
 	}
@@ -185,15 +189,15 @@ func (c *userCache) put(username string, user sqlc.User, now time.Time) {
 	c.entries[username] = userCacheEntry{user: user, expiresAt: now.Add(ttl)}
 }
 
-// Hai hàm dưới đây cho phép kiểm cache mà không cần dựng PostgreSQL — đường vào thật là
-// lookupUser, nhưng nó đi qua db.Queries nên không kiểm được độc lập.
+// The two functions below allow cache inspection without standing up PostgreSQL — the real
+// entry point is lookupUser, but it goes through db.Queries so it cannot be tested independently.
 
-// PutUserForTest ghi một bản ghi vào cache. Chỉ dùng trong kiểm thử.
+// PutUserForTest writes a record into the cache. For test use only.
 func PutUserForTest(username string, user sqlc.User) {
 	globalUserCache.put(username, user, time.Now())
 }
 
-// GetUserForTest đọc một bản ghi từ cache. Chỉ dùng trong kiểm thử.
+// GetUserForTest reads a record from the cache. For test use only.
 func GetUserForTest(username string) (sqlc.User, bool) {
 	return globalUserCache.get(username, time.Now())
 }

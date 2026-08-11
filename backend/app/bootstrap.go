@@ -16,11 +16,11 @@ import (
 	"backend/storage"
 )
 
-// BootstrapWeb khởi tạo mọi thứ mà HTTP backend cần rồi trả về client Engine.
+// BootstrapWeb initializes everything the HTTP backend needs and returns the Engine client.
 //
-// Web là tiến trình duy nhất chạy migration, seed tài khoản và cấu hình auth middleware.
-// Worker dùng BootstrapWorker; cron dùng BootstrapCron — không có mode flag hay nhánh ẩn để
-// đoán một tiến trình đang làm vai trò nào.
+// Web is the only process that runs migrations, seeds accounts, and configures auth middleware.
+// Worker uses BootstrapWorker; cron uses BootstrapCron — no mode flag or hidden branch to guess
+// which role a process is playing.
 func BootstrapWeb(cfg *config.Config) *client.CoreTTSClient {
 	initStorage(cfg)
 
@@ -32,21 +32,23 @@ func BootstrapWeb(cfg *config.Config) *client.CoreTTSClient {
 	return bootstrapEngine(cfg, db.InitOptions{Migrate: true, Seed: true})
 }
 
-// BootstrapWorker khởi tạo những phụ thuộc worker cần để nhặt job và ghi kết quả.
+// BootstrapWorker initializes the dependencies a worker needs to pick up jobs and write results.
 //
-// Worker không chạy migration/seed, không cấu hình auth và không nhận multipart request. DB
-// vẫn cần cho UpdateChunkStatus; Redis cần cho Stream và trạng thái liên tiến trình.
+// Worker does not run migrations/seed, does not configure auth, and does not accept multipart
+// requests. DB is still needed for UpdateChunkStatus; Redis is needed for Stream and
+// cross-process state.
 func BootstrapWorker(cfg *config.Config) *client.CoreTTSClient {
 	initStorage(cfg)
 	return bootstrapEngine(cfg, db.InitOptions{})
 }
 
-// BootstrapCron khởi tạo storage và DB rồi trả về kho cho cron.Run tự chạy vòng lặp.
+// BootstrapCron initializes storage and DB and returns the store for cron.Run to run its own
+// loop.
 //
-// Cron không cần Redis hay Engine: nó LIST/DELETE các object temp và Reconcile chunk mồ côi
-// trực tiếp trên DB. DB là phụ thuộc mới — cần cho việc đưa chunk kẹt về error — nhưng vẫn
-// không có Redis, và migration/seed vẫn không chạy ở đây (cron chỉ đọc/ghi trạng thái, không
-// sở hữu schema).
+// Cron does not need Redis or Engine: it LIST/DELETEs temp objects and Reconciles orphaned
+// chunks directly on the DB. DB is a new dependency — needed for moving stuck chunks to error —
+// but there is still no Redis, and migrations/seed still do not run here (cron only reads/writes
+// status, does not own the schema).
 func BootstrapCron(cfg *config.Config) storage.Store {
 	initStorage(cfg)
 	db.InitDB(cfg, db.InitOptions{})
@@ -63,7 +65,7 @@ func initStorage(cfg *config.Config) {
 		ForcePathStyle: cfg.S3ForcePathStyle,
 		Prefix:         cfg.S3Prefix,
 	}); err != nil {
-		log.Fatalf("Không khởi tạo được kho lưu trữ: %v", err)
+		log.Fatalf("Failed to initialize storage backend: %v", err)
 	}
 }
 
@@ -86,15 +88,15 @@ func bootstrapEngine(cfg *config.Config, dbOptions db.InitOptions) *client.CoreT
 	}
 
 	if err := discoverManifest(ttsClient, cfg.CoreTTSURL, 90*time.Second, 3*time.Second); err != nil {
-		log.Fatalf("Không lấy được Manifest từ AI Engine: %v.\n"+
-			"Backend không khởi động khi thiếu Manifest, vì mọi giới hạn đầu vào (độ dài văn bản,\n"+
-			"khoảng speed/pitch, danh sách mode và emotion) đều do Manifest khai. Hãy kiểm tra\n"+
-			"CORE_ENGINE_URL và xem Engine đã sẵn sàng chưa.", err)
+		log.Fatalf("Failed to fetch Manifest from AI Engine: %v.\n"+
+			"Backend refuses to start without a Manifest, because all input limits (text length,\n"+
+			"speed/pitch range, mode and emotion list) are declared by the Manifest. Check\n"+
+			"CORE_ENGINE_URL and verify the Engine is ready.", err)
 	}
 	return ttsClient
 }
 
-// discoverManifest hỏi Engine tới khi có Manifest hợp lệ, hoặc hết thời gian chờ.
+// discoverManifest queries the Engine until a valid Manifest is returned, or the timeout expires.
 func discoverManifest(ttsClient *client.CoreTTSClient, engineURL string, timeout, retryInterval time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
@@ -105,10 +107,10 @@ func discoverManifest(ttsClient *client.CoreTTSClient, engineURL string, timeout
 		case err != nil:
 			lastErr = err
 		case manifest == nil:
-			lastErr = errors.New("engine trả về manifest rỗng")
+			lastErr = errors.New("engine returned empty manifest")
 		default:
 			if setErr := state.GlobalManifestState.Set(manifest); setErr != nil {
-				lastErr = fmt.Errorf("manifest không hợp lệ: %w", setErr)
+				lastErr = fmt.Errorf("invalid manifest: %w", setErr)
 				break
 			}
 			log.Printf("🚀 AI Engine Manifest discovered & cached: %s (v%s) [Max Length: %d chars]",
@@ -117,10 +119,10 @@ func discoverManifest(ttsClient *client.CoreTTSClient, engineURL string, timeout
 		}
 
 		if time.Now().After(deadline) {
-			return fmt.Errorf("sau %s và %d lần thử tại %s: %w", timeout, attempt, engineURL, lastErr)
+			return fmt.Errorf("after %s and %d attempts at %s: %w", timeout, attempt, engineURL, lastErr)
 		}
 
-		log.Printf("⏳ Đang chờ Manifest từ AI Engine tại %s (%v)... thử lại sau 3s", engineURL, lastErr)
+		log.Printf("⏳ Waiting for Manifest from AI Engine at %s (%v)... retrying in 3s", engineURL, lastErr)
 		time.Sleep(retryInterval)
 	}
 }

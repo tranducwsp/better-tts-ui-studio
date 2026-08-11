@@ -18,12 +18,13 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// TasksHandler xử lý việc kiểm tra tiến độ, stream Server-Sent Events (SSE), hủy task và tải file audio.
+// TasksHandler handles progress checking, Server-Sent Events (SSE) streaming, task
+// cancellation, and audio file downloads.
 type TasksHandler struct {
 	presignTTL time.Duration
 }
 
-// NewTasksHandler khởi tạo TasksHandler.
+// NewTasksHandler creates a new TasksHandler.
 func NewTasksHandler(ttl ...time.Duration) *TasksHandler {
 	presignTTL := 60 * time.Second
 	if len(ttl) > 0 && ttl[0] > 0 {
@@ -32,19 +33,22 @@ func NewTasksHandler(ttl ...time.Duration) *TasksHandler {
 	return &TasksHandler{presignTTL: presignTTL}
 }
 
-// ownsTask kiểm tra người gọi có quyền trên task này không, và đã ghi phản hồi lỗi nếu không.
+// ownsTask checks whether the caller has rights over this task, and has already written
+// an error response if not.
 //
-// Trước đây bốn handler dưới đây chỉ tra task_id rồi trả kết quả. task_id là UUID nên khó
-// đoán, nhưng nó lộ ra trong lịch sử (ChunkItemResponse.TaskID) và do client tự gửi khi tổng
-// hợp, nên "khó đoán" không phải là kiểm soát truy cập.
+// Previously the four handlers below only looked up task_id and returned the result.
+// task_id is a UUID so it is hard to guess, but it is exposed in the history
+// (ChunkItemResponse.TaskID) and sent by the client when assembling, so "hard to guess"
+// is not access control.
 //
-// Chủ sở hữu lấy từ TaskItem trước, chỉ hỏi DB khi task trong RAM không mang theo trường đó
-// — tức task được dựng lại từ Redis sau một lần khởi động lại. Polling trạng thái và SSE là
-// hai đường đi nóng nhất của một job đang chạy; một truy vấn join cho mỗi lần hỏi tiến độ là
-// cái giá không cần trả cho thông tin mà tiến trình này đã biết.
+// The owner is obtained from the in-memory TaskItem first, only querying the DB when the
+// task in RAM does not carry that field — i.e. a task reconstructed from Redis after a
+// restart. Status polling and SSE are the two hottest paths of a running job; a join query
+// for every progress check is a cost not worth paying for information the process already
+// knows.
 //
-// Task không tìm được chủ ở cả hai nơi bị từ chối: thà chặn một task hợp lệ còn hơn mở mọi
-// task cho mọi người vì một bản ghi thiếu.
+// A task whose owner cannot be found in either place is rejected: better to block one
+// legitimate task than to open every task to everyone because of a missing record.
 func ownsTask(w http.ResponseWriter, r *http.Request, taskID string) bool {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -74,7 +78,7 @@ func ownsTask(w http.ResponseWriter, r *http.Request, taskID string) bool {
 	return true
 }
 
-// GetTaskStatus lấy trạng thái (status, progress) của một Task bất đồng bộ qua task_id.
+// GetTaskStatus retrieves the status (status, progress) of an asynchronous Task by task_id.
 func (h *TasksHandler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	taskID := chi.URLParam(r, "task_id")
@@ -108,35 +112,38 @@ func (h *TasksHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 
 	state.GlobalTaskManager.Cancel(taskID)
 
-	// Ghi trạng thái xuống DB ngay, không chờ worker. Trước đây chỉ có Cancel ở tầng state: job
-	// còn đang xếp hàng thì không ai đặt chunk về 'cancelled', bảng tts_chunks cứ đứng ở
-	// 'processing' mãi dù người dùng đã bấm dừng và giao diện đã hiện "cancelled".
+	// Write status to DB immediately, without waiting for the worker. Previously only Cancel
+	// at the state layer existed: if the job was still queued, no one would set the chunk to
+	// 'cancelled', and the tts_chunks table would stay at 'processing' forever even though the
+	// user had clicked stop and the UI already showed "cancelled".
 	//
-	// Dùng context.Background() thay vì r.Context(): người dùng có thể đã ngắt kết nối ngay sau
-	// khi gửi lệnh dừng, và bản ghi này vẫn phải có hiệu lực dù client không nghe phản hồi.
-	// Update là dạng có điều kiện (chỉ chuyển từ pending/processing) nên không đè 'done'/'error'
-	// nếu worker thắng cuộc đua.
+	// Use context.Background() instead of r.Context(): the user may have disconnected right
+	// after sending the cancel command, and this record must still take effect even if the
+	// client is not listening for the response. The update is conditional (only transitions
+	// from pending/processing) so it does not overwrite 'done'/'error' if the worker wins
+	// the race.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := db.CancelChunk(ctx, taskID); err != nil {
-		log.Printf("Task %s: huỷ ở tầng state được nhưng không ghi được trạng thái vào DB: %v", taskID, err)
+		log.Printf("Task %s: cancelled at the state layer but could not write status to DB: %v", taskID, err)
 	}
 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Cancellation requested"})
 }
 
-// GetTaskAudio trả về dữ liệu âm thanh của Task sau khi hoàn tất, chuyển mã theo yêu cầu.
+// GetTaskAudio returns the audio data of a Task after completion, transcoding on demand.
 //
-// Định dạng gốc do Mode quyết định — Edge TTS trả MP3, mô hình cục bộ trả WAV — nên Task
-// ghi lại mình đang giữ gì. Hỏi đúng định dạng đó thì trả thẳng; hỏi khác thì ffmpeg
-// chuyển mã tại chỗ và kết quả được ghi nhớ để lần sau khỏi chạy lại.
+// The native format is determined by the Mode — Edge TTS returns MP3, local models return
+// WAV — so the Task records what it holds. Requesting that exact format returns it directly;
+// requesting a different format triggers ffmpeg transcoding on the fly and the result is
+// cached so the next request skips the conversion.
 func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "task_id")
 	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
 
-	// task_id và format đi vào tên file bên dưới. Không để query string trở thành một
-	// filepath.Join escape hatch: format=../../etc/passwd trước đây được ghép vào
-	// <task>.to.<format> rồi đọc trước khi CanTranscode kịp từ chối.
+	// task_id and format end up in filenames below. Do not let the query string become a
+	// filepath.Join escape hatch: format=../../etc/passwd used to be concatenated into
+	// <task>.to.<format> and read before CanTranscode could reject it.
 	if !safeTaskID(taskID) {
 		writeError(w, http.StatusBadRequest, "Invalid task ID")
 		return
@@ -149,13 +156,14 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hỏi kho trước khi chạm tới RAM.
+	// Query the store before touching RAM.
 	//
-	// Với kho phát được URL, đường nhanh nhất là chuyển hướng client sang thẳng đó — và lúc
-	// ấy tiến trình này không cần bytes chút nào. Đọc TaskManager trước sẽ phá đúng điều đó:
-	// Get() nạp bù âm thanh từ Redis vào RAM khi thấy RAM rỗng, nên tới đây source luôn khác
-	// nil và nhánh chuyển hướng không bao giờ chạy. Đó là lý do bản đầu của thay đổi này vẫn
-	// trả 200 kèm toàn bộ tệp thay vì 302.
+	// With a store that can serve URLs (S3), the fastest path is to redirect the client
+	// straight there — and in that case this process does not need any bytes at all. Reading
+	// TaskManager first would break exactly that: Get() backfills audio from Redis into RAM
+	// when it finds RAM empty, so by the time we get here source is always non-nil and the
+	// redirect branch never executes. That is why the first version of this change still
+	// returned 200 with the entire file instead of 302.
 	if declared := taskSourceFormat(taskID); declared != "" && format == "" {
 		format = declared
 	}
@@ -190,8 +198,8 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Bản đã chuyển mã của lần tải trước nằm cạnh bản gốc trong kho, nên lần này khỏi gọi
-	// ffmpeg. Bộ quét dọn thu hồi cả hai theo cùng một chính sách.
+	// The transcoded version from a previous download sits next to the original in the store,
+	// so this time ffmpeg is not needed. The cleanup job reclaims both under the same policy.
 	if format != "" {
 		if b, err := storage.Global.Get(r.Context(), storage.TranscodeKey(taskID, format)); err == nil && len(b) > 0 {
 			writeAudio(w, b, format)
@@ -199,10 +207,11 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Task có thể đã bị dọn khỏi RAM; đối tượng trong kho mang phần mở rộng là định dạng gốc.
+	// The task may have been evicted from RAM; the store object carries the native format
+	// as its extension.
 	//
-	// Dò bằng Exists trước khi tải: khi client hỏi đúng định dạng gốc — trường hợp thường gặp
-	// nhất — không cần nạp bytes vào tiến trình này chút nào.
+	// Probe with Exists before loading: when the client asks for the native format — the
+	// most common case — there is no need to load bytes into this process at all.
 	if source == nil {
 		for _, ext := range audio.KnownFormats() {
 			key := storage.AudioKey(taskID, ext)
@@ -249,13 +258,13 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state.GlobalTaskManager.CacheTranscoded(taskID, format, converted)
-	// Bản trong kho chỉ là bộ nhớ đệm cho lần tải sau; ghi thất bại chỉ có nghĩa là lần sau
-	// chạy lại ffmpeg, nên không cần làm hỏng phản hồi đang thành công. Vẫn log để đĩa đầy
-	// không biểu hiện thành "sao dạo này tải chậm".
+	// The store copy is only a cache for the next download; a failed write only means the next
+	// time runs ffmpeg again, so there is no need to spoil a successful response. Still log so
+	// a full disk does not manifest as "why is downloading slow lately".
 	transKey := storage.TranscodeKey(taskID, format)
 	if err := storage.Global.Put(r.Context(), transKey, bytes.NewReader(converted)); err != nil {
-		log.Printf("Không cất được bản chuyển mã %s.%s: %v", taskID, format, err)
-		// Không cất được thì không ký được: URL sẽ trỏ vào đối tượng không tồn tại.
+		log.Printf("Could not store transcoded version %s.%s: %v", taskID, format, err)
+		// Cannot store, so cannot sign: the URL would point to a non-existent object.
 		writeAudio(w, converted, format)
 		return
 	}
@@ -265,10 +274,10 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 	writeAudio(w, converted, format)
 }
 
-// taskSourceFormat đọc định dạng Engine đã sinh, không kéo theo bytes.
+// taskSourceFormat reads the format the Engine produced, without pulling in bytes.
 //
-// Tách khỏi TaskManager.Get vì hàm đó nạp bù âm thanh từ Redis vào RAM như một tác dụng phụ —
-// hữu ích cho đường phục vụ bytes, nhưng ở đây thì đúng là thứ cần tránh.
+// Separated from TaskManager.Get because that function backfills audio from Redis into RAM
+// as a side effect — useful for the bytes-serving path, but exactly what we want to avoid here.
 func taskSourceFormat(taskID string) string {
 	task, ok := state.GlobalTaskManager.Peek(taskID)
 	if !ok {
@@ -281,18 +290,20 @@ func taskSourceFormat(taskID string) string {
 	return format
 }
 
-// presignTTL là thời hạn mặc định của URL tải trực tiếp khi handler được dựng ngoài bootstrap.
-// Production truyền giá trị từ Config; default chỉ giữ các test/consumer cũ chạy an toàn.
+// presignTTL is the default lifetime of a direct download URL when the handler is constructed
+// outside of bootstrap. Production passes the value from Config; the default only keeps old
+// tests/consumers running safely.
 const defaultPresignTTL = 60 * time.Second
 
-// serveFromStore trả âm thanh cho client, và cho biết đã trả được chưa.
+// serveFromStore serves audio to the client and reports whether it was able to do so.
 //
-// Với kho phát được URL (S3), gửi 302 tới URL đã ký: client tải thẳng từ kho, nên backend
-// không còn là ống dẫn. Đo được trước khi đổi: một tệp 563 KB đi qua backend 1180 KB — vào
-// một lần rồi ra một lần — và nằm trọn trong RAM suốt lượt tải.
+// With a store that can serve URLs (S3), sends a 302 to a signed URL: the client downloads
+// directly from the store, so the backend is no longer a pipe. Measured before the change:
+// a 563 KB file going through the backend became 1180 KB — in once and out once — and sat
+// entirely in RAM for the duration of the download.
 //
-// Với kho không phát được URL (đĩa cục bộ), trả về false để người gọi đi đường cũ: đọc bytes
-// rồi ghi vào response.
+// With a store that cannot serve URLs (local disk), returns false so the caller uses the
+// old path: read bytes then write to the response.
 func (h *TasksHandler) serveFromStore(w http.ResponseWriter, r *http.Request, key, format string) bool {
 	ps, ok := storage.Global.(storage.Presigner)
 	if !ok {
@@ -301,21 +312,22 @@ func (h *TasksHandler) serveFromStore(w http.ResponseWriter, r *http.Request, ke
 
 	url, err := ps.PresignGet(r.Context(), key, h.presignTTL)
 	if err != nil {
-		// Ký hỏng không phải lý do để từ chối người dùng: đường đọc bytes vẫn còn đó.
-		log.Printf("Không ký được URL cho %s: %v — trả về qua backend", key, err)
+		// A failed signature is not a reason to deny the user: the bytes-reading path is
+		// still available.
+		log.Printf("Could not sign URL for %s: %v — falling back to backend streaming", key, err)
 		return false
 	}
 
-	// 302 chứ không phải 301: URL này hết hạn sau presignTTL, nên không được cache lại như
-	// một chỗ ở lâu dài.
+	// 302, not 301: this URL expires after presignTTL, so it must not be cached as a
+	// permanent location.
 	w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.`+format+`"`)
 	http.Redirect(w, r, url, http.StatusFound)
 	return true
 }
 
-// safeTaskID chỉ cho phép các ký tự mà UUID/task ID của nền tảng sử dụng.
-// Không dùng filepath.Base để "làm sạch": làm sạch một path độc vẫn có thể trỏ tới tệp
-// ngoài thư mục nếu phần còn lại được ghép tiếp.
+// safeTaskID only allows characters that the platform's UUID/task IDs use.
+// Does not use filepath.Base to "sanitize": sanitizing a malicious path can still point to
+// a file outside the directory if the remainder is further concatenated.
 func safeTaskID(id string) bool {
 	if id == "" || len(id) > 128 {
 		return false
@@ -328,14 +340,15 @@ func safeTaskID(id string) bool {
 	return true
 }
 
-// writeAudio ghi dữ liệu âm thanh kèm Content-Type và tên tập tin đúng định dạng.
+// writeAudio writes audio data with the correct Content-Type and filename.
 func writeAudio(w http.ResponseWriter, data []byte, format string) {
 	w.Header().Set("Content-Type", audio.MimeType(format))
 	w.Header().Set("Content-Disposition", `attachment; filename="tts_studio_audio.`+format+`"`)
 	_, _ = w.Write(data)
 }
 
-// StreamTaskProgress truyền dữ liệu tiến độ thời gian thực (Real-time SSE Stream) qua kết nối HTTP Persistent/Event-Stream.
+// StreamTaskProgress streams real-time progress data via an HTTP Persistent/Event-Stream
+// (SSE) connection.
 func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "task_id")
 
@@ -361,25 +374,26 @@ func (h *TasksHandler) StreamTaskProgress(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	// Gỡ hạn ghi cho riêng luồng này.
+	// Lift the write deadline for this stream alone.
 	//
-	// Server đặt WriteTimeout 120 giây để một client ngậm kết nối không giữ được tài nguyên
-	// mãi. Nhưng hạn đó tính cho cả phản hồi, mà phản hồi ở đây kéo dài đúng bằng công việc
-	// tổng hợp — nên mọi job quá hai phút bị net/http cắt ngang giữa chừng, đúng loại job mà
-	// SSE sinh ra để phục vụ. Trình duyệt thấy luồng vỡ rồi tự kết nối lại, tạo thêm một
-	// luồng nữa cũng sẽ bị cắt.
+	// The server sets WriteTimeout to 120 seconds so a client that holds a connection open
+	// cannot hold resources forever. But that deadline applies to the entire response, and
+	// the response here lasts exactly as long as the synthesis job — so every job longer than
+	// two minutes gets cut off mid-stream by net/http, precisely the kind of job SSE was
+	// created to serve. The browser sees the stream break and reconnects, creating yet another
+	// stream that will also be cut.
 	//
-	// Bỏ hạn ở đây không mất lớp bảo vệ: vòng lặp dưới thoát ngay khi r.Context() huỷ, tức
-	// là khi client ngắt kết nối.
+	// Removing the deadline here does not lose the protection layer: the loop below exits
+	// immediately when r.Context() is cancelled, i.e. when the client disconnects.
 	rc := http.NewResponseController(w)
 	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
-		log.Printf("SSE task %s: không gỡ được hạn ghi (%v); luồng sẽ dừng khi WriteTimeout tới", taskID, err)
+		log.Printf("SSE task %s: could not lift write deadline (%v); stream will stop when WriteTimeout is reached", taskID, err)
 	}
 
 	ch := task.Subscribe()
 	defer task.Unsubscribe(ch)
 
-	// Gửi sự kiện khởi tạo ban đầu
+	// Send the initial event
 	status, _, progress, _ := task.Snapshot()
 	initUpdate := state.TaskUpdate{
 		Status:   status,

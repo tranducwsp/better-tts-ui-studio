@@ -14,13 +14,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-// S3Config là những gì cần để nói chuyện với một kho tương thích S3.
+// S3Config holds everything needed to talk to an S3-compatible store.
 type S3Config struct {
 	Bucket   string
 	Region   string
-	Endpoint string // rỗng với AWS thật; đặt cho MinIO/R2/Spaces
+	Endpoint string // empty for real AWS; set for MinIO/R2/Spaces
 
-	// Bỏ trống cả hai để dùng IAM role (IRSA trên k8s, instance profile trên EC2).
+	// Leave both empty to use an IAM role (IRSA on k8s, instance profile on EC2).
 	AccessKey string
 	SecretKey string
 
@@ -28,7 +28,7 @@ type S3Config struct {
 	Prefix         string
 }
 
-// S3Store lưu đối tượng trên một kho tương thích S3.
+// S3Store stores objects on an S3-compatible store.
 type S3Store struct {
 	client  *s3.Client
 	presign *s3.PresignClient
@@ -36,23 +36,23 @@ type S3Store struct {
 	prefix  string
 }
 
-// NewS3Store dựng client và xác nhận bucket thật sự dùng được.
+// NewS3Store builds the client and confirms the bucket is actually usable.
 //
-// Kiểm bucket ngay lúc khởi tạo chứ không đợi lần ghi đầu: sai thông tin đăng nhập hay gõ
-// nhầm tên bucket mà vẫn khởi động được nghĩa là lỗi chỉ lộ ra khi người dùng đầu tiên tổng
-// hợp xong và không lấy lại được âm thanh — cùng loại hỏng ngầm mà cổng manifest lúc khởi
-// động sinh ra để chặn.
+// Check the bucket at construction time rather than waiting for the first write: wrong
+// credentials or a mistyped bucket name that still starts means the error only surfaces when
+// the first user finishes synthesizing and cannot retrieve their audio — the same class of
+// silent breakage that the startup manifest port check was created to prevent.
 func NewS3Store(ctx context.Context, cfg S3Config) (*S3Store, error) {
 	if strings.TrimSpace(cfg.Bucket) == "" {
-		return nil, errors.New("S3_BUCKET không được để trống khi STORAGE_BACKEND=s3")
+		return nil, errors.New("S3_BUCKET must not be empty when STORAGE_BACKEND=s3")
 	}
 
-	// Một nửa cặp khoá là lỗi cấu hình, không phải ý định: hoặc khai cả hai, hoặc bỏ trống cả
-	// hai để dùng IAM role (IRSA trên k8s, instance profile trên EC2).
+	// Half a key pair is a configuration error, not an intent: either provide both, or leave
+	// both empty to use an IAM role (IRSA on k8s, instance profile on EC2).
 	hasID, hasSecret := cfg.AccessKey != "", cfg.SecretKey != ""
 	if hasID != hasSecret {
-		return nil, errors.New("S3_ACCESS_KEY_ID và S3_SECRET_ACCESS_KEY phải cùng có hoặc cùng trống " +
-			"(bỏ trống cả hai để dùng IAM role)")
+		return nil, errors.New("S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must both be set or both empty " +
+			"(leave both empty to use an IAM role)")
 	}
 
 	opts := []func(*awsconfig.LoadOptions) error{}
@@ -74,8 +74,8 @@ func NewS3Store(ctx context.Context, cfg S3Config) (*S3Store, error) {
 		if cfg.Endpoint != "" {
 			o.BaseEndpoint = aws.String(cfg.Endpoint)
 		}
-		// MinIO và phần lớn kho tự dựng phục vụ theo đường dẫn (endpoint/bucket/key) thay vì
-		// theo tên miền con (bucket.endpoint/key), vì tên miền con cần wildcard DNS.
+		// MinIO and most self-hosted stores serve by path (endpoint/bucket/key) rather than
+		// by subdomain (bucket.endpoint/key), because subdomains require wildcard DNS.
 		o.UsePathStyle = cfg.ForcePathStyle
 	})
 
@@ -92,11 +92,11 @@ func NewS3Store(ctx context.Context, cfg S3Config) (*S3Store, error) {
 	return store, nil
 }
 
-// full ghép tiền tố dùng chung vào khoá, sau khi làm sạch từng đoạn.
+// full prepends the shared prefix to the key, after sanitizing each component.
 //
-// Làm sạch ở đây vì cùng một lý do như bản local: người gọi được kỳ vọng đã kiểm đầu vào,
-// nhưng lớp lưu trữ không nên tin điều đó. Với S3 thì "../" không thoát ra khỏi bucket, nhưng
-// nó tạo ra khoá kỳ dị mà công cụ khác không liệt kê hay xoá được.
+// Sanitization happens here for the same reason as the local backend: the caller is expected
+// to have validated input, but the storage layer should not trust that. With S3, "../" does
+// not escape the bucket, but it creates bizarre keys that other tools cannot list or delete.
 func (s *S3Store) full(key string) string {
 	parts := strings.Split(key, "/")
 	out := make([]string, 0, len(parts)+1)
@@ -112,10 +112,10 @@ func (s *S3Store) full(key string) string {
 	return strings.Join(out, "/")
 }
 
-// isNotFound nhận ra "không có khoá này" giữa các lỗi khác.
+// isNotFound recognizes "key not found" among other errors.
 //
-// S3 trả NoSuchKey cho GetObject nhưng NotFound cho HeadObject, và MinIO không luôn dùng cùng
-// một kiểu — nên kiểm cả hai thay vì tin vào một.
+// S3 returns NoSuchKey for GetObject but NotFound for HeadObject, and MinIO does not always
+// use the same type — so check both instead of trusting one.
 func isNotFound(err error) bool {
 	var nsk *types.NoSuchKey
 	if errors.As(err, &nsk) {
@@ -178,7 +178,7 @@ func (s *S3Store) Exists(ctx context.Context, key string) (bool, error) {
 }
 
 func (s *S3Store) Delete(ctx context.Context, key string) error {
-	// S3 coi việc xoá một khoá không tồn tại là thành công, đúng như hợp đồng của Store.
+	// S3 considers deleting a non-existent key a success, matching the Store contract.
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.full(key)),
@@ -186,10 +186,11 @@ func (s *S3Store) Delete(ctx context.Context, key string) error {
 	return err
 }
 
-// List liệt kê các đối tượng ngay dưới prefix, không đi vào nhánh con.
+// List enumerates objects directly under prefix, without descending into sub-branches.
 //
-// Delimiter "/" giữ đúng ràng buộc mà bản local có sẵn nhờ ReadDir không đệ quy: bộ quét dọn
-// chỉ được đụng vào nhánh temp, và giọng người dùng đã lưu nằm ở nhánh khác.
+// Delimiter "/" preserves the same constraint the local backend gets from non-recursive
+// ReadDir: the sweeper is only allowed to touch the temp branch, and saved user voices live
+// in a different branch.
 func (s *S3Store) List(ctx context.Context, prefix string) ([]ObjectInfo, error) {
 	full := s.full(prefix)
 	if full != "" {
@@ -203,8 +204,8 @@ func (s *S3Store) List(ctx context.Context, prefix string) ([]ObjectInfo, error)
 		Delimiter: aws.String("/"),
 	})
 
-	// Phân trang thay vì một lượt gọi: ListObjectsV2 trả tối đa 1000 khoá, và bỏ qua phần còn
-	// lại nghĩa là bộ quét dọn lặng lẽ không bao giờ chạm tới đuôi danh sách.
+	// Paginate rather than a single call: ListObjectsV2 returns at most 1000 keys, and
+	// ignoring the remainder means the sweeper silently never reaches the tail of the list.
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
@@ -212,7 +213,7 @@ func (s *S3Store) List(ctx context.Context, prefix string) ([]ObjectInfo, error)
 		}
 		for _, o := range page.Contents {
 			key := aws.ToString(o.Key)
-			// Trả lại khoá theo cách người gọi truyền vào, nếu không họ không xoá được nó.
+			// Return the key as the caller provided it, otherwise they cannot delete it.
 			if s.prefix != "" {
 				key = strings.TrimPrefix(key, s.prefix+"/")
 			}
@@ -226,13 +227,15 @@ func (s *S3Store) List(ctx context.Context, prefix string) ([]ObjectInfo, error)
 	return out, nil
 }
 
-// PresignGet ký một URL tải trực tiếp, để client lấy đối tượng không qua backend.
+// PresignGet signs a direct download URL, so the client retrieves the object without going
+// through the backend.
 //
-// Ký bằng chính client đang dùng cho mọi thao tác khác, nên URL mang tên miền trong
-// S3_ENDPOINT. Điều đó đúng khi tên miền ấy vừa gọi được từ backend vừa gọi được từ trình
-// duyệt — trường hợp của một bản ghi DNS-only. Nếu backend nói chuyện với kho qua một địa chỉ
-// chỉ nội bộ (minio.minio.svc.cluster.local, hay một IP đã ghim), URL ký ra sẽ trỏ vào chỗ
-// trình duyệt không tới được; lúc đó cần một endpoint công khai riêng để ký.
+// Signed using the same client used for all other operations, so the URL carries the domain
+// from S3_ENDPOINT. That is correct when that domain is reachable from both the backend and
+// the browser — the case of a DNS-only record. If the backend talks to the store over an
+// internal-only address (minio.minio.svc.cluster.local, or a pinned IP), the signed URL will
+// point to a location the browser cannot reach; in that case a separate public endpoint is
+// needed for signing.
 func (s *S3Store) PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error) {
 	req, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),

@@ -14,25 +14,26 @@ import (
 	"backend/synth"
 )
 
-// Run nhặt job từ hàng đợi và chạy cho tới khi nhận tín hiệu dừng.
-// maxInFlight là trần số job chạy song song trong một worker; tổng tải là số worker nhân giá trị này.
+// Run picks up jobs from the queue and processes them until a stop signal is received.
+// maxInFlight is the cap on concurrent jobs per worker; total load is workers times this value.
 //
-// Không mở cổng nào: worker không phục vụ request, và mở một listener chỉ để healthcheck sẽ
-// tạo ra một bề mặt không ai dùng. Trạng thái của nó nhìn được qua log và qua chính hàng đợi.
+// No ports are opened: the worker does not serve requests, and opening a listener just for
+// healthcheck would create an attack surface no one uses. Its status is observable via logs and
+// via the queue itself.
 func Run(ttsClient *client.CoreTTSClient, maxInFlight int) {
 	if maxInFlight < 1 {
-		log.Fatal("WORKER_MAX_IN_FLIGHT phải lớn hơn 0")
+		log.Fatal("WORKER_MAX_IN_FLIGHT must be greater than 0")
 	}
 	if state.RedisClient == nil {
-		log.Fatal("Worker cần Redis để nhận job, nhưng REDIS_URL chưa cấu hình hoặc không kết nối được.\n" +
-			"Không có Redis thì chạy chế độ web là đủ: nó tự tổng hợp tại chỗ.")
+		log.Fatal("Worker requires Redis to receive jobs, but REDIS_URL is not configured or unreachable.\n" +
+			"Without Redis, running web mode is sufficient: it synthesizes in-process.")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if err := queue.EnsureGroup(ctx); err != nil {
-		log.Fatalf("Không tạo được nhóm tiêu thụ hàng đợi: %v", err)
+		log.Fatalf("Failed to create queue consumer group: %v", err)
 	}
 
 	name := consumerName()
@@ -40,7 +41,7 @@ func Run(ttsClient *client.CoreTTSClient, maxInFlight int) {
 	slots := make(chan struct{}, maxInFlight)
 	var wg sync.WaitGroup
 
-	log.Printf("Worker %q sẵn sàng, tối đa %d job song song", name, maxInFlight)
+	log.Printf("Worker %q ready, max %d concurrent jobs", name, maxInFlight)
 
 	err := queue.Consume(ctx, name, func(jobCtx context.Context, job queue.Job) {
 		select {
@@ -54,25 +55,25 @@ func Run(ttsClient *client.CoreTTSClient, maxInFlight int) {
 			defer wg.Done()
 			defer func() { <-slots }()
 
-			// context.Background chứ không phải jobCtx: khi nhận tín hiệu dừng, job đang chạy
-			// được chạy nốt thay vì bị cắt giữa chừng. Vòng lặp Consume đã dừng nhận job mới,
-			// nên đây là phần đuôi hữu hạn.
+			// context.Background, not jobCtx: when a stop signal arrives, the running job
+			// is allowed to finish instead of being cut off mid-way. The Consume loop has
+			// already stopped accepting new jobs, so this is a bounded tail.
 			synth.Run(context.Background(), ttsClient, job)
 		}()
 	})
 	if err != nil {
-		log.Printf("Vòng đọc hàng đợi dừng: %v", err)
+		log.Printf("Queue read loop stopped: %v", err)
 	}
 
-	log.Println("Đang chờ các job dở dang chạy nốt...")
+	log.Println("Waiting for in-flight jobs to finish...")
 	wg.Wait()
-	log.Println("Worker đã dừng gọn.")
+	log.Println("Worker stopped cleanly.")
 }
 
-// consumerName là tên định danh worker trong nhóm tiêu thụ.
+// consumerName is the worker's identifier within the consumer group.
 //
-// Hostname là tên container trong compose và tên pod trên k8s, nên nó vừa duy nhất giữa các
-// replica vừa truy ngược được về tiến trình thật khi đọc log.
+// Hostname is the container name in compose and the pod name on k8s, so it is both unique
+// across replicas and traceable back to the real process when reading logs.
 func consumerName() string {
 	name, err := os.Hostname()
 	if err != nil || name == "" {

@@ -11,22 +11,23 @@ import (
 	"backend/storage"
 )
 
-// defaultInterval là khoảng giữa hai lượt quét. Thời gian GIỮ tập tin thì do
-// TEMP_AUDIO_RETENTION_HOURS quyết định và truyền vào từ bootstrap.
+// defaultInterval is the interval between two sweep passes. The file RETENTION duration is
+// determined by TEMP_AUDIO_RETENTION_HOURS and passed in from bootstrap.
 const defaultInterval = 1 * time.Hour
 
-// sweepOpTimeout chặn một lượt quét, để bộ quét không treo mãi khi kho ở xa không trả lời.
+// sweepOpTimeout caps a single sweep pass, so the sweeper does not hang forever when a remote
+// store is unresponsive.
 const sweepOpTimeout = 2 * time.Minute
 
-// Run chạy vòng lặp dọn âm thanh tạm và Reconcile chunk mồ côi, giữ tiến trình sống tới khi
-// nhận tín hiệu dừng.
+// Run runs the temp audio cleanup loop and Reconcile orphaned chunks, keeping the process alive
+// until a stop signal is received.
 //
-// Vòng lặp là trách nhiệm của process cron, không phải của storage: lịch và tài nguyên là
-// policy, còn storage chỉ cung cấp SweepTempObjects (thao tác dữ liệu thuần). Các tác vụ nền
-// khác về sau cũng thêm vào đây.
+// The loop is the responsibility of the cron process, not storage: schedule and resources are
+// policy, while storage only provides SweepTempObjects (pure data operation). Other background
+// tasks are added here as they arise.
 //
-// Không có healthcheck endpoint, không có cổng nào. Trạng thái nhìn qua log và qua việc
-// kho temp/ không phình lên.
+// No healthcheck endpoint, no ports. Status is visible through logs and through the fact that
+// the temp/ store does not grow unbounded.
 func Run(store storage.Store, retention, staleAfter time.Duration) {
 	sweep := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), sweepOpTimeout)
@@ -34,11 +35,11 @@ func Run(store storage.Store, retention, staleAfter time.Duration) {
 
 		n, freed, err := storage.SweepTempObjects(ctx, store, retention)
 		if err != nil {
-			log.Printf("Quét dọn âm thanh tạm thất bại: %v", err)
+			log.Printf("Temp audio sweep failed: %v", err)
 			return
 		}
 		if n > 0 {
-			log.Printf("Quét dọn: đã xoá %d tệp, giải phóng %.1f MB", n, float64(freed)/(1024*1024))
+			log.Printf("Sweep: deleted %d files, freed %.1f MB", n, float64(freed)/(1024*1024))
 		}
 	}
 

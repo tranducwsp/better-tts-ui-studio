@@ -15,21 +15,22 @@ import (
 
 type contextKey string
 
-// UserContextKey là key được dùng để lưu đối tượng *sqlc.User vào trong request context.
+// UserContextKey is the key used to store the *sqlc.User object in the request context.
 const UserContextKey = contextKey("current_user")
 
-// AuthMiddleware kiểm tra token JWT từ Cookie hoặc Header, giải mã token và nạp thông tin người dùng từ PostgreSQL vào Request Context.
+// AuthMiddleware validates the JWT token from Cookie or Header, decodes the token, and loads
+// user information from PostgreSQL into the Request Context.
 func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenString := ""
 
-			// 1. Kiểm tra Token từ Cookie "access_token" (ưu tiên tối đa cho Web Frontend)
+			// 1. Check token from "access_token" Cookie (highest priority for Web Frontend)
 			if cookie, err := r.Cookie("access_token"); err == nil {
 				tokenString = cookie.Value
 			}
 
-			// 2. Nếu Cookie trống, kiểm tra Header "Authorization: Bearer <token>" (cho API Clients/Postman)
+			// 2. If Cookie is empty, check "Authorization: Bearer <token>" header (for API Clients/Postman)
 			if tokenString == "" {
 				authHeader := r.Header.Get("Authorization")
 				if authHeader != "" {
@@ -42,7 +43,7 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 					tokenString = strings.TrimPrefix(tokenString, "Bearer ")
 				}
 
-				// Validate JWT token với secret key
+				// Validate JWT token against the secret key
 				claims, err := security.ValidateAccessToken(tokenString, cfg.SecretKey)
 				if err == nil && claims.Username != "" {
 					user, ok := lookupUser(r, claims.Username)
@@ -50,11 +51,11 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 						ctx := context.WithValue(r.Context(), UserContextKey, &user)
 						r = r.WithContext(ctx)
 
-						// Cập nhật trạng thái Online lên Redis (TTL 60s), không chặn request.
+						// Update online status to Redis (TTL 60s), do not block the request.
 						//
-						// Trước đây việc này dùng r.Context(), nên nó vừa nằm trong đường đi của
-						// request vừa bị huỷ giữa lúc ghi nếu client ngắt kết nối — một chỉ báo
-						// phụ trợ không đáng làm cả hai điều đó.
+						// Previously this used r.Context(), so it was both on the request's
+						// critical path and could be cancelled mid-write if the client
+						// disconnected — a secondary indicator that did not deserve either.
 						go state.TouchUserOnline(context.WithoutCancel(r.Context()), user.ID)
 					}
 				}
@@ -65,7 +66,7 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 	}
 }
 
-// lookupUser lấy bản ghi người dùng, ưu tiên cache ngắn hạn trước khi hỏi PostgreSQL.
+// lookupUser fetches the user record, preferring a short-lived cache before querying PostgreSQL.
 func lookupUser(r *http.Request, username string) (sqlc.User, bool) {
 	now := time.Now()
 	if cached, ok := globalUserCache.get(username, now); ok {
@@ -80,13 +81,13 @@ func lookupUser(r *http.Request, username string) (sqlc.User, bool) {
 	return user, true
 }
 
-// GetCurrentUser lấy đối tượng *sqlc.User đã được lưu trong Request Context bởi AuthMiddleware.
+// GetCurrentUser retrieves the *sqlc.User object stored in the Request Context by AuthMiddleware.
 func GetCurrentUser(r *http.Request) (*sqlc.User, bool) {
 	user, ok := r.Context().Value(UserContextKey).(*sqlc.User)
 	return user, ok
 }
 
-// RequireAuth middleware yêu cầu người dùng phải đăng nhập hợp lệ trước khi tiếp tục.
+// RequireAuth middleware requires the user to be properly authenticated before proceeding.
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, ok := GetCurrentUser(r)
@@ -98,7 +99,8 @@ func RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
-// RequireActiveUser middleware yêu cầu người dùng đã đăng nhập VÀ tài khoản đã được Admin phê duyệt (IsApproved = true).
+// RequireActiveUser middleware requires the user to be authenticated AND the account to have
+// been approved by an Admin (IsApproved = true).
 func RequireActiveUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, ok := GetCurrentUser(r)
@@ -114,7 +116,7 @@ func RequireActiveUser(next http.Handler) http.Handler {
 	})
 }
 
-// RequireAdmin middleware yêu cầu người dùng có quyền quản trị viên (Role = "admin").
+// RequireAdmin middleware requires the user to have administrator privileges (Role = "admin").
 func RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, ok := GetCurrentUser(r)

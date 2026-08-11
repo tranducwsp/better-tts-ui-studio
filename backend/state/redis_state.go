@@ -12,39 +12,39 @@ import (
 )
 
 var (
-	// RedisClient kết nối tới Redis Server
+	// RedisClient is the connection to the Redis Server
 	RedisClient *redis.Client
 )
 
-// redisTaskTTL là thời gian sống của trạng thái task và bytes âm thanh trên Redis.
+// redisTaskTTL is the time-to-live for task state and audio bytes on Redis.
 const redisTaskTTL = 1 * time.Hour
 
-// taskRetention là tuổi tối thiểu trước khi một task đã kết thúc được thu hồi khỏi RAM.
-// Có thể tùy chỉnh bằng biến ENV TASK_MEMORY_RETENTION_SECONDS (đặt 0 để tắt In-Memory Cache).
+// taskRetention is the minimum age before a finished task is evicted from RAM.
+// Can be customized via the TASK_MEMORY_RETENTION_SECONDS env var (set to 0 to disable the In-Memory Cache).
 var taskRetention = 10 * time.Minute
 
-// ConfigureTaskRetention cập nhật thời gian giữ task trong RAM từ cấu hình ENV.
+// ConfigureTaskRetention updates the task retention time in RAM from env config.
 func ConfigureTaskRetention(d time.Duration) {
 	taskRetention = d
 	if d == 0 {
-		log.Println("⚡ In-Memory Task Cache bị TẮT (TASK_MEMORY_RETENTION_SECONDS=0): Task hoàn thành sẽ được giải phóng khỏi RAM ngay sau khi xử lý.")
+		log.Println("⚡ In-Memory Task Cache DISABLED (TASK_MEMORY_RETENTION_SECONDS=0): Completed tasks will be freed from RAM immediately after processing.")
 	} else {
-		log.Printf("🧠 In-Memory Task Cache retention được cấu hình: %v", d)
+		log.Printf("🧠 In-Memory Task Cache retention configured: %v", d)
 	}
 }
 
-// taskMaxLifetime là trần tuyệt đối cho một task ở trong RAM, kể cả khi chưa kết thúc.
+// taskMaxLifetime is the absolute ceiling for a task in RAM, even if it has not finished.
 const taskMaxLifetime = 2 * time.Hour
 
-// taskRedisTimeout chặn thời gian một lượt đọc/ghi trạng thái task trên Redis.
+// taskRedisTimeout caps the time for a single read/write of task state on Redis.
 const taskRedisTimeout = 100 * time.Millisecond
 
-// InitRedis khởi tạo kết nối Redis Client từ cấu hình ENV.
+// InitRedis initializes the Redis Client connection from env config.
 func InitRedis(cfg *config.Config) {
 	ConfigureTaskRetention(time.Duration(cfg.TaskMemoryRetentionSeconds) * time.Second)
 
 	if cfg.RedisURL == "" {
-		log.Println("RedisURL không được cấu hình, TaskManager sử dụng In-Memory Mode.")
+		log.Println("RedisURL is not configured, TaskManager using In-Memory Mode.")
 		return
 	}
 
@@ -58,22 +58,22 @@ func InitRedis(cfg *config.Config) {
 	defer cancel()
 
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Printf("Warning: Khong the ket noi den Redis server (%v). Fallback sang In-Memory Mode.", err)
+		log.Printf("Warning: Cannot connect to Redis server (%v). Falling back to In-Memory Mode.", err)
 		return
 	}
 
 	RedisClient = rdb
-	log.Printf("Ket noi Redis thanh cong tai %s! Hệ thống đã chuyển sang Stateless Multi-Node Ready.", cfg.RedisURL)
+	log.Printf("Connected to Redis successfully at %s! System is now Stateless Multi-Node Ready.", cfg.RedisURL)
 }
 
-// TouchUserOnline gia hạn trạng thái Online của người dùng trong Redis với TTL 60 giây.
+// TouchUserOnline refreshes the user's Online status in Redis with a 60-second TTL.
 func TouchUserOnline(ctx context.Context, userID string) {
 	if RedisClient != nil && userID != "" {
 		_ = RedisClient.Set(ctx, "user:online:"+userID, "1", 60*time.Second).Err()
 	}
 }
 
-// IsUserOnline kiểm tra người dùng có đang Online hay không dựa trên Redis Key.
+// IsUserOnline checks whether a user is Online based on the Redis Key.
 func IsUserOnline(ctx context.Context, userID string) bool {
 	if RedisClient != nil && userID != "" {
 		val, err := RedisClient.Exists(ctx, "user:online:"+userID).Result()
@@ -82,17 +82,17 @@ func IsUserOnline(ctx context.Context, userID string) bool {
 	return false
 }
 
-// OnlineUsers cho biết những ai trong danh sách đang Online, trong MỘT lượt đi lại.
+// OnlineUsers reports which users in the list are Online, in a SINGLE round trip.
 //
-// Tách khỏi IsUserOnline vì trang quản trị hỏi cho cả bảng người dùng: gọi hàm kia trong vòng
-// lặp là một round-trip cho mỗi hàng, và độ trễ của trang tỉ lệ thuận với số người dùng —
-// đúng lúc Redis nằm ở máy khác thì thấy rõ nhất.
+// Separated from IsUserOnline because the admin page queries the entire user table:
+// calling that function in a loop is one round-trip per row, and page latency scales
+// with the number of users — most noticeable when Redis is on a different machine.
 //
-// MGET thay vì nhiều EXISTS: một lệnh, một lượt chờ mạng. Khoá không tồn tại trả nil, nên
-// "có giá trị" chính là "đang online".
+// MGET instead of multiple EXISTS: one command, one network wait. Missing keys return
+// nil, so "has a value" means "is online".
 //
-// Đóng khung thời gian như mọi lượt đọc Redis khác trên đường đi của request: trạng thái
-// online là thông tin trang trí, không đáng để giữ một request lại khi Redis chậm.
+// Time-bound like every other Redis read on the request path: online status is
+// decorative information, not worth holding up a request when Redis is slow.
 func OnlineUsers(ctx context.Context, userIDs []string) map[string]bool {
 	online := make(map[string]bool, len(userIDs))
 	if RedisClient == nil || len(userIDs) == 0 {

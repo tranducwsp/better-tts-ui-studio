@@ -14,20 +14,20 @@ import (
 	"github.com/go-chi/cors"
 )
 
-// Hạn mức riêng của /extract-text — endpoint nặng nhất của backend.
+// Dedicated limits for /extract-text — the heaviest backend endpoint.
 //
-// Mỗi request bóc chữ giữ tới ~32 MiB RAM (xem phần trần trong handlers/utils.go), nên một
-// loạt request cùng lúc nhân lượng bộ nhớ đó lên: đây là chốt chặn global cuối cùng, không thể
-// điều khiển bằng input hay tài khoản. Rate-limit theo user thì thoáng (20 lượt/10 phút) để
-// hàng nghìn người dùng hợp lệ đều đi qua được — nó chỉ có nhiệm vụ chặn một người giữ vòng
-// lặp gọi liên tục, cúp cầu hay không.
+// Each text extraction request holds up to ~32 MiB RAM (see the ceiling in handlers/utils.go),
+// so a burst of concurrent requests multiplies that memory usage: this is the final global
+// throttle, uncontrollable by input or account. The per-user rate limit is generous (20
+// requests/10 min) so thousands of legitimate users all get through — its only job is to stop
+// one person from looping calls continuously, whether they mean to or not.
 const (
 	extractMaxConcurrent     = 8
 	extractRateLimitRequests = 20
 	extractRateLimitWindow   = 10 * time.Minute
 )
 
-// NewRouter tạo và cấu hình toàn bộ HTTP Router (go-chi) kèm Middlewares và API Endpoints.
+// NewRouter creates and configures the full HTTP Router (go-chi) with Middlewares and API Endpoints.
 func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler {
 	r := chi.NewRouter()
 
@@ -77,15 +77,17 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 	engineSyncHandler := handlers.NewEngineSyncHandler(ttsClient, cfg.FEBuilderURL)
 
 	r.Route("/api", func(r chi.Router) {
-		// Cap body của mọi payload JSON/text (C3). Tác dụng phụ có lợi: với Content-Length
-		// vượt trần, chi trả lỗi 413 ngay khi ghi chứ không phải sau khi handler xử lý xong.
+		// Cap the body of every JSON/text payload (C3). Beneficial side effect: with
+		// Content-Length exceeding the limit, chi returns 413 immediately upon writing
+		// rather than after the handler finishes processing.
 		r.Use(middleware.BodyLimit)
 
 		// Public Auth & Engine Info routes
 		r.Get("/info", handlers.GetEngineInfo)
 
-		// Chỉ các route cần bảo vệ dò mật khẩu / tạo rác mới nằm trong nhóm này. Mỗi nhóm
-		// có khoá Redis riêng (scope khác nhau), nên refresh không ăn budget của login.
+		// Only routes that need password-guessing / spam protection go in this group. Each
+		// group has its own Redis key (different scope), so refresh doesn't eat login's
+		// budget.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RateLimit("auth", cfg.AuthRateLimitRequests, time.Duration(cfg.AuthRateLimitWindowSeconds)*time.Second))
 
@@ -93,18 +95,19 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 			r.Post("/login", authHandler.Login)
 		})
 
-		// Refresh có budget riêng: frontend gọi nó trên mỗi lần tải trang (kể cả khi chưa
-		// đăng nhập), gộp chung với login sẽ làm cạn budget của chính người dùng.
+		// Refresh has its own budget: the frontend calls it on every page load (even when
+		// not logged in); sharing a bucket with login would drain the user's own budget.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RateLimit("refresh", cfg.AuthRateLimitRequests, time.Duration(cfg.AuthRateLimitWindowSeconds)*time.Second))
 
-			// Refresh chỉ đọc refresh_token từ HttpOnly cookie. Không nhận refresh token trong
-			// Authorization header hay body.
+			// Refresh only reads the refresh_token from an HttpOnly cookie. It does not
+			// accept a refresh token in the Authorization header or body.
 			r.Post("/auth/refresh", authHandler.Refresh)
 		})
 
-		// Logout phải ở cùng scope Path=/api/auth với refresh cookie để cookie được gửi tới
-		// logout — server cần nó để thu hồi phiên phía DB.
+		// Logout must share the same Path=/api/auth scope as the refresh cookie so the
+		// cookie is sent to logout — the server needs it to revoke the session on the DB
+		// side.
 		r.Post("/auth/logout", authHandler.Logout)
 
 		// Protected routes (Require active/approved user)
@@ -113,7 +116,7 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 
 			r.Get("/me", authHandler.Me)
 
-			// Universal Gateway Dynamic Endpoints (bắt buộc trích xuất theo model_id)
+			// Universal Gateway Dynamic Endpoints (require model_id extraction)
 			r.Get("/voices/{model_id}", unifiedHandler.GetVoices)
 			r.Post("/synthesize/{model_id}", unifiedHandler.Synthesize)
 
@@ -134,10 +137,11 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 			r.Get("/tasks/{task_id}/audio", tasksHandler.GetTaskAudio)
 			r.Get("/stream/tasks/{task_id}", tasksHandler.StreamTaskProgress)
 
-			// Utils — /extract-text có hai lớp bảo vệ riêng, không áp dụng cho route khác:
-			//   * ConcurrencyLimit dừng lượng bộ nhớ tổng (mỗi request ~32 MiB),
-			//   * RateLimitUser khoá theo user đã xác thực (fallback IP) để một tài khoản
-			//     giữ chu kỳ gọi không ăn hết chỗ của những người dùng khác.
+			// Utils — /extract-text has two dedicated protection layers, not applied to
+			// other routes:
+			//   * ConcurrencyLimit caps total memory usage (each request ~32 MiB),
+			//   * RateLimitUser locks per authenticated user (IP fallback) so one account
+			//     looping calls doesn't consume all slots from other users.
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.ConcurrencyLimit(extractMaxConcurrent))
 				r.Use(middleware.RateLimitUser("extract", extractRateLimitRequests, extractRateLimitWindow))
@@ -149,12 +153,12 @@ func NewRouter(cfg *config.Config, ttsClient *client.CoreTTSClient) http.Handler
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdmin)
 
-			// Reload Manifest nằm ở đây, không ở nhóm public.
+			// Reload Manifest lives here, not in the public group.
 			//
-			// Tiền tố "internal" chỉ là quy ước đặt tên, không phải một lớp bảo vệ: route này
-			// từng mở cho mọi người, và mỗi lần gọi vừa thay Manifest đang dùng vừa bắn một
-			// webhook rebuild sang FE Builder — nên gọi nó trong vòng lặp là hạ cả engine lẫn
-			// builder mà không cần đăng nhập.
+			// The "internal" prefix is just a naming convention, not a protection layer:
+			// this route was once open to everyone, and each call both replaces the active
+			// Manifest and fires a rebuild webhook to FE Builder — so calling it in a loop
+			// would take down both the engine and the builder without logging in.
 			r.Post("/internal/engine/reload", engineSyncHandler.ReloadManifest)
 
 			r.Get("/admin/users", authHandler.GetUsers)

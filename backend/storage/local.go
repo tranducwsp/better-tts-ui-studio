@@ -8,12 +8,12 @@ import (
 	"strings"
 )
 
-// LocalStore lưu đối tượng thành tệp dưới một thư mục gốc.
+// LocalStore stores objects as files under a root directory.
 type LocalStore struct {
 	root string
 }
 
-// NewLocalStore chốt thư mục gốc và đảm bảo nó tồn tại.
+// NewLocalStore pins the root directory and ensures it exists.
 func NewLocalStore(root string) (*LocalStore, error) {
 	if root == "" {
 		root = "storage"
@@ -28,13 +28,14 @@ func NewLocalStore(root string) (*LocalStore, error) {
 	return &LocalStore{root: abs}, nil
 }
 
-// resolve đổi một khoá thành đường dẫn tuyệt đối, và từ chối khoá thoát khỏi gốc.
+// resolve converts a key to an absolute path, and rejects keys that escape the root.
 //
-// Hai lớp, vì mỗi lớp bắt một thứ khác nhau. safeSegment làm sạch từng đoạn nên "../" không
-// sống sót qua nó. Phép kiểm prefix sau đó là lưới an toàn cho những gì lớp đầu chưa nghĩ tới
-// — symlink, khoá tuyệt đối, hay một lần sửa sau này làm hỏng hàm làm sạch. Chi phí là một
-// lần so chuỗi trên mỗi thao tác; cái giá của việc thiếu nó là ghi tệp ra ngoài thư mục
-// storage, đúng lỗ hổng đã vá ở đường upload.
+// Two layers, because each catches something different. safeSegment cleans each component so
+// "../" does not survive it. The prefix check afterwards is a safety net for what the first
+// layer did not anticipate — symlinks, absolute keys, or a future edit that breaks the
+// sanitizer. The cost is one string comparison per operation; the cost of not having it is
+// writing files outside the storage directory, the exact vulnerability patched in the upload
+// path.
 func (s *LocalStore) resolve(key string) (string, error) {
 	clean := path(key)
 	if clean == "" {
@@ -49,7 +50,7 @@ func (s *LocalStore) resolve(key string) (string, error) {
 	return full, nil
 }
 
-// path làm sạch từng đoạn của khoá và ghép lại theo dấu phân cách của hệ điều hành.
+// path sanitizes each component of the key and joins them with the OS separator.
 func path(key string) string {
 	parts := strings.Split(key, "/")
 	out := make([]string, 0, len(parts))
@@ -71,9 +72,10 @@ func (s *LocalStore) Put(_ context.Context, key string, src io.Reader) error {
 		return err
 	}
 
-	// Ghi ra tệp tạm rồi đổi tên: rename trong cùng một thư mục là thao tác nguyên tử trên
-	// POSIX, nên người đọc thấy hoặc bản cũ hoặc bản mới trọn vẹn, không bao giờ thấy một tệp
-	// đang viết dở. Không có nó, một lượt tải trùng đúng lúc ghi sẽ nhận được đoạn âm thanh cụt.
+	// Write to a temp file then rename: rename within the same directory is an atomic
+	// operation on POSIX, so readers see either the full old version or the full new version,
+	// never a partially-written file. Without this, a concurrent download during a write
+	// would receive a truncated audio segment.
 	tmp, err := os.CreateTemp(filepath.Dir(full), ".tmp-*")
 	if err != nil {
 		return err
@@ -81,7 +83,7 @@ func (s *LocalStore) Put(_ context.Context, key string, src io.Reader) error {
 	tmpName := tmp.Name()
 	defer func() {
 		tmp.Close()
-		os.Remove(tmpName) // không sao nếu rename đã thành công
+		os.Remove(tmpName) // no-op if rename has already succeeded
 	}()
 
 	if _, err := io.Copy(tmp, src); err != nil {
@@ -146,10 +148,11 @@ func (s *LocalStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
-// List quét đúng một cấp dưới prefix và bỏ qua thư mục con.
+// List scans exactly one level below prefix and skips subdirectories.
 //
-// Không đệ quy có chủ ý: người gọi duy nhất là bộ quét dọn, mà nó chỉ được phép đụng vào
-// temp/ — giọng người dùng đã lưu nằm ở nhánh khác và một lần đệ quy nhầm sẽ xoá chúng.
+// Non-recursive by design: the only caller is the sweeper, and it is only allowed to touch
+// temp/ — saved user voices live in a different branch and a mistaken recursive scan would
+// delete them.
 func (s *LocalStore) List(_ context.Context, prefix string) ([]ObjectInfo, error) {
 	dir, err := s.resolve(prefix)
 	if err != nil {
@@ -159,7 +162,7 @@ func (s *LocalStore) List(_ context.Context, prefix string) ([]ObjectInfo, error
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil // chưa có gì được ghi
+			return nil, nil // nothing has been written yet
 		}
 		return nil, err
 	}
@@ -171,7 +174,7 @@ func (s *LocalStore) List(_ context.Context, prefix string) ([]ObjectInfo, error
 		}
 		info, err := e.Info()
 		if err != nil {
-			continue // tệp vừa bị xoá giữa lúc quét
+			continue // file was deleted between the scan
 		}
 		out = append(out, ObjectInfo{
 			Key:      strings.TrimPrefix(prefix+"/"+e.Name(), "/"),

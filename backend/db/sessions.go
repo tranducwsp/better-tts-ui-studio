@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// CreateAuthSession ghi một refresh token mới (jti) thuộc về một phiên đăng nhập (family).
+// CreateAuthSession writes a new refresh token (jti) belonging to a login session (family).
 func CreateAuthSession(ctx context.Context, jti, familyID, userID string, expiresAt time.Time, ua, ip string) error {
 	_, err := Queries.CreateAuthSession(ctx, sqlc.CreateAuthSessionParams{
 		ID:              jti,
@@ -22,8 +22,8 @@ func CreateAuthSession(ctx context.Context, jti, familyID, userID string, expire
 	return err
 }
 
-// GetAuthSession trả về dòng session của một refresh token. Lỗi là ErrNoRows khi jti chưa
-// từng tồn tại (token giả hoặc đã bị xoá) — handler phải từ chối 401.
+// GetAuthSession returns the session row for a refresh token. The error is ErrNoRows when the
+// jti never existed (fake token or already deleted) — the handler must reject with 401.
 func GetAuthSession(ctx context.Context, jti string) (*sqlc.AuthSession, error) {
 	s, err := Queries.GetAuthSession(ctx, jti)
 	if err != nil {
@@ -32,11 +32,12 @@ func GetAuthSession(ctx context.Context, jti string) (*sqlc.AuthSession, error) 
 	return &s, nil
 }
 
-// RotateRefreshSession thay token cũ bằng token mới trong cùng family, trong MỘT transaction.
+// RotateRefreshSession replaces the old token with a new one in the same family, in ONE
+// transaction.
 //
-// Hai lệnh ghi phải đi cùng nhau: tạo token mới rồi mới đánh dấu token cũ, để nếu bước nào
-// hỏng thì family vẫn giữ đúng một token sống — không để xảy ra trạng thái hai token cùng hợp
-// lệ hoặc token cũ chết mà token mới không ra đời.
+// The two writes must go together: create the new token first, then mark the old one, so if
+// either step fails the family still holds exactly one live token — no state where two tokens
+// are both valid, or the old token is dead but the new one was never born.
 func RotateRefreshSession(ctx context.Context, oldJTI, familyID, userID, newJTI string, expiresAt time.Time, ua, ip string) error {
 	tx, err := Pool.Begin(ctx)
 	if err != nil {
@@ -64,12 +65,12 @@ func RotateRefreshSession(ctx context.Context, oldJTI, familyID, userID, newJTI 
 	return tx.Commit(ctx)
 }
 
-// RevokeAuthSession thu hồi token đang dùng (logout của thiết bị đó).
+// RevokeAuthSession revokes the current token (logout from that device).
 func RevokeAuthSession(ctx context.Context, jti string) (int64, error) {
 	return Queries.RevokeAuthSession(ctx, jti)
 }
 
-// DeleteExpiredAuthSessions xoá mọi phiên đã quá hạn. Gọi opportunistic tại login.
+// DeleteExpiredAuthSessions deletes all expired sessions. Called opportunistically at login.
 func DeleteExpiredAuthSessions(ctx context.Context) (int64, error) {
 	return Queries.DeleteExpiredAuthSessions(ctx)
 }

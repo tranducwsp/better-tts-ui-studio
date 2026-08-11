@@ -20,9 +20,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// firstCloningMode trả về Mode đầu tiên mà Manifest khai là hỗ trợ cloning, dùng khi client
-// không gửi model_id. Trả về chuỗi rỗng nếu Manifest chưa nạp hoặc không Mode nào hỗ trợ —
-// tốt hơn là gán một tên bịa mà về sau không truy vấn lại được.
+// firstCloningMode returns the first Mode declared by the Manifest as supporting cloning,
+// used when the client does not send model_id. Returns an empty string if the Manifest is
+// not loaded or no Mode supports cloning — better than assigning a made-up name that
+// cannot be queried later.
 func firstCloningMode() string {
 	m := state.GlobalManifestState.Get()
 	if m == nil {
@@ -36,16 +37,16 @@ func firstCloningMode() string {
 	return ""
 }
 
-// reservedVoiceFields là các trường do hệ thống dùng riêng, không đi vào metadata JSONB.
+// reservedVoiceFields are fields reserved by the system, not stored in the JSONB metadata.
 var reservedVoiceFields = map[string]bool{
 	"name": true, "model_id": true, "file": true,
 }
 
-// extraMetadata gom mọi trường form ngoài các trường đã có cột riêng thành JSON.
+// extraMetadata collects every form field outside the dedicated columns into JSON.
 //
-// voice_metadata_schema cho phép Engine khai bất kỳ trường nào; nền tảng không thể biết
-// trước tên chúng, nên chỗ lưu phải là schema-less. Trả về "{}" khi không có gì thêm, vì
-// cột được khai NOT NULL DEFAULT '{}'.
+// voice_metadata_schema allows the Engine to declare arbitrary fields; the platform cannot
+// know their names in advance, so the storage must be schema-less. Returns "{}" when there
+// is nothing extra, because the column is declared NOT NULL DEFAULT '{}'.
 func extraMetadata(r *http.Request) []byte {
 	if r.MultipartForm == nil {
 		return []byte("{}")
@@ -69,18 +70,19 @@ func extraMetadata(r *http.Request) []byte {
 	return raw
 }
 
-// TTSCloneHandler xử lý các API liên quan đến Voice Cloning (Tải mẫu giọng mẫu, quản lý giọng và tổng hợp tiếng nói theo mẫu giọng).
+// TTSCloneHandler handles Voice Cloning related APIs (uploading voice samples, managing
+// voices, and synthesizing speech with cloned voices).
 type TTSCloneHandler struct {
 	TTSClient *client.CoreTTSClient
 	Config    *config.Config
 }
 
-// NewTTSCloneHandler khởi tạo TTSCloneHandler với CoreTTSClient và cấu hình.
+// NewTTSCloneHandler initializes a TTSCloneHandler with a CoreTTSClient and configuration.
 func NewTTSCloneHandler(ttsClient *client.CoreTTSClient, cfg *config.Config) *TTSCloneHandler {
 	return &TTSCloneHandler{TTSClient: ttsClient, Config: cfg}
 }
 
-// UploadVoice tải file âm thanh mẫu để nhân bản (clone) giọng nói lâu dài cho tài khoản người dùng.
+// UploadVoice uploads a reference audio file to permanently clone a voice for the user's account.
 func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := currentUser(w, r)
@@ -92,17 +94,17 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// Part spill ra đĩa (file > multipartMemoryLimit) cần được xoá sau khi stream xong. Gọi
-	// cuối handler, sau khi mọi luồng đã đọc; part nằm trong RAM thì RemoveAll chỉ thu hồi
-	// bộ nhớ, không có gì rơi vãi.
+	// Parts spilled to disk (files > multipartMemoryLimit) must be cleaned up after streaming
+	// finishes. Called at the end of the handler, after every stream has been read; parts in
+	// RAM only have their memory reclaimed by RemoveAll, nothing leaked.
 	defer cleanupMultipartForm(r)
 
-	// Kiểm trước khi đọc tệp: đây là kiểm rẻ nhất, và nuốt hết một tệp lớn vào RAM để rồi
-	// từ chối vì thiếu tên giọng là lãng phí băng thông của người dùng cho một câu trả lời
-	// đã biết trước.
+	// Check before reading the file: this is the cheapest check, and swallowing a large file
+	// into RAM only to reject it for missing a voice name wastes the user's bandwidth for a
+	// response already known in advance.
 	name := r.FormValue("name")
 	if name == "" {
-		writeError(w, http.StatusBadRequest, "Tên giọng là bắt buộc")
+		writeError(w, http.StatusBadRequest, "Voice name is required")
 		return
 	}
 
@@ -122,36 +124,38 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	}
 	voiceKey := storage.VoiceKey(upload.ModelID, user.ID, cloneID+"."+ext)
 
-	// Kho đầy hay hết quota trước đây vẫn đi tiếp và báo "Nhân bản giọng thành công!", đồng
-	// thời ghi một bản ghi trỏ tới tệp không tồn tại — người dùng chỉ phát hiện khi chọn dùng
-	// giọng đó, ở một lần khác và một thông báo lỗi không liên quan.
+	// A full storage or exhausted quota would previously continue and report "Voice cloned
+	// successfully!", while writing a record pointing to a non-existent file — the user only
+	// discovers it when selecting that voice, on a different occasion and with an unrelated
+	// error message.
 	if err := storage.Global.Put(r.Context(), voiceKey, upload.File); err != nil {
-		log.Printf("Không ghi được tệp giọng %s: %v", voiceKey, err)
-		writeError(w, http.StatusInternalServerError, "Không lưu được giọng vào kho")
+		log.Printf("Failed to write voice file %s: %v", voiceKey, err)
+		writeError(w, http.StatusInternalServerError, "Failed to save voice to storage")
 		return
 	}
 
-	// storage.Put đã đọc hết File; đưa con trỏ về 0 để gửi tiếp sang engine. multipart.File
-	// cũng là io.Seeker, không cần nạp lại từ đầu.
+	// storage.Put has fully consumed File; rewind the pointer to send it onward to the engine.
+	// multipart.File is also an io.Seeker, no need to reload from scratch.
 	if _, err := upload.File.Seek(0, io.SeekStart); err != nil {
-		log.Printf("Không đọc lại được tệp giọng %s để gửi engine: %v", voiceKey, err)
+		log.Printf("Failed to re-read voice file %s for sending to engine: %v", voiceKey, err)
 		_ = storage.Global.Delete(r.Context(), voiceKey)
-		writeError(w, http.StatusInternalServerError, "Không đọc được tệp giọng")
+		writeError(w, http.StatusInternalServerError, "Failed to read voice file")
 		return
 	}
 
 	// 2. Send file to Core TTS Service to extract feature embeddings
 	//
-	// Tệp vừa ghi được dọn nếu các bước sau thất bại: không có bản ghi nào trỏ tới nó, nên để
-	// lại thì nó là rác vô hình mà bộ quét dọn (chỉ nhìn storage/temp) không bao giờ thu hồi.
+	// The file just written is cleaned up if subsequent steps fail: no record points to it,
+	// so leaving it behind is invisible garbage that the scanner (only looking at storage/temp)
+	// will never reclaim.
 	res, err := h.TTSClient.CloneVoice(upload.File, upload.Filename, name)
 	if err != nil {
 		_ = storage.Global.Delete(r.Context(), voiceKey)
-		// Lỗi của Engine chỉ vào log. Trả err.Error() thẳng ra ngoài sẽ lộ tên máy, cổng và
-		// chi tiết nội bộ của một dịch vụ mà người dùng không gọi trực tiếp — phần còn lại
-		// của mã nguồn đã nhất quán trả thông báo chung, đây là chỗ sót.
-		log.Printf("Engine không nhân bản được giọng %q: %v", name, err)
-		writeError(w, http.StatusBadGateway, "Không nhân bản được giọng, vui lòng thử lại")
+		// Engine errors go to the log only. Returning err.Error() directly would expose the
+		// hostname, port, and internal details of a service the user does not call directly —
+		// the rest of the codebase consistently returns generic messages; this was a gap.
+		log.Printf("Engine failed to clone voice %q: %v", name, err)
+		writeError(w, http.StatusBadGateway, "Failed to clone voice, please try again")
 		return
 	}
 
@@ -173,18 +177,18 @@ func (h *TTSCloneHandler) UploadVoice(w http.ResponseWriter, r *http.Request) {
 	_, err = db.Queries.CreateUserVoice(r.Context(), params)
 	if err != nil {
 		_ = storage.Global.Delete(r.Context(), voiceKey)
-		log.Printf("Không lưu được bản ghi giọng %s: %v", coreCloneID, err)
-		writeError(w, http.StatusInternalServerError, "Không lưu được giọng vào cơ sở dữ liệu")
+		log.Printf("Failed to save voice record %s: %v", coreCloneID, err)
+		writeError(w, http.StatusInternalServerError, "Failed to save voice to database")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"clone_id": coreCloneID,
-		"message":  "Nhân bản giọng thành công!",
+		"message":  "Voice cloned successfully!",
 	})
 }
 
-// UploadTempVoice tải giọng mẫu tạm thời (không lưu vào lịch sử DB).
+// UploadTempVoice uploads a temporary voice sample (not saved to DB history).
 func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if _, ok := currentUser(w, r); !ok {
@@ -205,8 +209,8 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 
 	res, err := h.TTSClient.CloneVoice(upload.File, upload.Filename, "temp_voice")
 	if err != nil {
-		log.Printf("Engine không nạp được giọng tạm: %v", err)
-		writeError(w, http.StatusBadGateway, "Không nạp được giọng, vui lòng thử lại")
+		log.Printf("Engine failed to load temporary voice: %v", err)
+		writeError(w, http.StatusBadGateway, "Failed to load voice, please try again")
 		return
 	}
 
@@ -217,18 +221,19 @@ func (h *TTSCloneHandler) UploadTempVoice(w http.ResponseWriter, r *http.Request
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"clone_id": cloneID,
-		"message":  "Nạp giọng tạm thành công!",
+		"message":  "Temporary voice loaded successfully!",
 	})
 }
 
-// storageKey đổi giá trị FilePath trong DB thành khoá của kho.
+// storageKey converts the FilePath value in the DB into a storage key.
 //
-// Bản ghi tạo trước khi tầng lưu trữ tách thành interface mang đường dẫn hệ thống đầy đủ
-// ("storage/clone/<user>/voice/x.wav"), còn bản ghi mới mang khoá ("clone/<user>/voice/x.wav").
-// Bỏ đúng một tiền tố gốc nếu có, nên cả hai dạng đều xoá được — không có bước này thì mọi
-// giọng lưu trước lần đổi này nằm lại trong kho vĩnh viễn.
+// Records created before the storage tier was abstracted into an interface carry full system
+// paths ("storage/clone/<user>/voice/x.wav"), while newer records carry keys
+// ("clone/<user>/voice/x.wav"). Strips exactly one root prefix if present, so both forms
+// are deletable — without this step, every voice stored before the change would remain in
+// storage forever.
 //
-// Cũng đổi dấu phân cách của Windows sang "/" vì khoá luôn dùng "/".
+// Also converts Windows path separators to "/" because keys always use "/".
 func storageKey(filePath string) string {
 	key := filepath.ToSlash(filePath)
 	if root := filepath.ToSlash(storage.Root()); root != "" {
@@ -237,7 +242,7 @@ func storageKey(filePath string) string {
 	return strings.TrimPrefix(key, "/")
 }
 
-// UserVoiceResponse cấu trúc phản hồi danh sách giọng nhân bản của người dùng.
+// UserVoiceResponse is the response structure for the user's cloned voice list.
 type UserVoiceResponse struct {
 	ID        string            `json:"id"`
 	Name      string            `json:"name"`
@@ -245,7 +250,7 @@ type UserVoiceResponse struct {
 	CreatedAt string            `json:"created_at"`
 }
 
-// GetUserVoices lấy danh sách tất cả các giọng nhân bản của người dùng hiện tại (lọc theo model_id nếu có).
+// GetUserVoices retrieves all cloned voices for the current user (filtered by model_id if provided).
 func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := currentUser(w, r)
@@ -268,13 +273,13 @@ func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) 
 
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi CSDL"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Database error"})
 		return
 	}
 
 	res := make([]UserVoiceResponse, len(voices))
 	for i, v := range voices {
-		// Giải mã metadata JSONB thành map
+		// Decode JSONB metadata into a map
 		meta := map[string]string{}
 		if len(v.Metadata) > 0 && string(v.Metadata) != "{}" {
 			_ = sonic.Unmarshal(v.Metadata, &meta)
@@ -295,7 +300,7 @@ func (h *TTSCloneHandler) GetUserVoices(w http.ResponseWriter, r *http.Request) 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(res)
 }
 
-// DeleteUserVoice xóa một giọng nhân bản khỏi CSDL, đĩa cứng và AI Engine.
+// DeleteUserVoice deletes a cloned voice from the database, disk, and AI Engine.
 func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := currentUser(w, r)
@@ -310,33 +315,34 @@ func (h *TTSCloneHandler) DeleteUserVoice(w http.ResponseWriter, r *http.Request
 	})
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Không tìm thấy giọng"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Voice not found"})
 		return
 	}
 
-	// Xoá bản ghi TRƯỚC tệp: nếu câu lệnh này lỗi thì tệp vẫn còn và người dùng thử lại được.
-	// Thứ tự ngược lại — xoá tệp trước rồi bỏ qua lỗi DB — để lại một bản ghi trỏ tới tệp
-	// không tồn tại, mà giao diện vẫn liệt kê như một giọng dùng được.
+	// Delete the record BEFORE the file: if this statement errors, the file is still intact
+	// and the user can retry. The reverse order — deleting the file first then ignoring a DB
+	// error — leaves a record pointing to a non-existent file, which the UI still lists as a
+	// usable voice.
 	if err := db.Queries.DeleteUserVoice(r.Context(), sqlc.DeleteUserVoiceParams{
 		ID:     cloneID,
 		UserID: user.ID,
 	}); err != nil {
-		log.Printf("Không xoá được bản ghi giọng %s: %v", cloneID, err)
-		writeError(w, http.StatusInternalServerError, "Không xoá được giọng")
+		log.Printf("Failed to delete voice record %s: %v", cloneID, err)
+		writeError(w, http.StatusInternalServerError, "Failed to delete voice")
 		return
 	}
 
-	// Tệp không xoá được chỉ còn là rác trong kho, không còn ảnh hưởng tới người dùng — nên
-	// ghi log rồi báo thành công, vì với họ giọng đó đã biến mất thật.
+	// A file that cannot be deleted is just leftover garbage in storage, no longer affecting
+	// the user — so log it and report success, because to them the voice has truly disappeared.
 	//
-	// FilePath của bản ghi cũ là đường dẫn hệ thống ("storage/clone/<user>/voice/x.wav") chứ
-	// không phải khoá; storageKey bóc phần gốc ra để những giọng lưu trước lần đổi này vẫn xoá
-	// được thay vì tồn tại mãi.
+	// The FilePath of old records is a system path ("storage/clone/<user>/voice/x.wav") rather
+	// than a key; storageKey strips the root portion so that voices stored before the change
+	// are still deletable instead of persisting forever.
 	if voice.FilePath != "" && !h.Config.PreserveFiles {
 		if err := storage.Global.Delete(r.Context(), storageKey(voice.FilePath)); err != nil {
-			log.Printf("Bản ghi giọng %s đã xoá nhưng còn tệp %s: %v", cloneID, voice.FilePath, err)
+			log.Printf("Voice record %s deleted but file %s remains: %v", cloneID, voice.FilePath, err)
 		}
 	}
 
-	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Đã xóa giọng"})
+	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Voice deleted"})
 }

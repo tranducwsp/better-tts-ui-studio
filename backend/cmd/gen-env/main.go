@@ -1,8 +1,9 @@
-// Command gen-env sinh .env.example từ bảng đặc tả trong config/settings.go.
+// Command gen-env generates .env.example from the spec table in config/settings.go.
 //
-// Chạy bằng `go generate ./config` sau khi thêm hoặc sửa một biến. Tệp sinh ra được commit
-// để người vận hành đọc được mà không cần công cụ Go, và config.TestEnvExampleMatchesSpec
-// đối chiếu tệp đã commit với bảng, nên quên chạy generate sẽ làm test đỏ.
+// Run via `go generate ./config` after adding or modifying a variable. The generated file is
+// committed so operators can read it without Go tooling, and config.TestEnvExampleMatchesSpec
+// compares the committed file against the table, so forgetting to run generate will make the
+// test fail.
 package main
 
 import (
@@ -14,17 +15,18 @@ import (
 	"backend/config"
 )
 
-const header = `# Sinh tự động từ backend/config/settings.go — đừng sửa tay.
-# Cập nhật bằng: cd backend && go generate ./config
+const header = `# Auto-generated from backend/config/settings.go — do not edit by hand.
+# Update with: cd backend && go generate ./config
 #
-# Sao chép thành .env rồi điền trước khi triển khai. Giá trị hiển thị là mặc định backend
-# dùng khi biến không được đặt; biến nào đánh dấu BẮT BUỘC thì không có mặc định an toàn.
-# Nhóm "Advanced deployment tuning" là tùy chọn cho operator; AI engineer thường không cần đổi.
+# Copy to .env and fill in before deploying. Displayed values are the backend defaults
+# used when the variable is not set; variables marked REQUIRED have no safe default.
+# The "Advanced deployment tuning" group is optional for operators; AI engineers usually
+# don't need to change them.
 `
 
 func main() {
-	// go generate chạy với cwd là thư mục chứa chỉ thị (config/), nên lùi hai cấp để tới
-	// gốc kho mã. Cho phép ghi đè để chạy tay từ chỗ khác.
+	// go generate runs with cwd at the directory containing the directive (config/), so go up
+	// two levels to reach the repo root. Allow override for manual runs from elsewhere.
 	out := os.Getenv("GEN_ENV_OUT")
 	if out == "" {
 		out = filepath.Join("..", "..", ".env.example")
@@ -46,20 +48,20 @@ func main() {
 		}
 
 		if s.Required {
-			b.WriteString("# BẮT BUỘC cho môi trường thật.\n")
+			b.WriteString("# REQUIRED for production environments.\n")
 		}
 		if s.ReadBy != "" {
-			fmt.Fprintf(&b, "# Đọc bởi %s, không phải backend.\n", s.ReadBy)
+			fmt.Fprintf(&b, "# Read by %s, not the backend.\n", s.ReadBy)
 		}
 		for _, line := range docLines(s.Doc) {
 			b.WriteString("# " + line + "\n")
 		}
 		if s.Kind == config.KindInt {
-			fmt.Fprintf(&b, "# Số nguyên trong khoảng %d đến %d.\n", s.Min, s.Max)
+			fmt.Fprintf(&b, "# Integer in range %d to %d.\n", s.Min, s.Max)
 		}
 
-		// Bí mật không bao giờ được ghi giá trị vào tệp mẫu, kể cả khi mặc định là rỗng —
-		// để không ai vô tình commit một giá trị thật vào đúng chỗ này.
+		// Secrets must never have their value written into the example file, even when the
+		// default is empty — so no one accidentally commits a real value right here.
 		value := s.Default
 		if s.Kind == config.KindSecret {
 			value = ""
@@ -71,10 +73,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "gen-env:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("gen-env: đã ghi %s (%d biến)\n", out, len(config.Settings))
+	fmt.Printf("gen-env: wrote %s (%d variables)\n", out, len(config.Settings))
 }
 
-// sectionRule tạo dải phân cách canh đều 90 cột cho dễ đọc.
+// sectionRule creates a separator padded to 90 columns for readability.
 func sectionRule(group string) string {
 	const width = 90
 	prefix := "# ── " + group + " "

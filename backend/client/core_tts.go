@@ -31,13 +31,15 @@ func NewCoreTTSClient(baseURL string, timeoutSeconds int) *CoreTTSClient {
 		BaseURL: baseURL,
 		HTTPClient: &http.Client{
 			Timeout: timeout,
-			// Transport khai riêng vì mặc định của thư viện chuẩn chỉ giữ 2 kết nối rỗi
-			// cho mỗi host. Mọi lượt tổng hợp đều đi tới cùng một Engine, nên từ lượt thứ
-			// ba đồng thời trở đi mỗi request phải bắt tay TCP mới rồi bỏ kết nối ngay sau
-			// đó — một đợt 50 lượt là 48 lần bắt tay và 48 socket rơi vào TIME_WAIT.
+			// Custom Transport because the standard library default only keeps 2 idle connections
+			// per host. Every synthesis request goes to the same Engine, so starting from the third
+			// concurrent request onward, each request must do a fresh TCP handshake and then drop
+			// the connection immediately — a batch of 50 requests means 48 handshakes and 48
+			// sockets in TIME_WAIT.
 			//
-			// ResponseHeaderTimeout tách riêng khỏi Timeout tổng: Engine im lặng hoàn toàn
-			// thì biết sớm, còn tổng hợp một đoạn dài vẫn được phép chạy hết thời gian.
+			// ResponseHeaderTimeout is separate from the overall Timeout: if the Engine is
+			// completely silent we know early, while a long synthesis is still allowed to run its
+			// full duration.
 			Transport: &http.Transport{
 				Proxy:                 http.ProxyFromEnvironment,
 				MaxIdleConns:          100,
@@ -90,11 +92,12 @@ func (c *CoreTTSClient) GetInfo() (*types.UniversalManifest, error) {
 	}
 	defer resp.Body.Close()
 
-	// Kiểm mã trạng thái như GetVoices và Synthesize vẫn làm. Không kiểm thì một trang lỗi 5xx
-	// tình cờ hợp cú pháp JSON sẽ giải mã thành manifest rỗng, và người vận hành nhận báo
-	// "manifest không hợp lệ" cho một sự cố thật ra là Engine đang chết — chỉ sai chỗ cần sửa.
+	// Check status code as GetVoices and Synthesize do. Without the check, a 5xx error page
+	// that happens to be valid JSON would decode into an empty manifest, and the operator gets
+	// "invalid manifest" for a problem that is actually the Engine being down — only the wrong
+	// place to fix.
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Core TTS trả mã %d khi lấy manifest", resp.StatusCode)
+		return nil, fmt.Errorf("Core TTS returned status %d when fetching manifest", resp.StatusCode)
 	}
 
 	var result types.UniversalManifest
@@ -104,13 +107,13 @@ func (c *CoreTTSClient) GetInfo() (*types.UniversalManifest, error) {
 	return &result, nil
 }
 
-// GetVoices lấy danh sách giọng cho một Mode.
+// GetVoices fetches the voice list for a given Mode.
 //
-// Việc lọc thuộc về Engine: chỉ nó biết giọng nào chạy được ở Mode nào, vì các Mode có thể
-// dùng những backend khác nhau. Nền tảng không lọc lại — nếu Engine trả về một giọng thì
-// nền tảng tin rằng Mode đó dùng được.
+// Filtering belongs to the Engine: only it knows which voices work in which Mode, since Modes
+// may use different backends. The platform does not re-filter — if the Engine returns a voice,
+// the platform trusts that the Mode can use it.
 //
-// modelID rỗng hoặc "all" nghĩa là hỏi toàn bộ, dùng cho màn hình quản lý.
+// An empty modelID or "all" means query everything, used for the management screen.
 func (c *CoreTTSClient) GetVoices(modelID string) ([]CoreVoice, error) {
 	endpoint := c.BaseURL + "/voices"
 	if modelID != "" && modelID != "all" {
@@ -134,11 +137,12 @@ func (c *CoreTTSClient) GetVoices(modelID string) ([]CoreVoice, error) {
 	return voices, nil
 }
 
-// Synthesize gọi Engine sinh âm thanh, huỷ được qua ctx.
+// Synthesize calls the Engine to generate audio, cancellable via ctx.
 //
-// Nhận Context vì lượt gọi này là phần dài nhất của cả hệ thống — tới TTS_CLIENT_TIMEOUT_SECONDS
-// giây — và là thứ duy nhất đáng huỷ khi người dùng bấm dừng. Không có nó, cờ cancel chỉ đổi
-// được con số hiện trên giao diện còn GPU vẫn chạy hết lượt.
+// Accepts a Context because this call is the longest-running part of the whole system — up to
+// TTS_CLIENT_TIMEOUT_SECONDS seconds — and the only thing worth cancelling when the user hits
+// stop. Without it, the cancel flag only changes a number on the UI while the GPU keeps running
+// the full synthesis.
 func (c *CoreTTSClient) Synthesize(ctx context.Context, text, voice string, speed float64, engine string, pitch *float64, emotion *string) ([]byte, error) {
 	// Dispatch to gRPC when available; fall back to HTTP REST if gRPC call fails.
 	if c.grpcClient != nil {
@@ -197,9 +201,10 @@ func (c *CoreTTSClient) Synthesize(ctx context.Context, text, voice string, spee
 }
 
 func (c *CoreTTSClient) CloneVoice(src io.Reader, filename, name string) (map[string]interface{}, error) {
-	// Stream multipart qua pipe thay vì dựng toàn bộ trong bytes.Buffer: một tệp tham chiếu
-	// dài cả phút là hàng chục MB, giữ một bản copy nữa trong RAM ở đây là copy thứ ba của
-	// cùng một tệp (sau parseUpload và storage). Với io.Pipe, engine đọc trực tiếp từ luồng.
+	// Stream multipart via pipe instead of buffering everything in bytes.Buffer: a reference
+	// file a minute long is tens of MB, and keeping an extra copy in RAM here would be the
+	// third copy of the same file (after parseUpload and storage). With io.Pipe, the engine
+	// reads directly from the stream.
 	pr, pw := io.Pipe()
 	writer := multipart.NewWriter(pw)
 
@@ -230,7 +235,7 @@ func (c *CoreTTSClient) CloneVoice(src io.Reader, filename, name string) (map[st
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		pr.Close() // ngắt pipe để goroutine ghi dừng lại
+		pr.Close() // break pipe so the write goroutine stops
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -241,7 +246,7 @@ func (c *CoreTTSClient) CloneVoice(src io.Reader, filename, name string) (map[st
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Lỗi Clone giọng từ Core TTS: %s", string(respBytes))
+		return nil, fmt.Errorf("Core TTS voice clone error: %s", string(respBytes))
 	}
 
 	var result map[string]interface{}

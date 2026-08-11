@@ -13,7 +13,7 @@ type JWTClaims struct {
 	Username string `json:"sub"`
 	Role     string `json:"role"`
 	TokenUse string `json:"token_use,omitempty"`
-	JTI      string `json:"jti,omitempty"` // chỉ refresh token mang; trỏ tới dòng auth_sessions
+	JTI      string `json:"jti,omitempty"` // only refresh tokens carry this; points to the auth_sessions row
 	jwt.RegisteredClaims
 }
 
@@ -23,33 +23,34 @@ const (
 )
 
 func HashPassword(password string) (string, error) {
-	// bcrypt chỉ dùng 72 byte đầu của password. GenerateFromPassword trả lỗi
-	// ErrPasswordTooLong khi vượt trần — lỗi đúng, nhưng thứ đến tay người dùng là 500
-	// nếu caller không kiểm. Caller (Register) phải chặn từ ValidatePassword trước.
+	// bcrypt only uses the first 72 bytes of the password. GenerateFromPassword returns
+	// ErrPasswordTooLong when the limit is exceeded — a correct error, but what reaches the
+	// user is a 500 if the caller doesn't check. The caller (Register) must block via
+	// ValidatePassword first.
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(bytes), err
 }
 
-// minPasswordChars / maxPasswordBytes là ranh giới mật khẩu chấp nhận.
+// minPasswordChars / maxPasswordBytes are the boundaries for accepted passwords.
 //
-// 72 byte là trần thật của bcrypt: vượt qua đó GenerateFromPassword lỗi. 8 ký tự là
-// mức sàn thấp nhất vẫn chống đoán qua mạng; dưới đó tài khoản quá dễ bẻ khi bảng hash
-// lọt ra ngoài.
-// MaxPasswordBytes là trần byte mà bcrypt chấp nhận; handler đăng nhập so sánh trước khi
-// băm để trả 401 chung thay vì để thư viện báo lỗi riêng.
+// 72 bytes is bcrypt's real ceiling: exceeding it causes GenerateFromPassword to error.
+// 8 characters is the lowest floor that still resists online guessing; below that an
+// account is too easy to crack if the hash table leaks.
+// MaxPasswordBytes is the byte ceiling bcrypt accepts; the login handler compares against it
+// before hashing to return a generic 401 rather than letting the library report a distinct error.
 const (
 	minPasswordChars = 8
 	MaxPasswordBytes = 72
 )
 
-// ValidatePassword kiểm mật khẩu trước khi băm. Trả về lỗi có thông điệp người dùng
-// đọc được thay vì để bcrypt fail vào giữa luồng đăng ký.
+// ValidatePassword checks the password before hashing. Returns a user-readable error message
+// instead of letting bcrypt fail mid-registration.
 func ValidatePassword(password string) error {
 	if len([]rune(password)) < minPasswordChars {
-		return fmt.Errorf("mật khẩu phải có ít nhất %d ký tự", minPasswordChars)
+		return fmt.Errorf("password must be at least %d characters", minPasswordChars)
 	}
 	if len([]byte(password)) > MaxPasswordBytes {
-		return fmt.Errorf("mật khẩu không được vượt quá %d byte", MaxPasswordBytes)
+		return fmt.Errorf("password must not exceed %d bytes", MaxPasswordBytes)
 	}
 	return nil
 }
@@ -59,21 +60,23 @@ func VerifyPassword(password, hash string) bool {
 	return err == nil
 }
 
-// CreateAccessToken tạo access token (stateless, ngắn hạn, không cần jti).
+// CreateAccessToken creates an access token (stateless, short-lived, no jti needed).
 func CreateAccessToken(username, role, secretKey string, expireMinutes int) (string, error) {
 	expiresAt := time.Now().Add(time.Duration(expireMinutes) * time.Minute)
 	return buildToken(username, role, "", TokenUseAccess, secretKey, expiresAt)
 }
 
-// CreateRefreshToken tạo refresh token gắn jti, hết hạn đúng lúc dòng auth_sessions hết hạn.
+// CreateRefreshToken creates a refresh token with a jti, expiring at the same moment as the
+// auth_sessions row.
 //
-// Nhận thời điểm hết hạn cụ thể thay vì số phút: rotation phải tái phát hành với cùng mốc
-// TUYỆT ĐỐI của phiên (không bị kéo dài), nên JWT exp và expires_at trong DB phải trùng nhau.
+// Accepts a specific expiry time rather than a number of minutes: rotation must re-issue with
+// the same ABSOLUTE session deadline (not extend it), so the JWT exp and the expires_at in the
+// DB must match.
 func CreateRefreshToken(username, role, jti, secretKey string, expiresAt time.Time) (string, error) {
 	return buildToken(username, role, jti, TokenUseRefresh, secretKey, expiresAt)
 }
 
-// buildToken tạo JWT HS256 với các claim phân biệt mục đích sử dụng.
+// buildToken creates a HS256 JWT with claims distinguishing the token's purpose.
 func buildToken(username, role, jti, tokenUse, secretKey string, expiresAt time.Time) (string, error) {
 	claims := &JWTClaims{
 		Username: username,

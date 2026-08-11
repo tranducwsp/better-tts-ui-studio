@@ -11,33 +11,34 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// streamKey là stream chứa mọi yêu cầu tổng hợp đang chờ.
+// streamKey is the stream that holds all pending synthesis requests.
 const streamKey = "tts:jobs"
 
-// consumerGroup gom mọi worker vào một nhóm, để Redis chia job chứ không phát trùng.
+// consumerGroup groups all workers so Redis distributes jobs without duplicates.
 const consumerGroup = "tts-workers"
 
-// maxStreamLen là trần số job giữ trong stream.
+// maxStreamLen is the cap on jobs held in the stream.
 //
-// Stream này KHÔNG bền: Redis chạy không có AOF/RDB, nên mọi thứ trong đây mất khi Redis khởi
-// động lại. Đó là lựa chọn có chủ ý — một chunk chỉ tốn vài giây để tổng hợp lại, và giao
-// diện đã tự thử lại ba lần cho mỗi chunk. Đánh đổi lấy việc không phải nuôi thêm một kho bền
-// vững, và không phải giữ trạng thái job đồng bộ giữa hai nơi.
+// This stream is NOT durable: Redis runs without AOF/RDB, so everything in here is lost on
+// Redis restart. That is intentional — a chunk takes only a few seconds to re-synthesize, and
+// the UI already auto-retries three times per chunk. The trade-off is not having to maintain
+// another durable store, and not having to keep job state in sync across two places.
 //
-// Trần này chỉ để một đợt dồn bất thường không ăn hết RAM của Redis; MAXLEN xấp xỉ nên Redis
-// cắt theo khối, rẻ hơn cắt chính xác.
+// This cap exists only so an abnormal burst doesn't consume all of Redis's RAM; MAXLEN is
+// approximate so Redis evicts in blocks, which is cheaper than exact eviction.
 const maxStreamLen = 10000
 
-// ErrNoRedis nghĩa là hàng đợi không dùng được vì thiếu Redis.
+// ErrNoRedis means the queue is unavailable because Redis is missing.
 //
-// Người gọi phía web dùng nó để quay về chạy tại chỗ: một triển khai không có Redis vẫn tổng
-// hợp được, chỉ là không tách được worker.
-var ErrNoRedis = errors.New("queue: chưa cấu hình Redis")
+// The web caller uses it to fall back to in-process synthesis: a deployment without Redis can
+// still synthesize, it just can't separate workers.
+var ErrNoRedis = errors.New("queue: Redis not configured")
 
-// Job là một yêu cầu tổng hợp đang chờ được xử lý.
+// Job is a synthesis request waiting to be processed.
 //
-// Mang đủ những gì worker cần để chạy mà không phải hỏi lại ai: worker có thể nằm ở tiến
-// trình khác, máy khác, và không thấy được RAM của tiến trình đã nhận request.
+// It carries everything a worker needs to run without asking anyone else: the worker may be in
+// a different process, on a different machine, and cannot see the RAM of the process that
+// received the request.
 type Job struct {
 	TaskID  string   `json:"task_id"`
 	UserID  string   `json:"user_id"`
@@ -49,7 +50,7 @@ type Job struct {
 	Emotion *string  `json:"emotion,omitempty"`
 }
 
-// Enqueue đẩy một job vào hàng đợi.
+// Enqueue pushes a job into the queue.
 func Enqueue(ctx context.Context, job Job) error {
 	rdb := state.RedisClient
 	if rdb == nil {
@@ -69,10 +70,11 @@ func Enqueue(ctx context.Context, job Job) error {
 	}).Err()
 }
 
-// EnsureGroup tạo consumer group nếu chưa có.
+// EnsureGroup creates the consumer group if it does not exist.
 //
-// MKSTREAM để worker khởi động trước web vẫn tạo được nhóm trên một stream chưa tồn tại.
-// BUSYGROUP nghĩa là nhóm đã có — thường gặp khi chạy nhiều worker, và không phải lỗi.
+// MKSTREAM so a worker that starts before the web process can still create the group on a
+// stream that doesn't exist yet. BUSYGROUP means the group already exists — common when
+// running multiple workers, and not an error.
 func EnsureGroup(ctx context.Context) error {
 	rdb := state.RedisClient
 	if rdb == nil {
@@ -86,14 +88,14 @@ func EnsureGroup(ctx context.Context) error {
 	return nil
 }
 
-// Consume đọc job cho tới khi ctx bị huỷ, gọi handle cho từng job.
+// Consume reads jobs until ctx is cancelled, calling handle for each job.
 //
-// consumer đặt tên riêng từng tiến trình để Redis phân biệt được các worker trong cùng nhóm.
+// Each process gets a distinct consumer name so Redis can tell workers in the same group apart.
 //
-// Ack ngay sau khi handle trả về, kể cả khi nó báo lỗi: job hỏng đã được ghi trạng thái error
-// và giao diện sẽ tự thử lại, nên giữ nó trong danh sách pending chỉ tạo ra rác mà không ai
-// đọc. Cùng lý do đó, ở đây không có XAUTOCLAIM: worker chết giữa chừng thì job mất luôn, và
-// đó là hành vi đã chọn.
+// Ack immediately after handle returns, even if it reported an error: a broken job has already
+// been written with error status and the UI will retry automatically, so keeping it in the
+// pending list only creates garbage no one reads. For the same reason, there is no XAUTOCLAIM
+// here: if a worker dies mid-job, the job is lost, and that is the chosen behavior.
 func Consume(ctx context.Context, consumer string, handle func(context.Context, Job)) error {
 	rdb := state.RedisClient
 	if rdb == nil {
@@ -105,7 +107,8 @@ func Consume(ctx context.Context, consumer string, handle func(context.Context, 
 			return nil
 		}
 
-		// Block có thời hạn thay vì vô hạn: cần quay lại vòng lặp định kỳ để thấy ctx đã huỷ.
+		// Block with a timeout rather than indefinitely: we need to loop back periodically
+		// to notice that ctx has been cancelled.
 		res, err := rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group:    consumerGroup,
 			Consumer: consumer,
@@ -116,9 +119,9 @@ func Consume(ctx context.Context, consumer string, handle func(context.Context, 
 
 		if err != nil {
 			if errors.Is(err, redis.Nil) || ctx.Err() != nil {
-				continue // hết thời gian chờ, không có job — bình thường
+				continue // timeout, no job — normal
 			}
-			// Redis chớp tắt: chờ một nhịp rồi thử lại thay vì quay vòng nóng.
+			// Redis flickered: wait a beat then retry instead of hot-looping.
 			select {
 			case <-ctx.Done():
 				return nil
@@ -133,7 +136,8 @@ func Consume(ctx context.Context, consumer string, handle func(context.Context, 
 
 				var job Job
 				if err := sonic.Unmarshal([]byte(raw), &job); err != nil {
-					// Không giải mã được thì không ai xử lý được; ack để nó không nằm lại mãi.
+					// Can't decode means no one can process it; ack so it doesn't
+					// linger forever.
 					_ = rdb.XAck(ctx, streamKey, consumerGroup, msg.ID).Err()
 					continue
 				}
