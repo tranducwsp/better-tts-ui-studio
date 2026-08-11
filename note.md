@@ -75,14 +75,14 @@
 
 ---
 
-## 🌐 Tách Vai Trò Nginx Trong Frontend Container
+## 🌐 Tách Vai Trò Nginx Trong Frontend Container (✅ Đã Hoàn Thành)
 
-> **Phân tích**: Hiện tại Nginx ở [`frontend/nginx.conf`](file:///home/amora/better-tts-ui-studio/frontend/nginx.conf) đang ôm hai nhiệm vụ: (1) Serve file tĩnh React/Vite và (2) Proxy `/api/` & `/storage/` sang Backend.
+> **Trạng thái**: Đã thực hiện đơn giản hóa Nginx container.
 
-### 💡 Hướng Cải Tiến:
-- **Đơn giản hóa Nginx trong Frontend**: Tách Nginx ở FE ra chỉ tập trung **duy nhất vào nhiệm vụ serve file tĩnh** (`index.html`, `assets/`, `fonts/`), loại bỏ toàn bộ các block `location /api/` và `resolver 127.0.0.11`.
+### 💡 Đã Cải Tiến:
+- **Đơn giản hóa Nginx trong Frontend**: Tách Nginx ở FE ra chỉ tập trung **duy nhất vào nhiệm vụ serve file tĩnh** (`index.html`, `assets/`, `fonts/`), loại bỏ toàn bộ các block `location /api/`, `location /storage/` và `resolver 127.0.0.11`.
 - **Môi trường Deploy**:
-  - **Docker Compose (Local/Standalone)**: Giữ Nginx nhẹ nhàng ở FE serve file tĩnh, FE gọi API trực tiếp qua domain/port Backend.
+  - **Docker Compose (Local/Standalone)**: Giữ Nginx nhẹ nhàng ở FE serve file tĩnh, FE gọi API trực tiếp qua domain/port Backend (`VITE_API_URL`).
   - **Kubernetes (Production)**: Sử dụng Ingress Controller chuẩn (như **Traefik Ingress** hoặc **Nginx Ingress**) đứng ở cấp K8s Cluster để điều hướng đường dẫn `/api` sang Backend Service và `/` sang Frontend Service.
 
 
