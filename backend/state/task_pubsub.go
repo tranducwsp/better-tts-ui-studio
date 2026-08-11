@@ -19,9 +19,9 @@ func (t *TaskItem) Subscribe() chan TaskUpdate {
 	}
 	t.subscribers[ch] = struct{}{}
 
-	// Một subscription Redis cho mỗi task, không phải cho mỗi người xem: hai tab mở cùng
-	// một task đăng ký cùng một channel, nên nhân bản subscription chỉ khiến Redis gửi
-	// đúng payload đó hai lần rồi ta tự phân phát lại trong tiến trình.
+	// One Redis subscription per task, not per viewer: two tabs open on the same
+	// task subscribe to the same channel, so duplicating the subscription only
+	// makes Redis send the same payload twice while we re-distribute in-process.
 	if RedisClient != nil && t.pubsubCancel == nil {
 		ctx, cancel := context.WithCancel(context.Background())
 		pubsub := RedisClient.Subscribe(ctx, "channel:task:"+t.ID)
@@ -37,12 +37,13 @@ func (t *TaskItem) Subscribe() chan TaskUpdate {
 	return ch
 }
 
-// forwardRedis chuyển bản tin từ Redis về cho các subscriber cục bộ của task này.
+// forwardRedis relays messages from Redis to this task's local subscribers.
 //
-// Vòng lặp kết thúc khi pubsub bị đóng — chính là điều Unsubscribe làm khi người xem cuối
-// cùng rời đi. Trước đây hàm này chạy với context.Background() và không ai đóng pubsub, nên
-// mỗi lần mở SSE là một goroutine cùng một subscription Redis sống mãi: trình duyệt tự kết
-// nối lại sau mỗi lần đứt mạng, và số subscription trên Redis chỉ có tăng.
+// The loop ends when the pubsub is closed — which is exactly what Unsubscribe does
+// when the last viewer leaves. Previously this function ran with context.Background()
+// and no one closed the pubsub, so every SSE open spawned a goroutine and a Redis
+// subscription that lived forever: the browser auto-reconnects after every network
+// drop, and the subscription count on Redis only grew.
 func (t *TaskItem) forwardRedis(ctx context.Context, pubsub *redis.PubSub, generation uint64) {
 	redisCh := pubsub.Channel()
 	for {
@@ -62,10 +63,10 @@ func (t *TaskItem) forwardRedis(ctx context.Context, pubsub *redis.PubSub, gener
 	}
 }
 
-// fanoutIfCurrent lấy snapshot subscriber dưới cùng một khoá với việc kiểm tra generation.
-// Nếu chỉ kiểm tra generation rồi mới gọi fanout, goroutine cũ có thể nhìn thấy mình còn
-// hợp lệ, bị unsubscribe, rồi fanout đúng lúc subscription mới đã được tạo — subscriber
-// mới sẽ nhận cùng một bản tin hai lần.
+// fanoutIfCurrent takes the subscriber snapshot under the same lock as the generation
+// check. If we only checked generation then called fanout, the old goroutine could see
+// itself as valid, get unsubscribed, then fanout right as the new subscription was
+// created — the new subscriber would receive the same message twice.
 func (t *TaskItem) fanoutIfCurrent(update TaskUpdate, generation uint64) {
 	t.mu.Lock()
 	if t.pubsubGeneration != generation || t.pubsubCancel == nil {
@@ -81,10 +82,10 @@ func (t *TaskItem) fanoutIfCurrent(update TaskUpdate, generation uint64) {
 	t.mu.Unlock()
 }
 
-// fanout gửi bản tin cho mọi subscriber cục bộ, bỏ qua ai đang tắc.
+// fanout sends the update to every local subscriber, skipping any that are blocked.
 //
-// Kênh có đệm 10 và nhánh default bỏ tin: một trình duyệt đọc chậm không được phép làm
-// nghẽn tiến trình tổng hợp đứng sau.
+// The channel has a buffer of 10 and the default branch drops messages: a slow-reading
+// browser must not stall the synthesis process behind it.
 func (t *TaskItem) fanout(update TaskUpdate) {
 	t.mu.Lock()
 	subscribers := make([]chan TaskUpdate, 0, len(t.subscribers))
@@ -109,8 +110,8 @@ func (t *TaskItem) Unsubscribe(ch chan TaskUpdate) {
 		delete(t.subscribers, ch)
 	}
 
-	// Người xem cuối cùng rời đi thì đóng subscription, nếu không goroutine chuyển tin sẽ
-	// còn lại một mình cùng một entry trên Redis mà không ai đọc.
+	// When the last viewer leaves, close the subscription; otherwise the relay
+	// goroutine remains alone with a Redis entry that no one reads.
 	if len(t.subscribers) == 0 && t.pubsubCancel != nil {
 		cancel := t.pubsubCancel
 		t.pubsubCancel = nil
@@ -128,22 +129,25 @@ func (t *TaskItem) Notify(update TaskUpdate) {
 	}
 	t.mu.Unlock()
 
-	// Khi Redis tắt, phát trực tiếp trong tiến trình. Khi Redis bật, để subscription dùng
-	// chung phát bản tin kể cả cho subscriber cùng node — nếu phát cả hai đường thì chính
-	// bản Publish của node này quay lại qua Redis rồi fanout lần hai, SSE nhận trùng event.
+	// When Redis is off, fan out directly in-process. When Redis is on, the shared
+	// subscription delivers the message even to subscribers on the same node — if we
+	// fan out both ways, this node's own Publish comes back through Redis and fans
+	// out a second time, causing SSE to receive duplicate events.
 	if RedisClient == nil {
 		t.fanout(update)
 	}
 
-	// Nếu Redis hoạt động, Publish cho các Node khác và lưu trạng thái để chúng đọc.
+	// If Redis is active, Publish to other Nodes and save state for them to read.
 	//
-	// Một pipeline thay vì bốn round-trip tuần tự: hàm này chạy trên mỗi mốc tiến độ, nên
-	// bốn lần chờ mạng ở đây nằm thẳng trong đường đi của tiến trình tổng hợp.
+	// A single pipeline instead of four sequential round trips: this function runs
+	// on every progress milestone, so four network waits here sit directly in the
+	// synthesis process's path.
 	//
-	// Audio KHÔNG còn đi kèm ở đây. Trước đây trạng thái task được marshal nguyên khối kể
-	// cả trường Audio, nên mỗi mốc tiến độ đẩy lại toàn bộ đoạn âm thanh — một chunk 3 MB
-	// nhân với mười mốc là 30 MB lưu lượng lặp lại để nói một con số phần trăm. Bytes âm
-	// thanh có khoá riêng, ghi một lần khi đã có (xem CacheAudio).
+	// Audio is NO longer included here. Previously task state was marshaled wholesale
+	// including the Audio field, so every progress milestone pushed the entire audio
+	// segment again — a 3 MB chunk times ten milestones is 30 MB of repeated traffic
+	// to convey a single percentage number. Audio bytes have their own key, written
+	// once when available (see CacheAudio).
 	if RedisClient == nil {
 		return
 	}
@@ -161,18 +165,21 @@ func (t *TaskItem) Notify(update TaskUpdate) {
 	}
 
 	pipe := RedisClient.Pipeline()
-	// Ghi trạng thái TRƯỚC khi Publish, cố ý: WatchCancel của worker đọc lại khoá task:<id>
-	// ngay sau khi subscribe, và Cancel dựa trên thứ tự này để đóng khe hở tin Publish bị mất
-	// trước lúc worker kịp đăng ký. Nếu bản ghi có trước lượt đọc thì worker thấy cờ huỷ; nếu
-	// lượt đọc chạy trước bản ghi thì Publish tới sau, tới đúng subscription vừa sẵn sàng. Đảo
-	// ngược thứ tự, một lần chạy có thể lọt giữa "Set chưa xong" và "Publish đã đi qua lúc chưa
-	// ai nghe" — đúng cái khe đang được đóng.
+	// Write state BEFORE Publish, intentionally: the worker's WatchCancel re-reads
+	// the task:<id> key right after subscribing, and Cancel relies on this ordering
+	// to close the gap where a Publish message is lost before the worker can subscribe.
+	// If the write is before the read, the worker sees the cancel flag; if the read
+	// runs before the write, then Publish arrives after, reaching the subscription
+	// that is now ready. Reversing the order, one execution could slip between "Set
+	// not yet done" and "Publish already went through while no one was listening" —
+	// exactly the gap being closed.
 	pipe.Set(ctx, "task:"+t.ID, taskStateData, redisTaskTTL)
 	pipe.Publish(ctx, "channel:task:"+t.ID, data)
 	_, _ = pipe.Exec(ctx)
 }
 
-// CacheAudio lưu bytes âm thanh lên Redis dưới khoá riêng theo định dạng.
+// CacheAudio stores audio bytes on Redis under a separate format-specific key.
 //
-// Tách khỏi Notify có chủ ý: âm thanh xuất hiện đúng một lần khi chunk xong, còn Notify
-// chạy trên mọi mốc tiến độ. Gộp chung khiến cùng một payload được ghi lại ở mỗi mốc.
+// Intentionally separated from Notify: audio appears exactly once when the chunk is
+// done, while Notify runs on every progress milestone. Merging them would cause the
+// same payload to be written again at every milestone.

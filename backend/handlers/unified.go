@@ -20,7 +20,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// UnifiedSynthesizeRequest là cấu trúc DTO duy nhất đại diện cho bất kỳ yêu cầu tổng hợp tiếng nói nào.
+// UnifiedSynthesizeRequest is the single DTO representing any speech synthesis request.
 type UnifiedSynthesizeRequest struct {
 	Text        string   `json:"text"`
 	Voice       string   `json:"voice"`
@@ -34,7 +34,7 @@ type UnifiedSynthesizeRequest struct {
 	TaskID      *string  `json:"task_id"`
 }
 
-// UnifiedVoiceResponse cấu trúc gọn tối giản cho Frontend: ID, Name, Descriptions.
+// UnifiedVoiceResponse is a minimal structure for the Frontend: ID, Name, Descriptions.
 type UnifiedVoiceResponse struct {
 	ID        string            `json:"id"`
 	Name      string            `json:"name"`
@@ -50,7 +50,7 @@ func NewUnifiedHandler(ttsClient *client.CoreTTSClient) *UnifiedHandler {
 	return &UnifiedHandler{TTSClient: ttsClient}
 }
 
-// GetVoices lấy danh sách giọng đọc đơn giản hóa theo model_id
+// GetVoices retrieves a simplified list of voices by model_id.
 func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := currentUser(w, r)
@@ -69,7 +69,7 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 
 	unifiedList := []UnifiedVoiceResponse{}
 
-	// 1. Lấy danh sách giọng Preset từ AI Engine nếu Mode hỗ trợ
+	// 1. Fetch preset voices from the AI Engine if the Mode supports them
 	m := state.GlobalManifestState.Get()
 	supportsPreset := true
 	if m != nil && modelID != "" && modelID != "all" {
@@ -77,9 +77,9 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if supportsPreset {
-		// Giọng preset là thứ thay đổi hiếm, nhưng trước đây mỗi lần mở voice picker là một
-		// lượt HTTP tới engine (timeout 60s) — mở kéo 4 mode là 4 giây hệt như treo. Cache theo
-		// mode; hai lớp hết hạn (TTL + manifest version) nằm trong presetvoicecache.
+		// Preset voices change rarely, but previously every voice picker open triggered an HTTP
+		// call to the engine (timeout 60s) — opening 4 modes meant 4 seconds of apparent hang.
+		// Cached per mode; two expiration layers (TTL + manifest version) live in presetvoicecache.
 		presetVoices, cached := presetVoiceCache.Get(modelID, time.Now())
 		if !cached {
 			var fetchErr error
@@ -97,7 +97,7 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. Lấy danh sách giọng Clone cá nhân của User từ PostgreSQL
+	// 2. Fetch the user's personal cloned voices from PostgreSQL
 	var userVoices []sqlc.UserVoice
 	var err error
 
@@ -134,7 +134,8 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(unifiedList)
 }
 
-// Synthesize là Universal Gateway Endpoint xử lý mọi yêu cầu sinh âm thanh bất đồng bộ có Validate Manifest tự động.
+// Synthesize is the Universal Gateway Endpoint that handles every asynchronous audio
+// generation request with automatic Manifest validation.
 func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := currentUser(w, r)
@@ -168,7 +169,7 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 1. Universal Validation Gate: Kiểm tra xem Request có tuân thủ Manifest của Engine không
+	// 1. Universal Validation Gate: Check whether the request complies with the Engine's Manifest
 	if err := state.GlobalManifestState.ValidateRequest(req.Text, req.Speed, req.Engine); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
@@ -217,30 +218,32 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		Emotion: req.Emotion,
 	}
 
-	// Bản ghi job/chunk là thứ khiến task này về sau truy vấn lại được: lịch sử đọc từ đây, và
-	// ownsTask dựa vào nó để biết chủ sở hữu khi task không còn trong RAM. Bỏ lỗi ở đây nghĩa
-	// là job vẫn chạy, âm thanh vẫn sinh, nhưng không có gì ghi lại — người dùng mất nó khỏi
-	// lịch sử, và sau một lần khởi động lại thì không ai chứng minh được task đó của mình.
+	// The job/chunk record is what makes this task queryable later: history is read from it,
+	// and ownsTask relies on it to determine ownership when the task is no longer in RAM.
+	// Dropping the error here means the job still runs, audio is still generated, but nothing
+	// is recorded — the user loses it from history, and after a restart no one can prove the
+	// task belongs to them.
 	//
-	// Dừng luôn thay vì chạy tiếp: một lượt tổng hợp không ai lấy lại được chỉ tiêu tốn GPU.
+	// Stop immediately rather than continuing: a synthesis run no one can retrieve only wastes GPU.
 	if err := db.RegisterJobAndChunk(context.Background(), user.ID, jobID, req.Engine, req.Voice, audioParams, totalChunks, taskID, chunkIndex, req.Text); err != nil {
 		if errors.Is(err, db.ErrJobNotOwned) {
 			writeError(w, http.StatusForbidden, "Forbidden")
 			return
 		}
-		log.Printf("Không ghi được job %s / chunk %s: %v", jobID, taskID, err)
-		writeError(w, http.StatusInternalServerError, "Không khởi tạo được yêu cầu tổng hợp")
+		log.Printf("Failed to write job %s / chunk %s: %v", jobID, taskID, err)
+		writeError(w, http.StatusInternalServerError, "Failed to initialize synthesis request")
 		return
 	}
 
-	// Chỉ dựng task trong RAM SAU khi DB đã nhận: task_id do client gửi lên, nên GetOrCreate
-	// trước lúc này cho phép một người gắn tên mình lên task_id của người khác. SetOwner không
-	// ghi đè, nhưng nó chỉ giữ được điều đó khi task còn trong RAM tiến trình này — task đã bị
-	// Cleanup thu hồi, hoặc đang nằm ở replica khác, sẽ dựng lại thành một bản không chủ và
-	// người gọi sau chiếm được. Chèn chunk ở trên đã hỏng vì trùng khoá chính, nhưng phần ghi
-	// vào RAM thì không có ai hoàn tác.
+	// Only create the task in RAM AFTER the DB has accepted it: task_id is supplied by the
+	// client, so calling GetOrCreate before this point allows someone to attach their name to
+	// another user's task_id. SetOwner does not overwrite, but that only holds while the task
+	// is in this process's RAM — a task already reclaimed by Cleanup, or sitting on another
+	// replica, will be rebuilt as an ownerless entry and the next caller takes it. The chunk
+	// insert above would have failed on a primary key conflict, but nothing rolls back the RAM
+	// entry.
 	//
-	// Tới đây thì DB đã xác nhận taskID này là chunk mới của một job thuộc người gọi.
+	// By this point the DB has confirmed this taskID is a new chunk of a job owned by the caller.
 	taskItem := state.GlobalTaskManager.GetOrCreate(taskID)
 	taskItem.SetOwner(user.ID)
 
@@ -255,14 +258,17 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		Emotion: req.Emotion,
 	}
 
-		// Xếp hàng để worker nhặt. Không có Redis thì chạy ngay trong tiến trình này.
+		// Enqueue for the worker to pick up. Without Redis, run inline in this process.
 		//
-		// Nhánh dự phòng dùng chung hàm synth.Run mà worker gọi, nên hai đường không
-		// thể trôi ra khỏi nhau. Qua GoLocal chứ không `go` trần: lượt này phải được ghi
-		// nhận để lúc tắt máy còn chờ nó chạy nốt, giống wg.Wait() bên worker.
+		// The fallback branch keeps a web-only deployment able to synthesize — the same reason
+		// TaskManager and rate limiter both have in-memory implementations. It uses the exact same
+		// synth.Run function that the worker calls, so the two paths cannot drift apart.
+		//
+		// Uses GoLocal, not a raw `go`: this run must be tracked so the process waits for it to
+		// finish during shutdown, analogous to wg.Wait() in the worker.
 		if err := queue.Enqueue(r.Context(), job); err != nil {
 		if !errors.Is(err, queue.ErrNoRedis) {
-			log.Printf("Không xếp được job %s vào hàng đợi: %v — chạy tại chỗ", taskID, err)
+			log.Printf("Failed to enqueue job %s: %v — running inline", taskID, err)
 		}
 		synth.GoLocal(h.TTSClient, job)
 	}

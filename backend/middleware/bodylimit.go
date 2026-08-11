@@ -5,19 +5,19 @@ import (
 	"strings"
 )
 
-// maxJSONBodyBytes là trần body cho payload JSON/trường-text của API.
+// maxJSONBodyBytes is the body ceiling for JSON/text-field API payloads.
 //
-// Trước đây không có trần nào: Sonic đọc body tới EOF, một body bất kỳ lớn cỡ nào cũng bị
-// dựng đầy trong RAM. 2 MiB thừa cho mọi request hợp lệ (text tổng hợp ≤3000 ký tự theo
-// manifest, upload đã ngắt riêng) và đủ nhỏ để một kẻ gửi payload khổng lồ không làm cạn bộ
-// nhớ backend.
+// Previously there was no ceiling: Sonic would read the body to EOF, and any arbitrarily large
+// body would be fully loaded into RAM. 2 MiB is more than enough for every valid request
+// (synthesis text <=3000 characters per manifest, uploads are intercepted separately) and
+// small enough that a huge payload cannot exhaust backend memory.
 const jsonBodyLimit = 2 << 20 // 2 MiB
 
-// BodyLimit giới hạn body request xuống jsonBodyLimit.
+// BodyLimit caps the request body to jsonBodyLimit.
 //
-// Multipart/form-data bị loại: upload giọng nói lên tới MAX_UPLOAD_SIZE_MB (default 256MB) và
-// các handler upload đã tự đặt MaxBytesReader riêng — đè trần 2 MiB này lên chúng sẽ làm hỏng
-// tính năng tải file.
+// Multipart/form-data is excluded: voice uploads go up to MAX_UPLOAD_SIZE_MB (default 256MB)
+// and the upload handlers already set their own MaxBytesReader — applying this 2 MiB ceiling
+// on top of them would break file upload functionality.
 func BodyLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if c := r.Header.Get("Content-Type"); !strings.HasPrefix(c, "multipart/") {

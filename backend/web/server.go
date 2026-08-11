@@ -16,13 +16,13 @@ import (
 	"backend/synth"
 )
 
-// localSynthDrainTimeout là thời gian chờ các lượt tổng hợp chạy tại chỗ khi tắt máy.
+// localSynthDrainTimeout is the time to wait for in-process synthesis jobs during shutdown.
 //
-// Chỉ có nghĩa ở triển khai không Redis, nơi tiến trình web tự tổng hợp. Hữu hạn vì chờ vô
-// hạn biến một lần khởi động lại thành một tiến trình không bao giờ chết.
+// Only meaningful in non-Redis deployments, where the web process synthesizes itself. Finite
+// because waiting forever turns a restart into a process that never dies.
 const localSynthDrainTimeout = 30 * time.Second
 
-// Run mở cổng HTTP và phục vụ cho tới khi nhận tín hiệu dừng.
+// Run opens the HTTP port and serves until a stop signal is received.
 func Run(cfg *config.Config, ttsClient *client.CoreTTSClient) {
 	r := router.NewRouter(cfg, ttsClient)
 
@@ -31,16 +31,18 @@ func Run(cfg *config.Config, ttsClient *client.CoreTTSClient) {
 		Addr:    addr,
 		Handler: r,
 
-		// ReadHeaderTimeout tách riêng khỏi ReadTimeout vì hai thứ này khác bản chất.
+		// ReadHeaderTimeout is separate from ReadTimeout because they are fundamentally
+		// different.
 		//
-		// ReadTimeout bao cả việc đọc body, mà trần upload là MAX_UPLOAD_SIZE_MB (mặc định
-		// 256 MB): một người mạng chậm gửi tệp tham chiếu hợp lệ cần tới hàng phút, nên hạ nó
-		// xuống là cắt ngang đúng những lượt tải hợp lệ nhất.
+		// ReadTimeout covers reading the body as well, and the upload cap is
+		// MAX_UPLOAD_SIZE_MB (default 256 MB): a user on a slow network sending a valid
+		// reference file needs minutes, so lowering it would cut off exactly the most
+		// legitimate uploads.
 		//
-		// Header thì ngược lại — nó phải tới trong vài giây với mọi client thật. Gộp hai thứ
-		// vào một con số 120 giây nghĩa là mỗi kết nối nhỏ giọt một byte header giữ được một
-		// goroutine suốt hai phút, và cách đó rẻ hơn nhiều so với dò mật khẩu mà rate limit
-		// đang canh.
+		// Headers, on the other hand, must arrive within seconds for any real client.
+		// Bundling both into a single 120-second number means every connection that drips
+		// one header byte can hold a goroutine for two full minutes, and that is far
+		// cheaper than the password guessing the rate limiter already guards against.
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       120 * time.Second,
 		WriteTimeout:      120 * time.Second,
@@ -64,14 +66,16 @@ func Run(cfg *config.Config, ttsClient *client.CoreTTSClient) {
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		// Không Fatalf: os.Exit bỏ qua mọi defer, và ngay dưới đây còn phải chờ các lượt tổng
-		// hợp chạy tại chỗ. Hết giờ đóng listener không phải lý do để vứt công việc đang chạy.
-		log.Printf("Server chưa đóng gọn trong hạn: %v", err)
+		// Don't Fatalf: os.Exit skips all defers, and right below we still need to wait for
+		// in-process synthesis jobs. Timing out on closing the listener is not a reason to
+		// abandon work in progress.
+		log.Printf("Server did not shut down cleanly within deadline: %v", err)
 	}
 
-	// Chờ nhánh dự phòng không-Redis chạy nốt. Shutdown ở trên chỉ chờ kết nối HTTP, mà lượt
-	// tổng hợp đã trả task_id về từ lâu nên nó không nhìn thấy — thoát luôn ở đây sẽ để chunk
-	// mắc lại "processing" và người dùng thấy một job không bao giờ xong.
+	// Wait for the non-Redis fallback path to finish. Shutdown above only waits for HTTP
+	// connections, but synthesis jobs returned their task_id long ago so it can't see them —
+	// exiting right here would leave chunks stuck in "processing" and the user sees a job
+	// that never completes.
 	synth.WaitLocal(localSynthDrainTimeout)
 
 	log.Println("Server exited successfully")

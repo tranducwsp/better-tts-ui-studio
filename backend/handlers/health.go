@@ -34,14 +34,14 @@ func ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetEngineInfo phục vụ API GET /api/info lấy trực tiếp bản Manifest từ RAM Cache siêu tốc (<1ms)
+// GetEngineInfo serves GET /api/info, fetching the Manifest directly from the ultra-fast RAM Cache (<1ms)
 func GetEngineInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	manifest := state.GlobalManifestState.Get()
 	if manifest == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
-			"error": "AI Engine Manifest chưa được nạp thành công",
+			"error": "AI Engine Manifest has not been loaded successfully",
 		})
 		return
 	}

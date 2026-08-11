@@ -2,44 +2,46 @@ package config
 
 import "math"
 
-// Bảng đặc tả cấu hình: nơi DUY NHẤT mô tả mọi biến môi trường của backend.
+// Configuration specification table: the SINGLE place that describes every backend environment
+// variable.
 //
-// Trước đây mỗi giá trị mặc định tồn tại ba bản chép tay — trong lời gọi getEnv, trong
-// .env.example, và trong docs/CONFIGURATION.md — mà không gì bắt buộc chúng khớp nhau. Bây
-// giờ .env.example được sinh ra từ bảng này (`go generate ./config`) và một bài test đối
-// chiếu tệp đã commit với bảng, nên một bản lệch sẽ làm CI đỏ chứ không âm thầm sai lệch.
+// Previously each default value existed in three manual copies — in the getEnv call, in
+// .env.example, and in docs/CONFIGURATION.md — with nothing enforcing they matched. Now
+// .env.example is generated from this table (`go generate ./config`) and a test compares the
+// committed file against the table, so a mismatch turns CI red instead of silently drifting.
 //
-// Thêm một biến mới: thêm một dòng vào đây, đọc nó trong LoadConfig, rồi chạy go generate.
+// To add a new variable: add a row here, read it in LoadConfig, then run go generate.
 //
 //go:generate go run ../cmd/gen-env
 
-// SettingKind phân loại cách một giá trị được phân tích và kiểm tra.
+// SettingKind classifies how a value is parsed and validated.
 type SettingKind int
 
 const (
 	KindString SettingKind = iota
 	KindInt
-	KindSecret // giá trị không bao giờ được in ra log hay ghi vào .env.example
-	KindList   // chuỗi phân tách bằng dấu phẩy
+	KindSecret // value that must never be printed to logs or written to .env.example
+	KindList   // comma-separated string
 )
 
-// Setting mô tả đầy đủ một biến môi trường: tên, mặc định, khoảng hợp lệ và lý do tồn tại.
+// Setting fully describes an environment variable: name, default, valid range, and reason for
+// existing.
 type Setting struct {
 	Key     string
 	Kind    SettingKind
 	Default string
-	Min     int // chỉ dùng cho KindInt
-	Max     int // chỉ dùng cho KindInt
+	Min     int // only used for KindInt
+	Max     int // only used for KindInt
 	Group   string
 	Doc     string
 
-	// Required đánh dấu biến mà việc bỏ trống là rủi ro thật sự chứ không phải tiện lợi.
-	// Không làm dừng tiến trình — LoadConfig tự xử lý — nhưng .env.example sẽ nêu bật.
+	// Required marks a variable whose omission is a real risk, not a convenience.
+	// Does not stop the process — LoadConfig handles that — but .env.example will highlight it.
 	Required bool
 
-	// ReadBy ghi tên dịch vụ đọc biến này, nếu không phải backend. Một vài biến sống trong
-	// bảng vì chúng thuộc cùng một liên kết với biến kề bên — người vận hành cần thấy cả
-	// hai chiều ở một chỗ — nhưng LoadConfig không đụng tới chúng.
+	// ReadBy names the service that reads this variable, if not the backend. Some variables
+	// live in the table because they belong to the same coupling as a neighboring variable —
+	// the operator needs to see both sides in one place — but LoadConfig does not touch them.
 	ReadBy string
 }
 
@@ -48,35 +50,35 @@ const (
 	noMax = math.MaxInt
 )
 
-// Settings liệt kê theo thứ tự xuất hiện trong .env.example.
+// Settings are listed in the order they appear in .env.example.
 var Settings = []Setting{
 	{
 		Key: "SECRET_KEY", Kind: KindSecret, Default: "", Required: true,
 		Group: "Required in production",
-		Doc: "Ký JWT phiên đăng nhập. BẮT BUỘC: bỏ trống làm backend dừng khởi động thay vì tự sinh\n" +
-			"khoá ngẫu nhiên (trước đây tự sinh, nhưng khoá mỗi lần khởi động khác nhau khiến mọi phiên\n" +
-			"mất hiệu lực và nhiều replica không dùng chung được phiên).\n" +
+		Doc: "Signs JWT login sessions. REQUIRED: leaving it empty causes the backend to refuse startup\n" +
+			"instead of generating a random key (previously it auto-generated, but a different key on\n" +
+			"each restart invalidated all sessions and made multiple replicas unable to share sessions).\n" +
 			"  openssl rand -hex 32",
 	},
 
 	{
 		Key: "POSTGRES_PASSWORD", Kind: KindSecret, Default: "", Required: true,
 		Group:  "Required in production",
-		ReadBy: "docker-compose (postgres, và DATABASE_URL của backend)",
-		Doc: "Mật khẩu Postgres. docker-compose.yml dựng DATABASE_URL từ biến này và sẽ từ chối\n" +
-			"khởi động nếu nó rỗng. Trước đây user/mật khẩu đều viết cứng là \"postgres\" ngay\n" +
-			"trong compose, đồng thời cổng 5432 mở ra host — tức bất kỳ ai tới được máy đều vào\n" +
-			"được cơ sở dữ liệu bằng thông tin đăng nhập ai cũng biết.\n" +
-			"  REDIS_PASSWORD nằm ở nhóm Redis bên dưới và giờ cũng là bắt buộc.\n" +
+		ReadBy: "docker-compose (postgres, and backend's DATABASE_URL)",
+		Doc: "Postgres password. docker-compose.yml constructs DATABASE_URL from this variable and will\n" +
+			"refuse to start if it is empty. Previously both user and password were hardcoded as\n" +
+			"\"postgres\" right in compose, while port 5432 was exposed to the host — meaning anyone\n" +
+			"who could reach the machine could access the database with credentials everyone knew.\n" +
+			"  REDIS_PASSWORD is in the Redis group below and is now also required.\n" +
 			"  openssl rand -hex 24",
 	},
 
 	{
 		Key: "DEFAULT_ADMIN_USERNAME", Kind: KindString, Default: "",
 		Group: "Seed accounts",
-		Doc: "Tài khoản tạo sẵn ở lần khởi động đầu nếu chưa tồn tại. Để trống toàn bộ nhóm này thì\n" +
-			"không tài khoản nào được tạo và người dùng đầu tiên tự đăng ký qua giao diện. Một\n" +
-			"username thiếu password sẽ bị bỏ qua.",
+		Doc: "Account created on first startup if it does not already exist. Leave this entire group\n" +
+			"empty to create no accounts, and the first user registers through the UI. A username\n" +
+			"without a password is skipped.",
 	},
 	{Key: "DEFAULT_ADMIN_PASSWORD", Kind: KindSecret, Default: "", Group: "Seed accounts"},
 	{Key: "DEFAULT_USER_USERNAME", Kind: KindString, Default: "", Group: "Seed accounts"},
@@ -86,51 +88,51 @@ var Settings = []Setting{
 	{Key: "PORT", Kind: KindString, Default: "8000", Group: "Server"},
 	{
 		Key: "ACCESS_TOKEN_EXPIRE_MINUTES", Kind: KindInt, Default: "15", Min: 1, Max: 525600,
-		Group: "Server", Doc: "Thời hạn access token đăng nhập. Mặc định 15 phút; refresh token dùng để cấp access token mới.",
+		Group: "Server", Doc: "Login access token lifetime. Default 15 minutes; refresh tokens are used to issue new access tokens.",
 	},
 	{
 		Key: "REFRESH_TOKEN_EXPIRE_MINUTES", Kind: KindInt, Default: "43200", Min: 60, Max: 525600,
-		Group: "Server", Doc: "Thời hạn refresh token. Refresh token chỉ nằm trong HttpOnly cookie và không được chấp nhận trong Authorization header.",
+		Group: "Server", Doc: "Refresh token lifetime. Refresh tokens are only stored in HttpOnly cookies and are not accepted in the Authorization header.",
 	},
 	{
 		Key: "AUTH_USER_CACHE_SECONDS", Kind: KindInt, Default: "15", Min: 0, Max: 3600,
 		Group: "Server",
-		Doc: "Số giây ghi nhớ bản ghi người dùng sau khi xác thực token, để mỗi request không\n" +
-			"phải hỏi lại PostgreSQL cùng một câu. Chỉ role và trạng thái duyệt cần tươi, nên\n" +
-			"độ trễ vài giây là chấp nhận được; duyệt tài khoản sẽ xoá cache ngay lập tức.\n" +
-			"Đặt 0 để tắt cache và quay về truy vấn từng request.",
+		Doc: "Number of seconds to cache the user record after token authentication, so each request\n" +
+			"does not have to re-query PostgreSQL for the same row. Only role and approval status\n" +
+			"need to be fresh, so a few seconds of delay is acceptable; account approval clears the\n" +
+			"cache immediately. Set to 0 to disable caching and query on every request.",
 	},
 	{
 		Key: "TASK_MEMORY_RETENTION_SECONDS", Kind: KindInt, Default: "600", Min: 0, Max: 86400,
 		Group: "Server",
-		Doc: "Số giây giữ trạng thái task đã hoàn thành trong RAM cache của TaskManager. Mặc định 600 (10 phút).\n" +
-			"Đặt 0 để TẮT HOÀN TOÀN In-Memory Task Cache; khi đó task hoàn thành sẽ được thu hồi khỏi RAM ngay lập tức\n" +
-			"và các lượt truy vấn trạng thái/tải file sau đó sẽ đọc trực tiếp từ Redis/Database/Storage.",
+		Doc: "Number of seconds to hold completed task state in the TaskManager RAM cache. Default 600 (10 minutes).\n" +
+			"Set to 0 to COMPLETELY DISABLE the In-Memory Task Cache; completed tasks will be evicted from RAM\n" +
+			"immediately and subsequent status/download queries will read directly from Redis/Database/Storage.",
 	},
 	{
 		Key: "ENABLE_REQUEST_LOGGING", Kind: KindString, Default: "true",
 		Group: "Server",
-		Doc: "Bật hoặc Tắt Request Logger (chiMiddleware.Logger) của HTTP Server.\n" +
-			"Đặt false để tắt log từng HTTP Request ra stdout, giúp tối ưu hiệu năng và bộ nhớ RAM dưới tải cao.",
+		Doc: "Enable or disable the HTTP Server's Request Logger (chiMiddleware.Logger).\n" +
+			"Set to false to suppress per-request HTTP logs to stdout, optimizing performance and RAM under high load.",
 	},
 	{
 		Key: "ENABLE_PPROF", Kind: KindString, Default: "false",
 		Group: "Server",
-		Doc: "Bật hoặc Tắt Go Profiler endpoint (/debug/pprof). Mặc định false để bảo mật và tối ưu Production.\n" +
-			"Đặt true khi cần soi Heap/Goroutine memory profile tại /debug/pprof.",
+		Doc: "Enable or disable the Go Profiler endpoint (/debug/pprof). Default false for security and production optimization.\n" +
+			"Set to true when you need to inspect Heap/Goroutine memory profiles at /debug/pprof.",
 	},
 	{
 		Key: "ENABLE_SWAGGER", Kind: KindString, Default: "true",
 		Group: "Server",
-		Doc: "Bật hoặc Tắt Swagger UI API documentation (/swagger). Mặc định true.\n" +
-			"Đặt false để ẩn endpoint tài liệu Swagger trên môi trường Production.",
+		Doc: "Enable or disable Swagger UI API documentation (/swagger). Default true.\n" +
+			"Set to false to hide the Swagger documentation endpoint in production.",
 	},
 
-	{Key: "DATABASE_URL", Kind: KindString, Default: "postgres://postgres:<change>@localhost:5432/ai_studio?sslmode=disable", Group: "Database", Doc: "Connection string PostgreSQL. Khi dùng docker-compose, giá trị này được dựng từ POSTGRES_PASSWORD;\n\t\tđể <change> nếu tự triển khai và thay bằng credential thật."},
+	{Key: "DATABASE_URL", Kind: KindString, Default: "postgres://postgres:<change>@localhost:5432/ai_studio?sslmode=disable", Group: "Database", Doc: "PostgreSQL connection string. When using docker-compose, this value is built from POSTGRES_PASSWORD;\n\t\tleave <change> if self-deploying and replace with real credentials."},
 	{Key: "DB_MAX_CONNS", Kind: KindInt, Default: "25", Min: 1, Max: 10000, Group: "Database"},
 	{
 		Key: "DB_MIN_CONNS", Kind: KindInt, Default: "5", Min: 0, Max: 10000,
-		Group: "Database", Doc: "Không được lớn hơn DB_MAX_CONNS.",
+		Group: "Database", Doc: "Must not be greater than DB_MAX_CONNS.",
 	},
 	{Key: "DB_MAX_CONN_LIFETIME_MINUTES", Kind: KindInt, Default: "30", Min: 1, Max: 10080, Group: "Database"},
 	{Key: "DB_MAX_CONN_IDLE_MINUTES", Kind: KindInt, Default: "15", Min: 1, Max: 10080, Group: "Database"},
@@ -140,21 +142,21 @@ var Settings = []Setting{
 	{
 		Key: "REDIS_URL", Kind: KindString, Default: "localhost:6379",
 		Group: "Redis (optional)",
-		Doc:   "Không có Redis thì backend chạy chế độ in-memory, đủ dùng cho một replica.",
+		Doc:   "Without Redis the backend runs in in-memory mode, sufficient for a single replica.",
 	},
 	{
 		Key: "REDIS_PASSWORD", Kind: KindSecret, Default: "", Group: "Redis (optional)",
-		Doc: "Cũng được truyền vào redis-server --requirepass trong docker-compose.yml, nên để\n" +
-			"trống là chạy Redis không mật khẩu. Trước đây Redis vừa không mật khẩu vừa publish\n" +
-			"6379 ra host; giờ cổng chỉ còn trong network nội bộ, nhưng hãy đặt giá trị cho môi\n" +
-			"trường thật.\n" +
+		Doc: "Also passed to redis-server --requirepass in docker-compose.yml, so leaving it empty\n" +
+			"runs Redis without a password. Previously Redis had no password and published port 6379\n" +
+			"to the host; now the port is only on the internal network, but set a value for real\n" +
+			"environments.\n" +
 			"  openssl rand -hex 24",
 	},
 
 	{
 		Key: "CORE_ENGINE_URL", Kind: KindString, Default: "http://localhost:8001",
 		Group: "Core TTS engine",
-		Doc:   "Nơi backend lấy manifest và gửi yêu cầu tổng hợp.",
+		Doc:   "Where the backend fetches the manifest and sends synthesis requests.",
 	},
 	{
 		Key: "CORE_ENGINE_GRPC_URL", Kind: KindString, Default: "localhost:50051",
@@ -167,128 +169,131 @@ var Settings = []Setting{
 	{
 		Key: "FE_BUILDER_URL", Kind: KindString, Default: "http://frontend-builder:3001",
 		Group: "Frontend builder",
-		Doc: "Backend gọi URL này khi manifest đổi, để builder dựng lại bundle prerender.\n" +
-			"Tín hiệu không mang dữ liệu — builder tự lấy manifest qua VITE_BACKEND_URL.",
+		Doc: "The backend calls this URL when the manifest changes, so the builder can rebuild the prerender\n" +
+			"bundle. The signal carries no data — the builder fetches the manifest itself via VITE_BACKEND_URL.",
 	},
 	{
 		Key: "VITE_BACKEND_URL", Kind: KindString, Default: "http://backend:8000",
 		Group:  "Frontend builder",
 		ReadBy: "frontend",
-		Doc: "Chiều ngược lại: nơi builder và dev server tìm backend để lấy manifest.\n" +
-			"Backend không đọc biến này — nó nằm đây vì là nửa còn lại của cùng một liên kết,\n" +
-			"và tách riêng ra một chỗ khác thì người vận hành phải nhớ hai nơi.\n" +
-			"Đây là biến khởi động: không thể lấy từ manifest, vì cần nó mới lấy được manifest.",
+		Doc: "The reverse direction: where the builder and dev server find the backend to fetch the manifest.\n" +
+			"The backend does not read this variable — it is here because it is the other half of the same\n" +
+			"coupling, and splitting it elsewhere would force the operator to remember two places.\n" +
+			"This is a startup variable: it cannot be fetched from the manifest, because it is needed to\n" +
+			"fetch the manifest.",
 	},
 
 	{
 		Key: "STORAGE_BACKEND", Kind: KindString, Default: "local", Group: "Storage",
-		Doc: "Nơi cất âm thanh và giọng tham chiếu: \"local\" (đĩa của tiến trình) hoặc \"s3\".\n" +
-			"Mặc định local để `docker compose up` chạy được ngay mà không cần tài khoản nào.\n" +
-			"Một giá trị lạ làm backend dừng khởi động thay vì lặng lẽ quay về local — tệp đi\n" +
-			"vào chỗ không ai đọc chỉ lộ ra khi có người cần lại chúng.\n" +
-			"Chọn \"s3\" khi web và worker chạy trên nhiều node: với \"local\", node này không\n" +
-			"đọc được tệp node kia vừa ghi.",
+		Doc: "Where to store audio and reference voices: \"local\" (process disk) or \"s3\".\n" +
+			"Default local so `docker compose up` works immediately without any account.\n" +
+			"An unknown value causes the backend to refuse startup rather than silently falling back\n" +
+			"to local — files going to a place no one reads only surfaces when someone needs them back.\n" +
+			"Choose \"s3\" when web and worker run on multiple nodes: with \"local\", one node cannot\n" +
+			"read files another node just wrote.",
 	},
 	{Key: "STORAGE_DIR", Kind: KindString, Default: "storage", Group: "Storage",
-		Doc: "Gốc lưu trữ khi STORAGE_BACKEND=local. Bị bỏ qua với các backend khác."},
+		Doc: "Storage root when STORAGE_BACKEND=local. Ignored for other backends."},
 
 	{
 		Key: "S3_BUCKET", Kind: KindString, Default: "", Group: "Storage (S3)",
-		Doc: "Bắt buộc khi STORAGE_BACKEND=s3. Bucket được kiểm ngay lúc khởi động, nên tên sai\n" +
-			"hay thiếu quyền làm backend dừng lại thay vì hỏng ở lần tổng hợp đầu tiên.",
+		Doc: "Required when STORAGE_BACKEND=s3. The bucket is verified at startup, so a wrong name or\n" +
+			"missing permissions causes the backend to stop rather than failing on the first synthesis.",
 	},
 	{
 		Key: "S3_REGION", Kind: KindString, Default: "us-east-1", Group: "Storage (S3)",
-		Doc: "Vùng của bucket. Kho tự dựng như MinIO thường bỏ qua giá trị này, nhưng SDK vẫn\n" +
-			"đòi một giá trị nên cứ để mặc định.",
+		Doc: "The bucket's region. Self-hosted stores like MinIO typically ignore this value, but the SDK\n" +
+			"still requires one so leave the default.",
 	},
 	{
 		Key: "S3_ENDPOINT", Kind: KindString, Default: "", Group: "Storage (S3)",
-		Doc: "Để trống với AWS thật. Đặt khi dùng MinIO, Cloudflare R2 hay DigitalOcean Spaces,\n" +
-			"ví dụ https://s3.example.com.",
+		Doc: "Leave empty for real AWS. Set when using MinIO, Cloudflare R2, or DigitalOcean Spaces,\n" +
+			"e.g. https://s3.example.com.",
 	},
 	{
 		Key: "S3_ACCESS_KEY_ID", Kind: KindSecret, Default: "", Group: "Storage (S3)",
-		Doc: "Bỏ trống CẢ HAI khoá để dùng IAM role (IRSA trên k8s, instance profile trên EC2) —\n" +
-			"an toàn hơn khoá tĩnh vì không có gì để rò rỉ. Khai một trong hai là lỗi cấu hình\n" +
-			"và bị từ chối lúc khởi động.",
+		Doc: "Leave BOTH keys empty to use an IAM role (IRSA on k8s, instance profile on EC2) — safer\n" +
+			"than static keys because there is nothing to leak. Providing one without the other is a\n" +
+			"configuration error and is rejected at startup.",
 	},
 	{Key: "S3_SECRET_ACCESS_KEY", Kind: KindSecret, Default: "", Group: "Storage (S3)"},
 	{
 		Key: "S3_FORCE_PATH_STYLE", Kind: KindInt, Default: "0", Min: 0, Max: 1, Group: "Storage (S3)",
-		Doc: "Đặt 1 cho MinIO và phần lớn kho tự dựng: chúng phục vụ theo đường dẫn\n" +
-			"(endpoint/bucket/key) thay vì theo tên miền con, vì tên miền con cần wildcard DNS.",
+		Doc: "Set to 1 for MinIO and most self-hosted stores: they serve by path (endpoint/bucket/key)\n" +
+			"instead of by subdomain, since subdomains require wildcard DNS.",
 	},
 	{
 		Key: "S3_PREFIX", Kind: KindString, Default: "", Group: "Storage (S3)",
-		Doc: "Tiền tố chung cho mọi khoá, để nhiều môi trường dùng chung một bucket mà không\n" +
-			"giẫm lên nhau. Ví dụ \"prod\" hoặc \"staging\".",
+		Doc: "Common prefix for all keys, so multiple environments can share a single bucket without\n" +
+			"stepping on each other. Example \"prod\" or \"staging\".",
 	},
 	{
 		Key: "MAX_UPLOAD_SIZE_MB", Kind: KindInt, Default: "50", Min: 1, Max: 10240,
 		Group: "Storage limits",
-		Doc: "Trần cứng của hạ tầng cho một request tải lên — nói về RAM và băng thông của\n" +
-			"deployment, không phải về model. Engine khai trần riêng trong\n" +
-			"audio_spec.max_upload_bytes; cái nào chặt hơn thì thắng.",
+		Doc: "Infrastructure hard cap for a single upload request — about the deployment's RAM and\n" +
+			"bandwidth, not about the model. The engine declares its own cap in\n" +
+			"audio_spec.max_upload_bytes; whichever is tighter wins.",
 	},
 	{
 		Key: "TEMP_AUDIO_RETENTION_HOURS", Kind: KindInt, Default: "24", Min: 1, Max: 8760,
 		Group: "Storage limits",
-		Doc: "Số giờ giữ âm thanh đã sinh trong storage/temp. Bộ quét chạy mỗi giờ và một lần lúc\n" +
-			"khởi động; không có nó thư mục sẽ phình lên suốt vòng đời triển khai.",
+		Doc: "Number of hours to keep generated audio in storage/temp. The sweeper runs every hour and\n" +
+			"once at startup; without it the directory would grow unbounded over the deployment lifetime.",
 	},
 	{
 		Key: "PRESERVE_FILES", Kind: KindInt, Default: "0", Min: 0, Max: 1,
 		Group: "Storage limits",
-		Doc: "Đặt 1 để giữ lại file tham chiếu trên storage khi xoá giọng clone. Mặc định 0: file\n" +
-			"bị xoá cùng bản ghi DB. Dùng 1 chỉ khi cần audit hoặc backup riêng — file mồ côi\n" +
-			"không tự xoá và phải dọn bằng tay.",
+		Doc: "Set to 1 to keep reference files in storage when deleting a cloned voice. Default 0: files\n" +
+			"are deleted along with the DB record. Use 1 only when you need audit or separate backup —\n" +
+			"orphaned files are not auto-deleted and must be cleaned up manually.",
 	},
 
 	{
 		Key: "COOKIE_SECURE", Kind: KindInt, Default: "1", Min: 0, Max: 1,
 		Group: "Cookie security",
-		Doc: "Đặt cờ Secure trên cookie access_token, tức chỉ gửi cookie qua HTTPS. Mặc định bật.\n" +
-			"Trước đây cờ này bị viết cứng thành false, nên kể cả khi triển khai sau TLS thì token\n" +
-			"phiên vẫn đi được qua HTTP thường. Chỉ đặt 0 khi phát triển cục bộ trên http://localhost.",
+		Doc: "Set the Secure flag on the access_token cookie, meaning the cookie is only sent over HTTPS.\n" +
+			"Enabled by default. Previously this flag was hardcoded to false, so even when deployed behind\n" +
+			"TLS, session tokens could still travel over plain HTTP. Only set to 0 for local development\n" +
+			"on http://localhost.",
 	},
 
 	{
 		Key: "WORKER_MAX_IN_FLIGHT", Kind: KindInt, Default: "2", Min: 1, Max: 128,
 		Group: "Advanced deployment tuning",
-		Doc: "Số lượt tổng hợp tối đa đồng thời trong MỖI worker. Mặc định an toàn cho một Engine GPU;\n" +
-			"tổng tải là số worker nhân giá trị này. AI engineer thường không cần đổi biến này.",
+		Doc: "Maximum concurrent synthesis jobs per worker. Default is safe for one GPU Engine; total load\n" +
+			"is the number of workers multiplied by this value. AI engineers typically do not need to\n" +
+			"change this variable.",
 	},
 	{
 		Key: "TRANSCODE_MAX_CONCURRENCY", Kind: KindInt, Default: "2", Min: 1, Max: 128,
 		Group: "Advanced deployment tuning",
-		Doc: "Số tiến trình ffmpeg tối đa đồng thời trong MỖI web replica. Chỉ đổi khi operator biết\n" +
-			"quota CPU/RAM của deployment; không liên quan đến capability của Core TTS Engine.",
+		Doc: "Maximum concurrent ffmpeg processes per web replica. Only change when the operator knows\n" +
+			"the deployment's CPU/RAM quota; unrelated to the Core TTS Engine's capability.",
 	},
 	{
 		Key: "TRANSCODE_TIMEOUT_SECONDS", Kind: KindInt, Default: "60", Min: 1, Max: 3600,
 		Group: "Advanced deployment tuning",
-		Doc: "Thời gian tối đa cho một lượt chuyển mã audio. Đây là policy của platform, không phải\n" +
-			"thời gian Engine tổng hợp.",
+		Doc: "Maximum time allowed for one audio transcode operation. This is a platform policy, not the\n" +
+			"Engine's synthesis time.",
 	},
 	{
 		Key: "STALE_CHUNK_AFTER_MINUTES", Kind: KindInt, Default: "30", Min: 1, Max: 1440,
 		Group: "Advanced deployment tuning",
-		Doc: "Một chunk còn đứng ở pending/processing quá ngưỡng này bị coi là mồ côi (mất hàng đợi,\n" +
-			"worker chết, Redis restart) và được cron đưa về error. Ngưỡng phải lớn hơn thời gian tối\n" +
-			"đa một chunk hợp lệ có thể chạy — tức TTS_CLIENT_TIMEOUT_SECONDS cộng thời gian chờ\n" +
-			"queue tệ nhất — nếu không một job dài/thẳng hàng chờ bị đánh chết oan.",
+		Doc: "A chunk still in pending/processing beyond this threshold is considered orphaned (lost queue,\n" +
+			"worker died, Redis restart) and is moved to error by cron. The threshold must be greater than\n" +
+			"the maximum time a valid chunk can run — i.e. TTS_CLIENT_TIMEOUT_SECONDS plus worst-case queue\n" +
+			"wait — otherwise a long job or deep queue backlog gets wrongly killed.",
 	},
 	{
 		Key: "AUTH_RATE_LIMIT_REQUESTS", Kind: KindInt, Default: "10", Min: 1, Max: 1000,
 		Group: "Advanced deployment tuning",
-		Doc: "Số request login/register tối đa trong một cửa sổ. Mặc định bảo vệ bcrypt khỏi dò mật khẩu;\n" +
-			"chỉ operator đổi khi hiểu traffic và deployment.",
+		Doc: "Maximum login/register requests per window. Default protects bcrypt from password guessing;\n" +
+			"only the operator changes this when they understand the traffic and deployment.",
 	},
 	{
 		Key: "AUTH_RATE_LIMIT_WINDOW_SECONDS", Kind: KindInt, Default: "60", Min: 1, Max: 3600,
 		Group: "Advanced deployment tuning",
-		Doc:   "Độ dài cửa sổ rate limit login/register.",
+		Doc:   "Login/register rate limit window duration.",
 	},
 
 	{
@@ -300,24 +305,24 @@ var Settings = []Setting{
 	{
 		Key: "TRUSTED_PROXIES", Kind: KindList, Default: "",
 		Group: "Rate limiting",
-		Doc: "Các dải CIDR (hoặc IP) của proxy đứng trước backend, ví dụ \"10.0.0.0/8,172.16.0.0/12\".\n" +
-			"Chỉ khi kết nối đến từ một trong các dải này thì X-Forwarded-For mới được tin để lấy IP\n" +
-			"người gọi. Bỏ trống nghĩa là không tin header đó bao giờ — đúng cho triển khai không có\n" +
-			"proxy phía trước.\n" +
-			"Vì sao cần: header này do client đặt được. Không có danh sách tin cậy thì hạn mức bị\n" +
-			"khoá theo một giá trị người gọi tự chọn, nên đổi header mỗi lần là hạn mức không còn\n" +
-			"tác dụng — đo được 200/200 request lọt qua một hạn mức 10/phút.",
+		Doc: "CIDR ranges (or IPs) of proxies in front of the backend, e.g. \"10.0.0.0/8,172.16.0.0/12\".\n" +
+			"Only when the connection comes from one of these ranges is X-Forwarded-For trusted to\n" +
+			"determine the caller IP. Leave empty to never trust that header — correct for deployments\n" +
+			"with no fronting proxy.\n" +
+			"Why it matters: this header is settable by the client. Without a trusted list, rate limits\n" +
+			"are keyed by a value the caller chooses, so changing the header each time renders the limit\n" +
+			"ineffective — 200/200 requests get through a 10/min limit.",
 	},
 }
 
-// lookup trả về đặc tả của một biến. Panic khi không tìm thấy: LoadConfig chỉ hỏi những
-// khoá viết cứng trong mã nguồn, nên thiếu khoá là lỗi lập trình chứ không phải lỗi cấu
-// hình của người vận hành — và một bài test duyệt toàn bộ để bắt sớm.
+// lookup returns the specification for a variable. Panics on miss: LoadConfig only asks for
+// keys hardcoded in the source, so a missing key is a programming error, not an operator's
+// configuration error — and a test sweeps the entire table to catch it early.
 func lookup(key string) Setting {
 	for _, s := range Settings {
 		if s.Key == key {
 			return s
 		}
 	}
-	panic("cấu hình: khoá chưa được khai trong Settings: " + key)
+	panic("config: key not declared in Settings: " + key)
 }

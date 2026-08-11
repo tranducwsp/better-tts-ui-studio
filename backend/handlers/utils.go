@@ -17,36 +17,39 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-// maxExtractBytes là trần số byte đọc từ file upload vào RAM cho việc bóc chữ.
+// maxExtractBytes is the cap on bytes read from an uploaded file into RAM for text extraction.
 //
-// Trước đây ExtractText đọc CẢ upload (đến MAX_UPLOAD_SIZE_MB, tối đa 10 GB) và giữ trong RAM
-// suốt quá trình bóc — với file PDF large, fallback còn copy `string(data)` thêm lần nữa.
-// Bóc chữ là best-effort: văn bản thật của một tài liệu hiếm khi vượt vài MB, nên đọc quá
-// ngưỡng này cắt bớt không làm mất gì đáng kể, và một request không còn kéo theo nguy cơ tốn
-// cả GB RAM. Với file .txt chỉ cần chữ đầu, đọc thấp hơn nữa (xem ExtractText).
+// Previously ExtractText read the ENTIRE upload (up to MAX_UPLOAD_SIZE_MB, max 10 GB) and
+// held it in RAM throughout extraction — for large PDF files, the fallback also copied
+// `string(data)` an additional time. Text extraction is best-effort: the real text of a
+// document rarely exceeds a few MB, so reading beyond this threshold and truncating loses
+// nothing significant, and a single request no longer risks consuming gigabytes of RAM.
+// For .txt files only the beginning is needed, reading even lower (see ExtractText).
 const maxExtractBytes = 32 << 20 // 32 MiB
 
-// maxExtractOutputBytes là trần kích thước text trả về, tính theo byte.
+// maxExtractOutputBytes is the cap on returned text size, measured in bytes.
 //
-// 200 KiB rộng hơn hầu hết văn bản mà người dùng muốn xem/xoá vào TTS; chặn builder phình theo
-// tài liệu (một DOCX giải nén tới 64 MB text vẫn được bóc hết chỉ để lấy 200 KiB).
+// 200 KiB is wider than most text a user would want to view/delete into TTS; prevents the
+// builder from ballooning with the document (a DOCX decompressing to 64 MB of text is still
+// fully extracted only to take 200 KiB).
 const maxExtractOutputBytes = 200 << 10 // 200 KiB
 
-// maxPdfMatches là trần số match regex xử lý khi bóc PDF.
+// maxPdfMatches is the cap on regex matches processed during PDF extraction.
 //
-// Một PDF crafted có thể chứa trăm nghìn thẻ `(..) Tj`; FindAllSubmatchIndex trả về match thành
-// limiting slice — không chặn thì dựng slice vô hạn và tốn CPU ở mọi input lớn.
+// A crafted PDF can contain hundreds of thousands of `(..) Tj` tags; FindAllSubmatchIndex
+// returns matches into a limiting slice — without the cap it builds an unbounded slice and
+// burns CPU on every large input.
 const maxPdfMatches = 100_000
 
-// UtilsHandler xử lý các API tiện ích hỗ trợ đọc và bóc tách văn bản từ file tài liệu upload.
+// UtilsHandler handles utility APIs for reading and extracting text from uploaded document files.
 type UtilsHandler struct{}
 
-// NewUtilsHandler khởi tạo UtilsHandler.
+// NewUtilsHandler initializes a UtilsHandler.
 func NewUtilsHandler() *UtilsHandler {
 	return &UtilsHandler{}
 }
 
-// ExtractText bóc tách văn bản thô từ các định dạng tài liệu được tải lên (.txt, .pdf, .docx, .odt).
+// ExtractText extracts raw text from uploaded document formats (.txt, .pdf, .docx, .odt).
 func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -65,9 +68,10 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Đọc giới hạn theo định dạng: với .txt chỉ ghi phần đầu vào textarea, nên chỉ cần lấy đủ
-	// trần output — không mang bản sao hàng chục MB về cho vài trăm KB dùng được. PDF/zip thì
-	// cần đủ buffer để regex scan / trình giải nén chạy, nên dùng trần input 32 MiB.
+	// Read limit varies by format: for .txt, only the beginning goes into the textarea, so
+	// just fetch enough for the output cap — no need to bring tens of MB for a few hundred KB
+	// of usable text. PDF/zip need enough buffer for regex scanning / the decompressor to run,
+	// so use the 32 MiB input cap.
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	readLimit := int64(maxExtractBytes)
 	if ext == ".txt" {
@@ -90,33 +94,33 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	case ".pdf":
 		extractedText, err = extractPDFText(content)
 		if err != nil {
-			// Lỗi của thư viện phân tích chỉ vào log: nó mang đường dẫn và chi tiết nội bộ,
-			// còn người tải tệp lên thì chỉ cần biết tệp này không đọc được.
-			log.Printf("Không đọc được tệp PDF: %v", err)
+			// Parser library errors go to the log only: they carry paths and internal details,
+			// while the file uploader only needs to know that this file could not be read.
+			log.Printf("Failed to read PDF file: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
-			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Không đọc được nội dung tệp PDF"})
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read PDF file content"})
 			return
 		}
 
 	case ".docx":
 		extractedText, err = extractDOCXText(content)
 		if err != nil {
-			// Lỗi của thư viện phân tích chỉ vào log: nó mang đường dẫn và chi tiết nội bộ,
-			// còn người tải tệp lên thì chỉ cần biết tệp này không đọc được.
-			log.Printf("Không đọc được tệp DOCX: %v", err)
+			// Parser library errors go to the log only: they carry paths and internal details,
+			// while the file uploader only needs to know that this file could not be read.
+			log.Printf("Failed to read DOCX file: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
-			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Không đọc được nội dung tệp DOCX"})
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read DOCX file content"})
 			return
 		}
 
 	case ".odt":
 		extractedText, err = extractODTText(content)
 		if err != nil {
-			// Lỗi của thư viện phân tích chỉ vào log: nó mang đường dẫn và chi tiết nội bộ,
-			// còn người tải tệp lên thì chỉ cần biết tệp này không đọc được.
-			log.Printf("Không đọc được tệp ODT: %v", err)
+			// Parser library errors go to the log only: they carry paths and internal details,
+			// while the file uploader only needs to know that this file could not be read.
+			log.Printf("Failed to read ODT file: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
-			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Không đọc được nội dung tệp ODT"})
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to read ODT file content"})
 			return
 		}
 
@@ -133,10 +137,11 @@ func (h *UtilsHandler) ExtractText(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// truncateText cắt chuỗi về tối đa maxBytes, dừng ở biên giới ký tự UTF-8.
+// truncateText truncates a string to at most maxBytes, stopping at a UTF-8 character boundary.
 //
-// Plain `s[:maxBytes]` có thể cắt giữa một rune → cuối text là một ký tự hỏng. JSON encoder xử
-// lý được nhưng người dùng thấy một ô vuông lạ ở cuối bài; lùi về biên giới rune thì đẹp hơn.
+// Plain `s[:maxBytes]` can cut in the middle of a rune, leaving a broken character at the
+// end. The JSON encoder handles it, but the user sees a strange box at the end of the text;
+// backing up to a rune boundary is cleaner.
 func truncateText(s string, maxBytes int) string {
 	if len(s) <= maxBytes {
 		return s
@@ -147,28 +152,28 @@ func truncateText(s string, maxBytes int) string {
 	return s[:maxBytes]
 }
 
-// maxDocumentXMLBytes là trần cho phần XML đã giải nén của một tệp DOCX/ODT.
+// maxDocumentXMLBytes is the cap for the decompressed XML portion of a DOCX/ODT file.
 //
-// MaxBytesReader trong parseUpload chỉ chặn kích thước tệp NÉN, mà DOCX và ODT đều là zip:
-// một tệp 597 KB giải nén ra 600 MB (đã đo, khuếch đại ~1000x), nên trần đầu vào không nói
-// gì về lượng RAM việc bóc chữ sẽ dùng. Vài request song song là đủ hạ tiến trình, và người
-// gửi chỉ cần một tài khoản đã được duyệt.
+// MaxBytesReader in parseUpload only caps the COMPRESSED file size, but DOCX and ODT are both
+// zip: a 597 KB file decompresses to 600 MB (measured, ~1000x amplification), so the input cap
+// says nothing about how much RAM the extraction will consume. A few concurrent requests are
+// enough to bring down the process, and the sender only needs a single approved account.
 //
-// 64 MB rộng hơn mọi tài liệu văn bản thực tế nhiều lần — văn bản thuần trong một tệp Word
-// nghìn trang vẫn ở mức vài MB — nên trần này không chạm tới người dùng thật, chỉ chạm tệp
-// được dựng riêng để phình ra.
+// 64 MB is many times wider than any real text document — the plain text in a thousand-page
+// Word file is still a few MB — so this cap never touches real users, only files crafted
+// specifically to balloon.
 const maxDocumentXMLBytes = 64 << 20
 
-// readZipEntry giải nén một entry trong zip với trần cố định.
+// readZipEntry decompresses a zip entry with a fixed ceiling.
 //
-// Kiểm hai lần, vì mỗi lần bắt một kiểu tệp khác nhau: UncompressedSize64 lấy từ header của
-// zip nên chặn được trước khi đọc byte nào, nhưng header do người tạo tệp ghi và nói dối
-// được. LimitReader là thứ thực sự chặn, đo trên dữ liệu đã giải nén. Đọc thêm một byte quá
-// trần để phân biệt "vừa đủ" với "vượt".
+// Checks twice, because each catches a different file type: UncompressedSize64 comes from the
+// zip header so it blocks before reading any bytes, but the header is written by the file
+// creator and can lie. LimitReader is the real guard, measured on the decompressed data.
+// Reads one extra byte past the cap to distinguish "exactly at cap" from "exceeded".
 func readZipEntry(f *zip.File) ([]byte, error) {
 	if f.UncompressedSize64 > maxDocumentXMLBytes {
 		return nil, fmtError(fmt.Sprintf(
-			"nội dung tài liệu sau giải nén (%d MB) vượt quá giới hạn %d MB",
+			"decompressed document content (%d MB) exceeds the %d MB limit",
 			f.UncompressedSize64>>20, maxDocumentXMLBytes>>20))
 	}
 
@@ -184,12 +189,12 @@ func readZipEntry(f *zip.File) ([]byte, error) {
 	}
 	if len(data) > maxDocumentXMLBytes {
 		return nil, fmtError(fmt.Sprintf(
-			"nội dung tài liệu sau giải nén vượt quá giới hạn %d MB", maxDocumentXMLBytes>>20))
+			"decompressed document content exceeds the %d MB limit", maxDocumentXMLBytes>>20))
 	}
 	return data, nil
 }
 
-// extractDOCXText đọc file DOCX (Zip archive) và parse XML word/document.xml để lấy toàn bộ chữ.
+// extractDOCXText reads a DOCX file (Zip archive) and parses word/document.xml to extract all text.
 func extractDOCXText(data []byte) (string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -204,7 +209,7 @@ func extractDOCXText(data []byte) (string, error) {
 		}
 	}
 	if docFile == nil {
-		return "", fmtError("document.xml không tồn tại trong DOCX")
+		return "", fmtError("document.xml does not exist in DOCX")
 	}
 
 	xmlBytes, err := readZipEntry(docFile)
@@ -240,7 +245,7 @@ func extractDOCXText(data []byte) (string, error) {
 	return sb.String(), nil
 }
 
-// extractODTText đọc file ODT (OpenDocument Text) và parse XML content.xml để lấy chữ.
+// extractODTText reads an ODT file (OpenDocument Text) and parses content.xml to extract text.
 func extractODTText(data []byte) (string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -255,7 +260,7 @@ func extractODTText(data []byte) (string, error) {
 		}
 	}
 	if contentFile == nil {
-		return "", fmtError("content.xml không tồn tại trong ODT")
+		return "", fmtError("content.xml does not exist in ODT")
 	}
 
 	xmlBytes, err := readZipEntry(contentFile)
@@ -306,36 +311,37 @@ func extractODTText(data []byte) (string, error) {
 	return sb.String(), nil
 }
 
-// Biểu thức chính quy bóc chữ từ PDF, biên dịch một lần lúc nạp gói.
+// Regular expressions for extracting text from PDFs, compiled once at package load.
 //
-// rePDFStringInArray trước đây được biên dịch NGAY TRONG vòng lặp duyệt kết quả khớp: một
-// PDF nhiều nghìn mảng chữ là bấy nhiêu lần biên dịch lại đúng một mẫu không đổi. Hai mẫu
-// còn lại cũng được biên dịch lại mỗi lần gọi hàm.
+// rePDFStringInArray was previously compiled INSIDE the match iteration loop: a PDF with
+// thousands of text arrays meant recompiling the same unchanging pattern that many times.
+// The other two patterns were also recompiled on every function call.
 var (
 	rePDFTextObj       = regexp.MustCompile(`\(([^)]*)\)\s*Tj|\[([^\]]*)\]\s*TJ`)
 	rePDFStringInArray = regexp.MustCompile(`\(([^)]*)\)`)
 	rePDFReadableRun   = regexp.MustCompile(`[\w\s.,!?;:\"'-]{5,}`)
 )
 
-// extractPDFText bóc tách các dòng chữ thô từ PDF Stream Objects.
+// extractPDFText extracts raw text lines from PDF Stream Objects.
 func extractPDFText(data []byte) (string, error) {
 	var sb strings.Builder
 
-	// FindAllSubmatchIndex trả về cặp chỉ số vào data thay vì thuộc cấp phát []byte cho từng
-	// match như FindAllSubmatch, và tham số thứ hai chặn số match — với input đã bị cắt nhưng
-	// vẫn có thể chứa trăm nghìn thẻ, một slice match vô hạn là cách tốn cả RAM lẫn CPU.
+	// FindAllSubmatchIndex returns index pairs into data rather than allocating []byte for each
+	// match like FindAllSubmatch, and the second parameter caps the match count — with input
+	// already truncated but still potentially containing hundreds of thousands of tags, an
+	// unbounded match slice is a way to burn both RAM and CPU.
 	matches := rePDFTextObj.FindAllSubmatchIndex(data, maxPdfMatches)
 
 	for _, m := range matches {
-		// m là dãy cặp [start,end] liên tiếp: [0:2] toàn khớp, [2:4] nhóm 1 `(...) Tj`,
-		// [4:6] nhóm 2 `[...] TJ`. Nhóm nào không tham gia thì chỉ số của nó là -1.
+		// m is a sequence of [start,end] pairs: [0:2] full match, [2:4] group 1 `(...) Tj`,
+		// [4:6] group 2 `[...] TJ`. Non-participating groups have index -1.
 		switch {
 		case len(m) >= 4 && m[2] >= 0:
 			sb.Write(data[m[2]:m[3]])
 			sb.WriteByte(' ')
 		case len(m) >= 6 && m[4] >= 0:
 			array := data[m[4]:m[5]]
-			// Trong mảng `[...]` mỗi phần tử lại là `(text)`, và đó là những gì người dùng cần.
+			// Inside a `[...]` array each element is `(text)`, and that is what the user needs.
 			subs := rePDFStringInArray.FindAllSubmatchIndex(array, maxPdfMatches)
 			for _, sm := range subs {
 				if len(sm) >= 4 && sm[2] >= 0 {
@@ -358,10 +364,12 @@ func extractPDFText(data []byte) (string, error) {
 	return res, nil
 }
 
-// extractPDFReadableRun là fallback quét text đọc được bằng regex khi không tìm thấy thẻ chữ.
+// extractPDFReadableRun is a fallback that scans for readable text via regex when no text
+// tags are found.
 //
-// Chạy trên []byte trực tiếp thay vì `string(data)`: bản cũ copy nguyên input thành string rồi
-// mới quét — với file vừa chạm trần input, đó là thêm ~32 MiB RAM không cần thiết.
+// Operates on []byte directly rather than `string(data)`: the old version copied the entire
+// input into a string before scanning — for a file at the input cap, that is an extra ~32 MiB
+// of unnecessary RAM.
 func extractPDFReadableRun(data []byte) string {
 	var sb strings.Builder
 	sb.Grow(maxExtractOutputBytes)

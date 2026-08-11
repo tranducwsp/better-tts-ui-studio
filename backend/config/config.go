@@ -9,7 +9,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config chứa toàn bộ thông số cấu hình của hệ thống backend, được nạp từ biến môi trường (ENV).
+// Config holds all backend system configuration parameters, loaded from environment variables (ENV).
 type Config struct {
 	Host                      string
 	Port                      string
@@ -17,25 +17,25 @@ type Config struct {
 	SecretKey                 string
 	AccessTokenExpireMinutes  int
 	RefreshTokenExpireMinutes int
-	// Số giây ghi nhớ bản ghi người dùng sau khi xác thực token. 0 nghĩa là không cache.
-	AuthUserCacheSeconds      int
+	// Number of seconds to cache the user record after token authentication. 0 means no caching.
+	AuthUserCacheSeconds       int
 	TaskMemoryRetentionSeconds int
-	EnableRequestLogging      bool
-	EnablePprof               bool
-	EnableSwagger             bool
-	CoreTTSURL           string
-	CoreTTSGrpcURL       string
-	FEBuilderURL         string
-	DefaultAdminUsername string
-	DefaultAdminPassword string
-	DefaultUserUsername  string
-	DefaultUserPassword  string
+	EnableRequestLogging       bool
+	EnablePprof                bool
+	EnableSwagger              bool
+	CoreTTSURL                 string
+	CoreTTSGrpcURL             string
+	FEBuilderURL               string
+	DefaultAdminUsername       string
+	DefaultAdminPassword       string
+	DefaultUserUsername        string
+	DefaultUserPassword        string
 
-	// Cấu hình Redis Cache & PubSub Broker
+	// Redis Cache & PubSub Broker configuration
 	RedisURL      string
 	RedisPassword string
 
-	// Cấu hình Database Connection Pool (pgxpool)
+	// Database Connection Pool configuration (pgxpool)
 	DBMaxConns                int32
 	DBMinConns                int32
 	DBMaxConnLifetimeMinutes  int
@@ -43,11 +43,11 @@ type Config struct {
 	DBConnectMaxRetries       int
 	DBConnectRetryIntervalSec int
 
-	// Cấu hình Storage & Limit
+	// Storage & Limit configuration
 	StorageBackend string
 	StorageDir     string
 
-	// Cấu hình kho S3, chỉ có nghĩa khi StorageBackend là "s3".
+	// S3 storage configuration, only meaningful when StorageBackend is "s3".
 	S3Bucket         string
 	S3Region         string
 	S3Endpoint       string
@@ -55,10 +55,10 @@ type Config struct {
 	S3SecretKey      string
 	S3ForcePathStyle bool
 	S3Prefix         string
-	// Số giờ giữ tập tin âm thanh tạm trước khi bị quét xoá.
-	TempRetentionHours         int
-	MaxUploadMB                int
-	// Giữ lại file tham chiếu khi xoá giọng clone (thay vì xoá file vật lý).
+	// Number of hours to keep temporary audio files before they are swept and deleted.
+	TempRetentionHours int
+	MaxUploadMB        int
+	// Keep reference files when deleting cloned voices (instead of physically deleting them).
 	PreserveFiles              bool
 	CORSOrigins                []string
 	CookieSecure               bool
@@ -70,32 +70,33 @@ type Config struct {
 	AuthRateLimitWindowSeconds int
 	StaleChunkAfterMinutes     int
 
-	// TrustedProxies là các dải CIDR được phép đặt X-Forwarded-For.
+	// TrustedProxies are the CIDR ranges allowed to set X-Forwarded-For.
 	//
-	// Rỗng nghĩa là không tin header đó: hạn mức khoá theo địa chỉ TCP thật. Xem
+	// Empty means the header is not trusted: rate limits are keyed by the real TCP address. See
 	// middleware.SetTrustedProxies.
 	TrustedProxies []string
 }
 
-// requireAll dừng tiến trình nếu bất kỳ biến nào đánh dấu Required bị bỏ trống.
+// requireAll stops the process if any variable marked Required is left empty.
 //
-// Trước đây cờ Required chỉ là trang trí: gen-env đọc nó để in dòng "BẮT BUỘC cho môi
-// trường thật" vào .env.example, còn lúc chạy thì không ai kiểm. Nên một triển khai thiếu
-// SECRET_KEY vẫn khởi động bình thường bằng khoá ngẫu nhiên, và người vận hành chỉ biết nếu
-// tình cờ đọc log — đúng kiểu hỏng ngầm mà bảng đặc tả này sinh ra để tránh.
+// Previously the Required flag was only decorative: gen-env read it to print a "REQUIRED for
+// real environments" line in .env.example, but at runtime no one checked. So a deployment
+// missing SECRET_KEY would still start normally with a random key, and the operator would only
+// know if they happened to read the log — exactly the kind of silent failure this spec table
+// was designed to prevent.
 //
-// Gom mọi biến thiếu rồi báo một lần: sửa một biến, khởi động lại, phát hiện thiếu biến
-// tiếp theo là vòng lặp không cần thiết khi tất cả đều biết được ngay từ đầu.
+// Collect all missing variables and report them once: fixing one, restarting, discovering the
+// next missing variable is an unnecessary loop when all can be known upfront.
 func requireAll() {
 	var missing []string
 	for _, s := range Settings {
 		if !s.Required {
 			continue
 		}
-		// Biến của dịch vụ khác không phải việc của tiến trình này. POSTGRES_PASSWORD chẳng
-		// hạn: docker-compose tự bắt buộc nó qua cú pháp `:?`, còn backend chỉ thấy
-		// DATABASE_URL đã dựng sẵn — nên đòi nó ở đây sẽ chặn khởi động vô cớ ở mọi triển
-		// khai không dùng compose, ví dụ k8s cấp thẳng DATABASE_URL.
+		// Variables belonging to other services are not this process's concern. POSTGRES_PASSWORD
+		// for example: docker-compose enforces it via `:?` syntax, while the backend only sees
+		// DATABASE_URL already constructed — requiring it here would block startup needlessly in
+		// every deployment that doesn't use compose, e.g. k8s providing DATABASE_URL directly.
 		if s.ReadBy != "" {
 			continue
 		}
@@ -105,36 +106,38 @@ func requireAll() {
 	}
 
 	if len(missing) > 0 {
-		log.Fatalf("Thiếu biến môi trường bắt buộc: %s.\n"+
-			"Sao chép .env.example thành .env rồi điền chúng. Sinh giá trị ngẫu nhiên bằng:\n"+
+		log.Fatalf("Missing required environment variables: %s.\n"+
+			"Copy .env.example to .env and fill them in. Generate random values with:\n"+
 			"  openssl rand -hex 32",
 			strings.Join(missing, ", "))
 	}
 }
 
-// resolveSecretKey lấy khoá ký JWT từ ENV.
+// resolveSecretKey retrieves the JWT signing key from ENV.
 //
-// Trước đây hàm này trả về một chuỗi mặc định cố định nằm sẵn trong mã nguồn. Bất kỳ ai
-// đọc được repo đều có thể tự ký một token admin hợp lệ mà không cần mật khẩu — nên một
-// giá trị mặc định dùng chung là lỗ hổng, không phải tiện ích.
+// Previously this function returned a hardcoded default string baked into the source. Anyone
+// who could read the repo could self-sign a valid admin token without a password — so a shared
+// default value is a vulnerability, not a convenience.
 //
-// Bước sau đó là sinh khoá ngẫu nhiên khi ENV bỏ trống. An toàn hơn giá trị cứng, nhưng vẫn
-// để hệ thống khởi động ở một trạng thái không ai chọn: phiên mất sau mỗi lần khởi động lại
-// và nhiều replica không dùng chung được phiên, chỉ báo bằng một dòng log dễ trôi. requireAll
-// đã chặn từ trước, nên tới đây khoá chắc chắn có.
+// The next step was generating a random key when ENV was empty. Safer than a hardcoded value,
+// but still let the system start in a state no one chose: sessions lost after every restart
+// and multiple replicas could not share sessions, signaled only by an easily-missed log line.
+// requireAll already blocks this upfront, so by the time we get here the key is guaranteed
+// present.
 func resolveSecretKey() string {
 	return strings.TrimSpace(os.Getenv("SECRET_KEY"))
 }
 
-// LoadConfig đọc .env rồi nạp mọi biến theo bảng đặc tả trong settings.go.
+// LoadConfig reads .env and loads all variables according to the specification table in
+// settings.go.
 //
-// Không giá trị mặc định nào xuất hiện ở đây — chúng chỉ tồn tại trong Settings, để một
-// người muốn biết "biến X mặc định là gì" chỉ phải đọc một bảng thay vì lần theo mã khởi
-// tạo.
+// No default values appear here — they only exist in Settings, so someone wanting to know
+// "what is the default for variable X" only has to read one table instead of tracing through
+// initialization code.
 func LoadConfig() *Config {
 	_ = godotenv.Load()
 
-	// Trước mọi thứ khác: thiếu một biến bắt buộc thì không có cấu hình nào để nói tới.
+	// Before anything else: a missing required variable means there is no configuration to speak of.
 	requireAll()
 
 	corsOrigins := strings.Split(str("CORS_ALLOWED_ORIGINS"), ",")
@@ -142,9 +145,9 @@ func LoadConfig() *Config {
 		corsOrigins[i] = strings.TrimSpace(corsOrigins[i])
 	}
 
-	// Bỏ phần tử rỗng: mặc định của TRUSTED_PROXIES là chuỗi rỗng, mà Split trả về một lát
-	// cắt một phần tử rỗng chứ không phải lát cắt rỗng — và một mục rỗng sẽ không phân tích
-	// được thành CIDR nào.
+	// Remove empty elements: TRUSTED_PROXIES defaults to an empty string, and Split returns a
+	// single-element slice containing an empty string rather than an empty slice — and an empty
+	// entry cannot be parsed as any CIDR.
 	var trustedProxies []string
 	for _, p := range strings.Split(str("TRUSTED_PROXIES"), ",") {
 		if p = strings.TrimSpace(p); p != "" {
@@ -155,27 +158,27 @@ func LoadConfig() *Config {
 	dbMaxConns := int32(num("DB_MAX_CONNS"))
 	dbMinConns := int32(num("DB_MIN_CONNS"))
 
-	// Ràng buộc chéo: pgxpool báo lỗi khi MinConns lớn hơn MaxConns, nhưng thông báo của nó
-	// không chỉ ra biến môi trường nào cần sửa.
+	// Cross constraint: pgxpool reports an error when MinConns exceeds MaxConns, but its message
+	// does not indicate which environment variable to fix.
 	if dbMinConns > dbMaxConns {
-		log.Fatalf("DB_MIN_CONNS (%d) không được lớn hơn DB_MAX_CONNS (%d).", dbMinConns, dbMaxConns)
+		log.Fatalf("DB_MIN_CONNS (%d) must not be greater than DB_MAX_CONNS (%d).", dbMinConns, dbMaxConns)
 	}
 
 	cfg := &Config{
-		Host:                      str("HOST"),
-		Port:                      str("PORT"),
-		DatabaseURL:               str("DATABASE_URL"),
-		SecretKey:                 resolveSecretKey(),
-		AccessTokenExpireMinutes:  num("ACCESS_TOKEN_EXPIRE_MINUTES"),
-		RefreshTokenExpireMinutes: num("REFRESH_TOKEN_EXPIRE_MINUTES"),
-		AuthUserCacheSeconds:      num("AUTH_USER_CACHE_SECONDS"),
+		Host:                       str("HOST"),
+		Port:                       str("PORT"),
+		DatabaseURL:                str("DATABASE_URL"),
+		SecretKey:                  resolveSecretKey(),
+		AccessTokenExpireMinutes:   num("ACCESS_TOKEN_EXPIRE_MINUTES"),
+		RefreshTokenExpireMinutes:  num("REFRESH_TOKEN_EXPIRE_MINUTES"),
+		AuthUserCacheSeconds:       num("AUTH_USER_CACHE_SECONDS"),
 		TaskMemoryRetentionSeconds: num("TASK_MEMORY_RETENTION_SECONDS"),
-		EnableRequestLogging:      strings.ToLower(str("ENABLE_REQUEST_LOGGING")) != "false" && str("ENABLE_REQUEST_LOGGING") != "0",
-		EnablePprof:               strings.ToLower(str("ENABLE_PPROF")) == "true" || str("ENABLE_PPROF") == "1",
-		EnableSwagger:             strings.ToLower(str("ENABLE_SWAGGER")) != "false" && str("ENABLE_SWAGGER") != "0",
-		CoreTTSURL:                str("CORE_ENGINE_URL"),
-		CoreTTSGrpcURL:            str("CORE_ENGINE_GRPC_URL"),
-		FEBuilderURL:              str("FE_BUILDER_URL"),
+		EnableRequestLogging:       strings.ToLower(str("ENABLE_REQUEST_LOGGING")) != "false" && str("ENABLE_REQUEST_LOGGING") != "0",
+		EnablePprof:                strings.ToLower(str("ENABLE_PPROF")) == "true" || str("ENABLE_PPROF") == "1",
+		EnableSwagger:              strings.ToLower(str("ENABLE_SWAGGER")) != "false" && str("ENABLE_SWAGGER") != "0",
+		CoreTTSURL:                 str("CORE_ENGINE_URL"),
+		CoreTTSGrpcURL:             str("CORE_ENGINE_GRPC_URL"),
+		FEBuilderURL:               str("FE_BUILDER_URL"),
 
 		DefaultAdminUsername: str("DEFAULT_ADMIN_USERNAME"),
 		DefaultAdminPassword: str("DEFAULT_ADMIN_PASSWORD"),
@@ -204,7 +207,7 @@ func LoadConfig() *Config {
 		S3Prefix:                   str("S3_PREFIX"),
 		TempRetentionHours:         num("TEMP_AUDIO_RETENTION_HOURS"),
 		MaxUploadMB:                num("MAX_UPLOAD_SIZE_MB"),
-			PreserveFiles:              num("PRESERVE_FILES") == 1,
+		PreserveFiles:              num("PRESERVE_FILES") == 1,
 		CORSOrigins:                corsOrigins,
 		CookieSecure:               num("COOKIE_SECURE") == 1,
 		TTSClientTimeout:           num("TTS_CLIENT_TIMEOUT_SECONDS"),
@@ -221,37 +224,37 @@ func LoadConfig() *Config {
 	return cfg
 }
 
-// logSummary in ra cấu hình đang có hiệu lực ngay khi khởi động.
+// logSummary prints the configuration currently in effect at startup.
 //
-// Không có nó, một biến gõ sai tên (DB_MAXCONNS thay vì DB_MAX_CONNS) sẽ im lặng dùng mặc
-// định và người vận hành không có cách nào đối chiếu ý định với thực tế. Bí mật chỉ hiện
-// trạng thái, không hiện giá trị.
+// Without it, a mistyped variable name (DB_MAXCONNS instead of DB_MAX_CONNS) would silently
+// use the default and the operator would have no way to compare intent against reality. Secrets
+// only show their presence, not their value.
 func (c *Config) logSummary() {
-	seeded := "không tạo tài khoản nào"
+	seeded := "no accounts seeded"
 	if c.DefaultAdminUsername != "" || c.DefaultUserUsername != "" {
-		seeded = "có tài khoản khởi tạo sẵn"
+		seeded = "accounts will be seeded"
 	}
 
-	log.Printf("Cấu hình đang áp dụng:")
-	log.Printf("  server        %s:%s | token hết hạn sau %d phút", c.Host, c.Port, c.AccessTokenExpireMinutes)
-	log.Printf("  secret        đã đặt qua ENV | %s", seeded)
+	log.Printf("Active configuration:")
+	log.Printf("  server        %s:%s | token expires in %d min", c.Host, c.Port, c.AccessTokenExpireMinutes)
+	log.Printf("  secret        set via ENV | %s", seeded)
 	log.Printf("  engine        %s (timeout %ds) | %s", c.CoreTTSURL, c.TTSClientTimeout, c.grpcStatus())
 	log.Printf("  db pool       max=%d min=%d lifetime=%dm idle=%dm retry=%dx%ds",
 		c.DBMaxConns, c.DBMinConns, c.DBMaxConnLifetimeMinutes, c.DBMaxConnIdleMinutes,
 		c.DBConnectMaxRetries, c.DBConnectRetryIntervalSec)
-	log.Printf("  storage       backend=%s dir=%s | giữ tạm %dh | upload tối đa %dMB",
+	log.Printf("  storage       backend=%s dir=%s | temp retention %dh | max upload %dMB",
 		c.StorageBackend, c.StorageDir, c.TempRetentionHours, c.MaxUploadMB)
 	log.Printf("  cors          %s", strings.Join(c.CORSOrigins, ", "))
 }
 
 func (c *Config) grpcStatus() string {
 	if c.CoreTTSGrpcURL != "" {
-		return "gRPC + HTTP (gRPC cho Synthesize, HTTP cho Manifest/Voices/Clone)"
+		return "gRPC + HTTP (gRPC for Synthesize, HTTP for Manifest/Voices/Clone)"
 	}
 	return "HTTP only"
 }
 
-// str đọc một biến chuỗi theo đặc tả.
+// str reads a string variable according to the specification.
 func str(key string) string {
 	s := lookup(key)
 	if v, exists := os.LookupEnv(s.Key); exists && strings.TrimSpace(v) != "" {
@@ -260,12 +263,12 @@ func str(key string) string {
 	return s.Default
 }
 
-// num đọc một biến số nguyên theo đặc tả.
+// num reads an integer variable according to the specification.
 //
-// Giá trị không phân tích được sẽ làm tiến trình dừng lại, thay vì lặng lẽ quay về mặc
-// định. Một biến gõ sai — "twenty", "32MB" — trước đây bị bỏ qua không dấu vết, nên người
-// vận hành tin rằng cấu hình đã có hiệu lực trong khi hệ thống chạy bằng giá trị khác.
-// Hỏng ngay lúc khởi động dễ sửa hơn nhiều so với hỏng ngầm.
+// An unparseable value will stop the process, rather than silently falling back to the default.
+// A mistyped variable — "twenty", "32MB" — was previously discarded without a trace, so the
+// operator believed the configuration was in effect while the system ran with a different
+// value. Failing immediately at startup is far easier to fix than a silent failure.
 func num(key string) int {
 	s := lookup(key)
 
@@ -276,10 +279,10 @@ func num(key string) int {
 
 	val, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil {
-		log.Fatalf("Biến môi trường %s = %q không phải số nguyên hợp lệ. Hãy sửa hoặc bỏ biến này để dùng mặc định (%s).", s.Key, raw, s.Default)
+		log.Fatalf("Environment variable %s = %q is not a valid integer. Fix it or unset the variable to use the default (%s).", s.Key, raw, s.Default)
 	}
 	if val < s.Min || val > s.Max {
-		log.Fatalf("Biến môi trường %s = %d nằm ngoài khoảng cho phép (%d đến %d).", s.Key, val, s.Min, s.Max)
+		log.Fatalf("Environment variable %s = %d is outside the allowed range (%d to %d).", s.Key, val, s.Min, s.Max)
 	}
 	return val
 }

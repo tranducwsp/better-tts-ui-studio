@@ -9,24 +9,24 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-// writeJSON trả về một payload JSON kèm mã trạng thái.
+// writeJSON returns a JSON payload with a status code.
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(payload)
 }
 
-// writeError trả về một lỗi theo đúng hình dạng {"detail": ...} mà Frontend đọc.
+// writeError returns an error in the exact {"detail": ...} shape that the Frontend reads.
 func writeError(w http.ResponseWriter, status int, detail string) {
 	writeJSON(w, status, map[string]string{"detail": detail})
 }
 
-// currentUser lấy người dùng đã xác thực, tự trả 401 nếu không có.
+// currentUser retrieves the authenticated user, returning 401 itself if absent.
 //
-// Mọi route gọi hàm này đều đã nằm sau RequireActiveUser hoặc RequireAdmin, nên nhánh
-// !ok là lưới an toàn cho trường hợp một route mới bị mắc vào nhóm không có middleware —
-// giữ lại thì rẻ, mà mất thì hỏng âm thầm. Trước đây chín handler viết lại nguyên khối
-// này, nên sửa hình dạng lỗi ở một chỗ sẽ bỏ sót tám chỗ còn lại.
+// Every route calling this function is already behind RequireActiveUser or RequireAdmin, so the
+// !ok branch is a safety net for the case where a new route is accidentally placed in a group
+// without middleware — keeping it is cheap, losing it is silent breakage. Previously nine handlers
+// re-wrote this entire block, so fixing the error shape in one place would miss the other eight.
 func currentUser(w http.ResponseWriter, r *http.Request) (*sqlc.User, bool) {
 	user, ok := middleware.GetCurrentUser(r)
 	if !ok {

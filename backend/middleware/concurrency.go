@@ -2,16 +2,17 @@ package middleware
 
 import "net/http"
 
-// ConcurrencyLimit giới hạn số request đang được xử lý đồng thời.
+// ConcurrencyLimit caps the number of concurrently processed requests.
 //
-// Đây là chốt chặn *không phụ thuộc nội dung*: hạn mức body (BodyLimit, MAX_UPLOAD_SIZE_MB)
-// và hạn mức RAM trong handler (handlers/utils.go) đều đo theo từng request, nhưng N request
-// cùng lúc vẫn nhân RAM lên N lần. Với max cho trước, trần bộ nhớ của nhóm route là
-// max × (RAM trần của một request), tính được trước và không bị điều khiển bởi input.
+// This is a *content-agnostic* gate: body limits (BodyLimit, MAX_UPLOAD_SIZE_MB) and the
+// per-request RAM ceiling in the handler (handlers/utils.go) are measured per request, but N
+// concurrent requests still multiply RAM by N. With a given max, the route group's memory
+// ceiling is max * (per-request RAM ceiling), predictable and not controllable by input.
 //
-// Request vượt quá hạn chờ trong hàng đợi thay vì bị lỗi ngay — người dùng hợp lệ đi qua khi
-// một chỗ trống, chậm hơn vài giây là chấp nhận được với best-effort như bóc chữ. Nếu client
-// ngắt trong lúc chờ, request bỏ hàng không làm việc.
+// Requests exceeding the limit wait in the queue instead of erroring immediately — legitimate
+// users get through when a slot opens, a few seconds slower is acceptable for best-effort
+// operations like text extraction. If the client disconnects while waiting, the request leaves
+// the queue and does no work.
 func ConcurrencyLimit(max int) func(http.Handler) http.Handler {
 	sem := make(chan struct{}, max)
 
@@ -21,7 +22,7 @@ func ConcurrencyLimit(max int) func(http.Handler) http.Handler {
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
 			case <-r.Context().Done():
-				// Client đã ngắt; không chiếm chỗ, không phục vụ.
+				// Client has disconnected; do not occupy a slot, do not serve.
 				return
 			}
 			next.ServeHTTP(w, r)

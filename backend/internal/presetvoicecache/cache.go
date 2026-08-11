@@ -7,9 +7,11 @@ import (
 	"backend/client"
 )
 
-// DefaultTTL là tuổi tối đa của một bản nạp giọng preset trước khi bị coi là cũ.
-// Danh sách giọng của engine đổi hiếm, nên 30 giây tránh các lượt gọi lặp khi người dùng mở
-// voice picker nhưng vẫn bắt kịp thay đổi ngay cả khi engine quên tăng manifest version.
+// DefaultTTL is the maximum age of a preset voice fetch before it is considered stale.
+//
+// The engine's voice list changes rarely, so 30 seconds avoids repeated HTTP calls when the user
+// opens the voice picker, while still catching up if the engine changes voices without bumping
+// the manifest version.
 const DefaultTTL = 30 * time.Second
 
 type entry struct {
@@ -18,8 +20,8 @@ type entry struct {
 	fetched         time.Time
 }
 
-// Cache giữ danh sách giọng preset dùng chung theo mode. Giọng preset không thuộc về cá nhân;
-// giọng clone của người dùng không đi qua component này.
+// Cache holds a shared per-mode preset voice list. Preset voices are not user-specific;
+// cloned voices do not go through this component.
 type Cache struct {
 	mu              sync.Mutex
 	mode            map[string]*entry
@@ -27,8 +29,9 @@ type Cache struct {
 	manifestVersion func() string
 }
 
-// New tạo cache với TTL và nguồn cung cấp manifest version hiện tại. Callback giữ package này
-// độc lập với global state của handler và cho phép mỗi deployment quyết định nơi giữ manifest.
+// New creates a cache with the given TTL and manifest version source. The callback keeps this
+// package independent of the handler's global state and lets each deployment decide where the
+// manifest lives.
 func New(ttl time.Duration, manifestVersion func() string) *Cache {
 	if manifestVersion == nil {
 		manifestVersion = func() string { return "" }
@@ -40,8 +43,8 @@ func New(ttl time.Duration, manifestVersion func() string) *Cache {
 	}
 }
 
-// Get trả bản cache nếu cả TTL lẫn manifest version còn hợp lệ. Entry hết hạn bị loại ngay để
-// map không tích tụ dữ liệu không còn dùng.
+// Get returns a cached entry when both the TTL and manifest version are still valid. Expired
+// entries are removed from the map immediately to avoid accumulating stale data.
 func (c *Cache) Get(mode string, now time.Time) ([]client.CoreVoice, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -58,7 +61,7 @@ func (c *Cache) Get(mode string, now time.Time) ([]client.CoreVoice, bool) {
 	return e.voices, true
 }
 
-// Store lưu một bản nạp giọng preset kèm version tại thời điểm lấy từ engine.
+// Store saves a preset voice fetch with the manifest version at the time it was fetched from the engine.
 func (c *Cache) Store(mode string, voices []client.CoreVoice, now time.Time) {
 	c.mu.Lock()
 	c.mode[cacheKey(mode)] = &entry{

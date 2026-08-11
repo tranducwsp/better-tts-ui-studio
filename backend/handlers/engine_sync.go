@@ -12,27 +12,28 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-// rebuildSignalTimeout giới hạn lượt gọi webhook sang frontend-builder.
+// rebuildSignalTimeout limits the webhook call to the frontend-builder.
 //
-// Builder chỉ cần NHẬN được tín hiệu; nó trả lời 202 ngay rồi dựng bundle ở nền, nên chỗ này
-// không bao giờ phải chờ một lượt build. Vài giây là quá đủ để biết tín hiệu đã tới.
+// The builder only needs to RECEIVE the signal; it replies 202 immediately and builds the bundle
+// in the background, so this call never needs to wait for a build. A few seconds is more than
+// enough to know the signal has arrived.
 const rebuildSignalTimeout = 10 * time.Second
 
-// rebuildClient tách khỏi http.DefaultClient vì DefaultClient KHÔNG có timeout.
+// rebuildClient is separated from http.DefaultClient because DefaultClient has NO timeout.
 //
-// Trước đây webhook dùng http.Post, tức là DefaultClient: nếu builder mở cổng nhưng không trả
-// lời — đúng trạng thái nó rơi vào khi đang bận build — goroutine dưới đây chờ vô hạn. Mỗi
-// lần reload manifest thêm một goroutine kẹt vĩnh viễn, và không có gì trong log nói rằng
-// chúng đang tích lại.
+// Previously the webhook used http.Post, meaning DefaultClient: if the builder's port was open
+// but not responding — exactly the state it falls into while busy building — the goroutine below
+// waited indefinitely. Each manifest reload added one permanently stuck goroutine, and nothing
+// in the logs indicated they were accumulating.
 var rebuildClient = &http.Client{Timeout: rebuildSignalTimeout}
 
-// EngineSyncHandler xử lý các yêu cầu đồng bộ cấu hình/manifest từ AI Engine nội bộ.
+// EngineSyncHandler handles configuration/manifest sync requests from the internal AI Engine.
 type EngineSyncHandler struct {
 	TTSClient    *client.CoreTTSClient
 	FEBuilderURL string
 }
 
-// NewEngineSyncHandler khởi tạo EngineSyncHandler với CoreTTSClient và FEBuilderURL.
+// NewEngineSyncHandler initializes EngineSyncHandler with CoreTTSClient and FEBuilderURL.
 func NewEngineSyncHandler(ttsClient *client.CoreTTSClient, feBuilderURL string) *EngineSyncHandler {
 	return &EngineSyncHandler{
 		TTSClient:    ttsClient,
@@ -40,21 +41,21 @@ func NewEngineSyncHandler(ttsClient *client.CoreTTSClient, feBuilderURL string) 
 	}
 }
 
-// ReloadManifest xử lý yêu cầu POST /api/internal/engine/reload.
-// Tự động truy vấn lại Manifest mới nhất từ Core AI Engine và kích hoạt re-build HTML tĩnh ở Frontend Builder.
+// ReloadManifest handles POST /api/internal/engine/reload requests.
+// Automatically re-queries the latest Manifest from the Core AI Engine and triggers a static HTML re-build on the Frontend Builder.
 func (h *EngineSyncHandler) ReloadManifest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	manifest, err := h.TTSClient.GetInfo()
 	if err != nil {
-		// Route này chỉ admin gọi được và mục đích của nó là chẩn đoán, nên nguyên nhân thật
-		// vẫn trả về — nhưng cũng phải vào log, vì người bấm reload không nhất thiết là người
-		// đang đọc log lúc sự cố xảy ra.
-		log.Printf("Không lấy được manifest từ Engine: %v", err)
+		// This route is admin-only and its purpose is diagnostic, so the real cause is still
+		// returned — but it must also go to the log, since the person pressing reload is not
+		// necessarily the person reading the log when the issue occurs.
+		log.Printf("Failed to fetch manifest from Engine: %v", err)
 		w.WriteHeader(http.StatusBadGateway)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 			"status": "error",
-			"detail": "Không thể kết nối đến Core AI Engine để đồng bộ Manifest: " + err.Error(),
+			"detail": "Cannot connect to Core AI Engine to sync Manifest: " + err.Error(),
 		})
 		return
 	}
@@ -63,45 +64,46 @@ func (h *EngineSyncHandler) ReloadManifest(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 			"status": "error",
-			"detail": "Manifest nhận được từ Core AI Engine rỗng",
+			"detail": "Manifest received from Core AI Engine is empty",
 		})
 		return
 	}
 
-	// Cập nhật RAM Cache nội bộ. Manifest mâu thuẫn bị từ chối và bản đang dùng giữ nguyên,
-	// nên một lần reload lỗi không làm hệ thống tệ hơn lúc trước khi gọi.
+	// Update the internal RAM Cache. A conflicting Manifest is rejected and the current one is
+	// preserved, so a failed reload does not leave the system in a worse state than before the
+	// call.
 	if err := state.GlobalManifestState.Set(manifest); err != nil {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 			"status": "error",
-			"detail": "Manifest từ Core AI Engine không hợp lệ, đã giữ lại bản đang dùng: " + err.Error(),
+			"detail": "Manifest from Core AI Engine is invalid, kept the current version: " + err.Error(),
 		})
 		return
 	}
-	log.Printf("🚀 Đã đồng bộ lại AI Engine Manifest thành công: %s (v%s) [Max Text: %d]",
+	log.Printf("Successfully re-synced AI Engine Manifest: %s (v%s) [Max Text: %d]",
 		manifest.EngineName, manifest.Version, manifest.Constraints.MaxTextLength)
 
-	// Bắn tín hiệu bất đồng bộ sang frontend-builder container để re-prerender HTML tĩnh
+	// Fire an async signal to the frontend-builder container to re-prerender static HTML
 	if h.FEBuilderURL != "" {
 		go func(url string) {
 			rebuildTarget := url + "/rebuild"
 
 			req, err := http.NewRequest(http.MethodPost, rebuildTarget, nil)
 			if err != nil {
-				log.Printf("⚠️ Không dựng được yêu cầu tới FE Builder (%s): %v", rebuildTarget, err)
+				log.Printf("Failed to build request to FE Builder (%s): %v", rebuildTarget, err)
 				return
 			}
 			req.Header.Set("Content-Type", "application/json")
 
 			resp, err := rebuildClient.Do(req)
 			if err != nil {
-				log.Printf("⚠️ Tín hiệu trigger FE Builder thất bại (%s): %v", rebuildTarget, err)
+				log.Printf("Trigger signal to FE Builder failed (%s): %v", rebuildTarget, err)
 				return
 			}
-			// Đọc cạn body trước khi đóng để kết nối được tái sử dụng thay vì bị bỏ đi.
+			// Drain the body before closing so the connection can be reused instead of discarded.
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
-			log.Printf("⚡ Đã bắn tín hiệu kích hoạt re-build static HTML thành công sang FE Builder (%s)", rebuildTarget)
+			log.Printf("Successfully triggered static HTML re-build signal to FE Builder (%s)", rebuildTarget)
 		}(h.FEBuilderURL)
 	}
 

@@ -5,15 +5,15 @@ import (
 	"time"
 )
 
-// SweepTempObjects xoá âm thanh tạm cũ hơn retention và trả về số đối tượng đã xoá cùng số
-// byte giải phóng.
+// SweepTempObjects deletes temporary audio older than retention and returns the number of
+// objects deleted and bytes freed.
 //
-// Đây là thao tác dữ liệu thuần trên Store — nó không tự chạy định kỳ, không giữ goroutine
-// hay ticker. Vòng đời của tiến trình thuộc về package cron, nơi có quyền quyết định chạy
-// bao lâu một lần và xử lý kết quả.
+// This is a pure data operation on the Store — it does not run on a schedule, does not hold a
+// goroutine or ticker. The process lifecycle belongs to the cron package, which decides how
+// often to run and handles the result.
 //
-// Chỉ quét nhánh temp: giọng người dùng đã lưu nằm ở nhánh khác và không được phép xoá. Ràng
-// buộc đó do List thi hành (không đệ quy), không phải do người gọi nhớ.
+// Only scans the temp branch: saved user voices live in a different branch and must not be
+// deleted. That constraint is enforced by List (non-recursive), not by the caller remembering.
 func SweepTempObjects(ctx context.Context, store Store, retention time.Duration) (int, int64, error) {
 	objects, err := store.List(ctx, TempPrefix)
 	if err != nil {
@@ -29,7 +29,7 @@ func SweepTempObjects(ctx context.Context, store Store, retention time.Duration)
 			continue
 		}
 		if err := store.Delete(ctx, o.Key); err != nil {
-			// Tệp có thể đang được đọc để trả về cho client; lần quét sau sẽ dọn.
+			// The file may be currently being read to serve a client; the next sweep will clean it.
 			continue
 		}
 		removed++

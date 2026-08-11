@@ -17,23 +17,23 @@ import (
 	"github.com/google/uuid"
 )
 
-// AuthHandler xử lý các API liên quan đến Xác thực (Authentication) và Quản lý người dùng.
+// AuthHandler handles Authentication and User Management APIs.
 type AuthHandler struct {
 	Config *config.Config
 }
 
-// NewAuthHandler khởi tạo một AuthHandler mới với cấu hình hệ thống.
+// NewAuthHandler initializes a new AuthHandler with system configuration.
 func NewAuthHandler(cfg *config.Config) *AuthHandler {
 	return &AuthHandler{Config: cfg}
 }
 
-// UserCreateRequest cấu trúc payload yêu cầu khi đăng ký hoặc đăng nhập.
+// UserCreateRequest is the request payload structure for registration or login.
 type UserCreateRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-// UserResponse cấu trúc dữ liệu người dùng trả về cho client (không chứa PasswordHash).
+// UserResponse is the user data structure returned to the client (does not contain PasswordHash).
 type UserResponse struct {
 	ID         string `json:"id"`
 	Username   string `json:"username"`
@@ -42,7 +42,7 @@ type UserResponse struct {
 	IsOnline   bool   `json:"is_online"`
 }
 
-// Register xử lý đăng ký tài khoản mới. Tài khoản đăng ký mới sẽ mặc định ở trạng thái IsApproved = false (chờ Admin duyệt).
+// Register handles new account registration. New accounts default to IsApproved = false (pending Admin approval).
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -72,8 +72,16 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+<<<<<<< HEAD
 		// bcrypt chỉ nhận 72 byte, kiểm trước để trả 400 thay vì 500.
 		if err := security.ValidatePassword(req.Password); err != nil {
+=======
+	// Check before hashing: bcrypt only accepts 72 bytes, so a longer password would cause
+	// HashPassword below to return an error and the user would see "500 Failed to hash password"
+	// for an input-level error. Block here and return 400 with the correct reason. Positioned
+	// after the empty check so the two cases have distinct messages.
+	if err := security.ValidatePassword(req.Password); err != nil {
+>>>>>>> worktree-agent-a6f4d5609ff61827b
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
@@ -157,10 +165,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Verify password with Bcrypt
 	//
-	// Password quá 72 byte bị bcrypt từ chối so sánh; trả về 401 chung như mọi sai mật khẩu
-	// thay vì để bcrypt báo lỗi riêng (trong quá khứ điều này từng ra 500). Cũng 401 như
-	// VerifyPassword bên dưới sẽ trả, nhưng viết thẳng ở đây là chủ động, không tùy thuộc
-	// vào cách thư viện đóng gói lỗi.
+	// Passwords over 72 bytes are rejected by bcrypt comparison; return a generic 401 like any
+	// wrong password instead of letting bcrypt report its own error (in the past this used to
+	// return 500). Same 401 that VerifyPassword below would return, but written here proactively
+	// to avoid depending on how the library wraps errors.
 	if len([]byte(req.Password)) > security.MaxPasswordBytes {
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Invalid username or password"})
@@ -179,12 +187,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Dọn phiên quá hạn. Opportunistic tại login: bảng nhỏ, DELETE theo index, không cần
-	// một tiến trình dọn riêng. Lỗi không chặn đăng nhập.
+	// 4. Clean up expired sessions. Opportunistic at login: small table, DELETE by index, no need
+	// for a dedicated cleanup process. Errors do not block login.
 	_, _ = db.DeleteExpiredAuthSessions(r.Context())
 
-	// 5. Tạo phiên dài hạn phía server: mỗi lần đăng nhập là một family riêng. Refresh token
-	// chỉ sống bằng tuổi dòng auth_sessions này; rotation luôn giữ nguyên mốc hết hạn.
+	// 5. Create a long-lived server-side session: each login is its own family. Refresh token
+	// lives only as long as this auth_sessions row; rotation always preserves the absolute expiry.
 	sessExpiresAt := time.Now().Add(time.Duration(h.Config.RefreshTokenExpireMinutes) * time.Minute)
 	jti := uuid.NewString()
 	if err := db.CreateAuthSession(r.Context(), jti, uuid.NewString(), user.ID, sessExpiresAt, r.UserAgent(), middleware.ClientIP(r)); err != nil {
@@ -208,8 +216,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Access token có thể được trả về JSON cho client API; refresh token thì tuyệt đối không
-	// được trả trong body/header. Nó chỉ nằm trong HttpOnly cookie để JavaScript không đọc được.
+	// The access token can be returned in JSON for API clients; the refresh token must never
+	// be returned in body/header. It only lives in an HttpOnly cookie so JavaScript cannot read it.
 	h.setTokenCookies(w, accessToken, refreshToken, sessExpiresAt)
 
 	// Touch online status in Redis
@@ -220,8 +228,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		"token_type":   "bearer",
 		"message":      "Login successful",
 		"role":         user.Role,
-		// Phải kèm user object, nếu không frontend gán response này làm currentUser thì header
-		// không biết tên người dùng là gì. Register đã làm vậy; login thiếu là một lỗi.
+		// Must include the user object, otherwise the frontend assigns this response as currentUser
+		// and the header has no way to know the username. Register already does this; login missing
+		// it was a bug.
 		"user": UserResponse{
 			ID:         user.ID,
 			Username:   user.Username,
@@ -232,14 +241,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// setTokenCookies đặt access token và refresh token với thuộc tính phù hợp.
+// setTokenCookies sets the access token and refresh token with appropriate attributes.
 //
-// Refresh token dùng Path=/api/auth để browser gửi nó tới đúng hai nơi cần: endpoint refresh
-// (POST /api/auth/refresh) và logout (POST /api/auth/logout) — logout phải nhìn thấy token
-// mới thu hồi được nó phía server. Không hẹp hơn tới /api/auth/refresh vì khi đó logout nằm
-// ngoài phạm vi path của cookie và phiên không bao giờ bị chết. Authorization header không bao
-// giờ được đọc cho refresh token. MaxAge tính từ mốc hết hạn TUYỆT ĐỐI của phiên: sau mỗi
-// rotation, tuổi còn lại ngắn dần.
+// Refresh token uses Path=/api/auth so the browser sends it to exactly the two places that need
+// it: the refresh endpoint (POST /api/auth/refresh) and logout (POST /api/auth/logout) — logout
+// must see the token in order to revoke it server-side. Not narrower to /api/auth/refresh because
+// then logout would fall outside the cookie's path scope and the session would never die. The
+// Authorization header is never read for refresh tokens. MaxAge is calculated from the ABSOLUTE
+// session expiry: after each rotation, the remaining lifetime gets shorter.
 func (h *AuthHandler) setTokenCookies(w http.ResponseWriter, accessToken, refreshToken string, refreshExpiresAt time.Time) {
 	maxAge := int(time.Until(refreshExpiresAt).Seconds())
 	if maxAge < 0 {
@@ -253,9 +262,9 @@ func (h *AuthHandler) setTokenCookies(w http.ResponseWriter, accessToken, refres
 	h.setRefreshCookie(w, refreshToken, maxAge)
 }
 
-// setRefreshCookie đặt một refresh cookie tại Path mới (/api/auth), hoặc xoá nó khi value rỗng.
-// Tách riêng để Logout còn xoá được cookie legacy Path=/api/auth/refresh từ các phiên đăng
-// nhập trước bản sửa này.
+// setRefreshCookie sets a refresh cookie at the new Path (/api/auth), or clears it when value is empty.
+// Separated so that Logout can also clear the legacy Path=/api/auth/refresh cookie from sessions
+// created before this change.
 func (h *AuthHandler) setRefreshCookie(w http.ResponseWriter, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name: "refresh_token", Value: value, Path: "/api/auth", HttpOnly: true,
@@ -264,10 +273,10 @@ func (h *AuthHandler) setRefreshCookie(w http.ResponseWriter, value string, maxA
 	})
 }
 
-// Refresh cấp access token mới từ refresh_token HttpOnly cookie, đồng thời rotate refresh token.
+// Refresh issues a new access token from the refresh_token HttpOnly cookie, and rotates the refresh token.
 //
-// Không chấp nhận body, query param hay Authorization header cho refresh token. Header đó chỉ
-// dành cho access token ở AuthMiddleware; đưa refresh token vào đó sẽ không bao giờ có tác dụng.
+// Does not accept body, query param, or Authorization header for the refresh token. That header is
+// only for the access token in AuthMiddleware; putting a refresh token there will never have any effect.
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	cookie, err := r.Cookie("refresh_token")
@@ -282,45 +291,46 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Tra cứu dòng phiên theo jti. Token ký đúng nhưng jti không tồn tại (giả mạo, bảng đã bị
-	// xoá khi phiên hết hạn) phải bị từ chối như token rác.
+	// Look up the session row by jti. A correctly signed token whose jti does not exist (forged,
+	// or the row was deleted when the session expired) must be rejected like a garbage token.
 	sess, err := db.GetAuthSession(r.Context(), claims.JTI)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "Session not found")
 		return
 	}
 
-	// Token đã bị thay thế: đây là reuse. Chỉ từ chối token cũ, KHÔNG hạ family. Browser dùng
-	// chung một cookie jar cho mọi tab; tab thua chỉ cần gửi lại là có cookie mới nhất — nếu
-	// hạ family ở đây thì chỉ cần hai tab cùng refresh là đá mọi phiên khác ra ngoài.
+	// Token has been replaced: this is reuse. Only reject the old token, do NOT invalidate the
+	// family. The browser shares a single cookie jar across all tabs; a losing tab just needs to
+	// re-send and it will get the latest cookie — if we invalidate the family here, two tabs
+	// refreshing at the same time would kick out every other session.
 	if sess.ReplacedBy.Valid {
 		writeError(w, http.StatusUnauthorized, "Refresh token already used")
 		return
 	}
-	// Phiên đã bị thu hồi chủ động khi logout: nguyên family đã chết, token này không còn
-	// quyền gì nữa.
+	// Session was actively revoked on logout: the entire family is dead, this token has no more
+	// rights.
 	if sess.RevokedAt.Valid {
 		writeError(w, http.StatusUnauthorized, "Refresh token revoked")
 		return
 	}
-	// Phiên hết hạn theo DB (rotation KHÔNG kéo dài phiên). Thu hồi token để ai giữ nó quay
-	// lại sau khi đã trả 401 cũng không thể dùng lại được nữa.
+	// Session expired per DB (rotation does NOT extend the session). Revoke the token so that
+	// anyone holding it who comes back after receiving 401 cannot reuse it either.
 	if sess.ExpiresAt.Time.Before(time.Now()) {
 		_, _ = db.RevokeAuthSession(r.Context(), claims.JTI)
 		writeError(w, http.StatusUnauthorized, "Session expired")
 		return
 	}
 
-	// jti của phiên phải thuộc đúng người dùng đang yêu cầu; chống tráo refresh token giữa
-	// hai tài khoản.
+	// The session's jti must belong to the requesting user; prevents swapping refresh tokens
+	// between two accounts.
 	user, err := db.Queries.GetUserByUsername(r.Context(), claims.Username)
 	if err != nil || !user.IsApproved || user.ID != sess.UserID {
 		writeError(w, http.StatusUnauthorized, "User is not active")
 		return
 	}
 
-	// Rotation trong một transaction: đẻ token mới (jti mới, cùng family, cùng mốc hết hạn
-	// TUYỆT ĐỐI) rồi mới đánh dấu token cũ — không bao giờ có hai token cùng hợp lệ.
+	// Rotation in a single transaction: create the new token (new jti, same family, same ABSOLUTE
+	// expiry) and only then mark the old token — there are never two valid tokens at once.
 	newJTI := uuid.NewString()
 	if err := db.RotateRefreshSession(r.Context(), claims.JTI, sess.SessionFamilyID, user.ID, newJTI, sess.ExpiresAt.Time, r.UserAgent(), middleware.ClientIP(r)); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to rotate session")
@@ -338,7 +348,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Token mới thay cookie cũ; browser chỉ biết token mới từ đây trở đi.
+	// The new token replaces the old cookie; from here on the browser only knows the new token.
 	h.setTokenCookies(w, accessToken, refreshToken, sess.ExpiresAt.Time)
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{
 		"access_token": accessToken,
@@ -349,17 +359,18 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Thu hồi token phía server nếu cookie còn hợp lệ. Xoá cookie thôi thì phiên dài hạn vẫn
-	// sống: kẻ trộm có token sẽ tiếp tục refresh được vô hạn. Không có token (hoặc đã hết hạn)
-	// thì vẫn xoá cookie để đáp ứng có ý nghĩa.
+	// Revoke the token server-side if the cookie is still valid. Just deleting the cookie would
+	// leave the long-lived session alive: a thief holding the token could keep refreshing
+	// indefinitely. If there is no token (or it has expired), still delete the cookie so the
+	// response is meaningful.
 	if cookie, err := r.Cookie("refresh_token"); err == nil && cookie.Value != "" {
 		if claims, err := security.ValidateRefreshToken(cookie.Value, h.Config.SecretKey); err == nil && claims.JTI != "" {
 			_, _ = db.RevokeAuthSession(r.Context(), claims.JTI)
 		}
 	}
 
-	// Thuộc tính phải trùng với cookie lúc đặt, nếu không trình duyệt coi đây là một cookie
-	// khác và cookie phiên cũ vẫn nằm lại.
+	// Attributes must match the cookie at set time, otherwise the browser treats this as a
+	// different cookie and the old session cookie remains.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
 		Value:    "",
@@ -369,9 +380,9 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
-	// Refresh cookie xoá ở CẢ hai Path: một cho cookie hiện hành (/api/auth), một cho cookie
-	// của những phiên đăng nhập trước bản sửa scope (vốn Path=/api/auth/refresh). Bỏ sót path
-	// cũ thì trình duyệt giữ lại cookie đó và phiên vẫn sống.
+	// Refresh cookie is cleared on BOTH paths: one for the current cookie (/api/auth), one for
+	// sessions created before the scope change (which had Path=/api/auth/refresh). Missing the
+	// old path means the browser keeps that cookie and the session stays alive.
 	h.setRefreshCookie(w, "", -1)
 	http.SetCookie(w, &http.Cookie{
 		Name: "refresh_token", Value: "", Path: "/api/auth/refresh", HttpOnly: true,
@@ -380,7 +391,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"message": "Logged out successfully"})
 }
 
-// Me trả về thông tin chi tiết của người dùng đang đăng nhập dựa trên JWT Token.
+// Me returns the currently logged-in user's details based on the JWT Token.
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user, ok := currentUser(w, r)
@@ -397,24 +408,31 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+<<<<<<< HEAD
 // usersPageSize là trần số người dùng trả về cho trang quản trị.
 // Truy vấn không có trần nghĩa là một triển khai đông người
 // phải tải toàn bộ bảng users cho mỗi lần mở trang.
+=======
+// usersPageSize is the cap on the number of users returned for the admin page.
+//
+// Same reason as historyPageSize: an un-capped query means a large deployment must load the
+// entire users table every time the page is opened.
+>>>>>>> worktree-agent-a6f4d5609ff61827b
 const usersPageSize = 500
 
-// GetUsers (Admin API) lấy danh sách tất cả người dùng trong hệ thống kèm trạng thái Online thời gian thực từ Redis.
+// GetUsers (Admin API) returns the list of all users in the system with real-time Online status from Redis.
 func (h *AuthHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	users, err := db.Queries.ListUsers(r.Context(), usersPageSize)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Lỗi khi lấy danh sách user"})
+		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Failed to retrieve user list"})
 		return
 	}
 
-	// Một lượt hỏi Redis cho cả bảng, không phải một lượt cho mỗi hàng: trước đây vòng lặp
-	// dưới đây gọi IsUserOnline cho từng người, nên độ trễ của trang tỉ lệ thuận với số người
-	// dùng và mỗi lượt lại không có hạn thời gian.
+	// One Redis query for the entire table, not one per row: previously the loop below called
+	// IsUserOnline for each user, so page latency was proportional to the number of users and
+	// each call had no time bound.
 	ids := make([]string, len(users))
 	for i, u := range users {
 		ids[i] = u.ID
@@ -434,7 +452,7 @@ func (h *AuthHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(res)
 }
 
-// ApproveUser (Admin API) duyệt tài khoản người dùng theo user_id để họ có thể đăng nhập & sử dụng hệ thống.
+// ApproveUser (Admin API) approves a user account by user_id so they can log in and use the system.
 func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	userID := chi.URLParam(r, "user_id")
@@ -446,8 +464,8 @@ func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Xoá bản ghi đã cache, nếu không tài khoản vừa duyệt vẫn bị chặn cho tới khi TTL hết
-	// và người dùng không hiểu vì sao mình vẫn chưa vào được.
+	// Delete the cached record, otherwise the newly approved account is still blocked until the
+	// TTL expires and the user does not understand why they still cannot log in.
 	middleware.InvalidateUser(user.Username)
 
 	_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{

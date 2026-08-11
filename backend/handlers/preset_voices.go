@@ -5,8 +5,8 @@ import (
 	"backend/state"
 )
 
-// presetVoiceCache là cache chung cho mọi người dùng. Handler sở hữu wiring tới manifest global;
-// component cache chỉ biết một callback version và không phụ thuộc vào state của ứng dụng.
+// presetVoiceCache is a shared cache for all users. The handler wires it to the global manifest;
+// the cache component only knows a version callback and has no dependency on application state.
 var presetVoiceCache = presetvoicecache.New(presetvoicecache.DefaultTTL, currentManifestVersion)
 
 func currentManifestVersion() string {
