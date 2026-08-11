@@ -72,11 +72,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kiểm trước khi băm: bcrypt chỉ nhận 72 byte, nên password dài hơn nữa khiến
-	// HashPassword dưới trả lỗi và người dùng thấy "500 Failed to hash password" cho một
-	// lỗi thuộc về đầu vào. Chặn ở đây trả 400 với đúng lý do. Vị trí nằm sau kiểm rỗng để
-	// hai trường hợp có hai thông điệp riêng.
-	if err := security.ValidatePassword(req.Password); err != nil {
+		// bcrypt chỉ nhận 72 byte, kiểm trước để trả 400 thay vì 500.
+		if err := security.ValidatePassword(req.Password); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
@@ -401,9 +398,8 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 // usersPageSize là trần số người dùng trả về cho trang quản trị.
-//
-// Cùng lý do với historyPageSize: truy vấn không có trần nghĩa là một triển khai đông người
-// dùng phải tải toàn bộ bảng users cho mỗi lần mở trang.
+// Truy vấn không có trần nghĩa là một triển khai đông người
+// phải tải toàn bộ bảng users cho mỗi lần mở trang.
 const usersPageSize = 500
 
 // GetUsers (Admin API) lấy danh sách tất cả người dùng trong hệ thống kèm trạng thái Online thời gian thực từ Redis.

@@ -14,6 +14,7 @@ better-tts-ui-studio/
 ├── backend/                    # Control Plane Gateway (Mã nguồn Go 1.22)
 ├── frontend/                   # Web User Interface (Svelte 5 + Vite)
 ├── core-tts-example/           # Python AI TTS Compute Engine Mẫu (FastAPI + gRPC)
+├── tests/                      # Test suites, fixtures, k6, monitoring, reports
 ├── k8s/                        # Kubernetes Deployment Manifests (K3s)
 └── docs/                       # Thư mục chứa toàn bộ tài liệu kỹ thuật
     ├── SOURCE.md               # [Tài liệu này] Giải thích cấu trúc mã nguồn
@@ -62,12 +63,12 @@ backend/
 │   ├── unified.go              # Endpoint tổng hợp tiếng nói đa năng (/api/synthesize/{model_id})
 │   ├── upload.go               # Upload file âm thanh mẫu cho Voice Cloning
 │   ├── utils.go                # Trích xuất văn bản từ file (DOCX, PDF, TXT)
-│   └── voice_cache.go          # In-memory cache cho thông tin giọng đọc
+│   └── preset_voices.go        # Danh sách & bộ đệm giọng mẫu (preset) của hệ thống
 ├── synth/
 │   ├── pipeline.go             # Luồng tổng hợp tiếng nói: Phân đoạn văn bản (chunking) & điều phối
 │   └── local.go                # Tương tác với công cụ ffmpeg để chuyển đổi định dạng âm thanh
 ├── queue/
-│   └── redis_stream.go         # Hàng đợi công việc (Task Queue) dựa trên Redis Streams
+│   └── job_queue.go            # Hàng đợi công việc (Task Queue) dựa trên Redis Streams
 ├── storage/
 │   ├── store.go                # Interface Store định nghĩa các thao tác lưu trữ
 │   ├── local.go                # Triển khai lưu trữ file trên ổ đĩa cục bộ (Local Disk)
@@ -80,8 +81,8 @@ backend/
 │   ├── migrations.go           # Tự động thực thi Migration bảng DB khi khởi động
 │   └── sweeper.go              # Tiến trình background dọn dẹp các task bị treo/mồ côi (stale tasks)
 ├── client/
-│   ├── core_tts.go             # HTTP Client gọi API Manifest và Synthesize tới Python Core TTS Engine
-│   └── grpc_tts.go             # gRPC Client kết nối tới Python Core TTS Engine qua Protocol Buffers
+│   ├── engine_client_http.go   # HTTP Client gọi API Manifest và Synthesize tới Python Core TTS Engine
+│   └── engine_client_grpc.go   # gRPC Client kết nối tới Python Core TTS Engine qua Protocol Buffers
 ├── types/
 │   ├── manifest.go             # Định nghĩa Go Struct cho Engine Manifest & UI Schema
 │   └── validate.go             # Hàm kiểm tra tính hợp lệ của Manifest
@@ -89,6 +90,55 @@ backend/
 │   └── auth.go                 # Hàm băm mật khẩu (Bcrypt) và Tạo/Giải mã JWT Tokens
 └── go.mod                      # Khai báo các phụ thuộc thư viện Go
 ```
+
+---
+
+## 🧪 3. Test Suites (`backend/tests/`, `frontend/tests/`, `tests/`)
+
+Repository tổ chức test theo ba cấp:
+
+```
+tests/                          # Root-level test assets
+├── load/                       # K6 load test scripts (smoke, load, stress, soak)
+├── monitoring/                 # Python monitoring scripts
+├── reports/                    # HTML/JSON metrics reports
+└── fixtures/                   # Shared test fixtures (dùng chung Go + frontend)
+
+backend/tests/                  # Backend Go test suites
+├── unit/                       # Unit tests (không cần Redis/DB, chạy độc lập)
+│   ├── handlers/               # Handler tests
+│   ├── middleware/              # Middleware tests
+│   ├── presetvoicecache/        # Preset voice cache tests
+│   ├── security/               # Security/auth tests
+│   ├── state/                  # State management tests (no-Redis variants)
+│   ├── storage/                # Storage tests
+│   └── types/                  # Type validation tests
+├── integration/                # Integration tests (cần Redis/DB)
+│   ├── db/                     # Database integration tests
+│   ├── middleware/             # Redis middleware tests
+│   └── state/                  # State integration tests (Redis-backed)
+├── contract/                   # Contract/parity tests (Go + frontend đồng bộ)
+│   ├── config/                 # Config settings tests
+│   ├── db/                     # DB schema parity tests
+│   ├── manifest/               # Manifest documentation tests
+│   ├── parity/                 # Capability resolution parity tests
+│   └── schema/                 # Schema parity tests
+└── testsupport/                # Test helpers (RepoRoot, Path)
+
+frontend/tests/                 # Frontend test suites
+└── unit/                       # Unit tests (vitest)
+    ├── audioSpec.test.ts       # Audio spec resolution tests
+    ├── capabilities.test.ts    # Capability resolution tests
+    └── ranges.test.ts          # Range resolution tests
+```
+
+### Quy tắc tổ chức test
+
+- **Không đặt test file cạnh source code.** Mọi test file phải nằm trong thư mục `tests/` tương ứng.
+- Backend test package dùng external package (`package xxx_test`) để đảm bảo test chỉ chạm vào exported API.
+- Integration test cần Redis gated bằng `TEST_REDIS_ADDR` env var; không có Redis thì skip.
+- `tests/fixtures/` chứa dữ liệu test dùng chung giữa Go và frontend — nếu thay đổi fixture, cả hai suite phải cùng pass.
+- Frontend test chạy bằng vitest, cấu hình trong `frontend/vitest.config.ts`.
 
 ---
 

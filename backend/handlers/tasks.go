@@ -149,13 +149,11 @@ func (h *TasksHandler) GetTaskAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hỏi kho trước khi chạm tới RAM.
-	//
-	// Với kho phát được URL, đường nhanh nhất là chuyển hướng client sang thẳng đó — và lúc
-	// ấy tiến trình này không cần bytes chút nào. Đọc TaskManager trước sẽ phá đúng điều đó:
-	// Get() nạp bù âm thanh từ Redis vào RAM khi thấy RAM rỗng, nên tới đây source luôn khác
-	// nil và nhánh chuyển hướng không bao giờ chạy. Đó là lý do bản đầu của thay đổi này vẫn
-	// trả 200 kèm toàn bộ tệp thay vì 302.
+		// Hỏi kho trước khi chạm tới RAM.
+		//
+		// Với kho phát được URL, chuyển hướng client sang thẳng đó mà không cần bytes.
+		// Đọc TaskManager trước sẽ phá điều đó: Get() nạp âm thanh từ Redis vào RAM, nên
+		// source luôn khác nil và nhánh chuyển hướng không bao giờ chạy.
 	if declared := taskSourceFormat(taskID); declared != "" && format == "" {
 		format = declared
 	}
@@ -301,7 +299,7 @@ func (h *TasksHandler) serveFromStore(w http.ResponseWriter, r *http.Request, ke
 
 	url, err := ps.PresignGet(r.Context(), key, h.presignTTL)
 	if err != nil {
-		// Ký hỏng không phải lý do để từ chối người dùng: đường đọc bytes vẫn còn đó.
+		// Ký URL hỏng thì fallback về đọc bytes qua backend.
 		log.Printf("Không ký được URL cho %s: %v — trả về qua backend", key, err)
 		return false
 	}

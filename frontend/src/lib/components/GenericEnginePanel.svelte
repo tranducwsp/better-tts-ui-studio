@@ -387,9 +387,9 @@
                 bind:group={selectedVoice}
                 style="accent-color: var(--primary); transform: scale(1.2);"
               />
-              {#if v.gender === 'female'}
+              {#if v.metadata?.gender === 'female'}
                 <i class="fa-solid fa-venus" style="color: #ff75a0;"></i>
-              {:else if v.gender === 'male'}
+              {:else if v.metadata?.gender === 'male'}
                 <i class="fa-solid fa-mars" style="color: #4da6ff;"></i>
               {/if}
               <span>{v.name}</span>

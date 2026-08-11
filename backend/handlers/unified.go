@@ -79,13 +79,13 @@ func (h *UnifiedHandler) GetVoices(w http.ResponseWriter, r *http.Request) {
 	if supportsPreset {
 		// Giọng preset là thứ thay đổi hiếm, nhưng trước đây mỗi lần mở voice picker là một
 		// lượt HTTP tới engine (timeout 60s) — mở kéo 4 mode là 4 giây hệt như treo. Cache theo
-		// mode; hai lớp hết hạn (TTL + manifest version) nằm trong voice_cache.go.
-		presetVoices, cached := getCachedPresetVoices(modelID, time.Now())
+		// mode; hai lớp hết hạn (TTL + manifest version) nằm trong presetvoicecache.
+		presetVoices, cached := presetVoiceCache.Get(modelID, time.Now())
 		if !cached {
 			var fetchErr error
 			presetVoices, fetchErr = h.TTSClient.GetVoices(modelID)
 			if fetchErr == nil {
-				storeCachedPresetVoices(modelID, presetVoices, time.Now())
+				presetVoiceCache.Store(modelID, presetVoices, time.Now())
 			}
 		}
 		for _, v := range presetVoices {
@@ -255,15 +255,12 @@ func (h *UnifiedHandler) Synthesize(w http.ResponseWriter, r *http.Request) {
 		Emotion: req.Emotion,
 	}
 
-	// Xếp hàng để worker nhặt. Không có Redis thì chạy ngay trong tiến trình này.
-	//
-	// Nhánh dự phòng giữ cho một triển khai chỉ có web vẫn tổng hợp được — cùng lý do
-	// TaskManager và rate limiter đều có bản chạy bằng RAM. Nó dùng chung đúng hàm synth.Run
-	// mà worker gọi, nên hai đường không thể trôi ra khỏi nhau.
-	//
-	// Qua GoLocal chứ không `go` trần: lượt này phải được ghi nhận để lúc tắt máy còn chờ nó
-	// chạy nốt, giống wg.Wait() bên worker.
-	if err := queue.Enqueue(r.Context(), job); err != nil {
+		// Xếp hàng để worker nhặt. Không có Redis thì chạy ngay trong tiến trình này.
+		//
+		// Nhánh dự phòng dùng chung hàm synth.Run mà worker gọi, nên hai đường không
+		// thể trôi ra khỏi nhau. Qua GoLocal chứ không `go` trần: lượt này phải được ghi
+		// nhận để lúc tắt máy còn chờ nó chạy nốt, giống wg.Wait() bên worker.
+		if err := queue.Enqueue(r.Context(), job); err != nil {
 		if !errors.Is(err, queue.ErrNoRedis) {
 			log.Printf("Không xếp được job %s vào hàng đợi: %v — chạy tại chỗ", taskID, err)
 		}

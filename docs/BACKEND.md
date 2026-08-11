@@ -76,7 +76,7 @@ Khi client gửi yêu cầu tổng hợp:
 
 ### 4.2. Đẩy Hàng Đợi & Xử Lý Đồng Thời
 
-1. `queue/redis_stream.go`: Đẩy các Task ID vào Redis Stream `tts:tasks`.
+1. `queue/job_queue.go`: Đẩy các Task ID vào Redis Stream `tts:tasks`.
 2. Các Worker Goroutines chạy ngầm trong `synth/pipeline.go` lắng nghe Stream qua Redis Consumer Group:
    - Giới hạn số Task xử lý đồng thời bởi `WORKER_MAX_IN_FLIGHT`.
    - Lấy Task -> Chuyển trạng thái `processing` -> Gọi AI Core TTS Engine.
