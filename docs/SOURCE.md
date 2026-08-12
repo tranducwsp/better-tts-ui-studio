@@ -94,17 +94,17 @@ backend/
 
 ## 🧪 3. Test Suites (`backend/tests/`, `frontend/tests/`, `tests/`)
 
-Repository tổ chức test theo ba cấp:
+The repository organizes tests in three tiers:
 
 ```
 tests/                          # Root-level test assets
 ├── load/                       # K6 load test scripts (smoke, load, stress, soak)
 ├── monitoring/                 # Python monitoring scripts
 ├── reports/                    # HTML/JSON metrics reports
-└── fixtures/                   # Shared test fixtures (dùng chung Go + frontend)
+└── fixtures/                   # Shared test fixtures (used by both Go and frontend)
 
 backend/tests/                  # Backend Go test suites
-├── unit/                       # Unit tests (không cần Redis/DB, chạy độc lập)
+├── unit/                       # Unit tests (no Redis/DB needed, run independently)
 │   ├── handlers/               # Handler tests
 │   ├── middleware/              # Middleware tests
 │   ├── presetvoicecache/        # Preset voice cache tests
@@ -112,11 +112,11 @@ backend/tests/                  # Backend Go test suites
 │   ├── state/                  # State management tests (no-Redis variants)
 │   ├── storage/                # Storage tests
 │   └── types/                  # Type validation tests
-├── integration/                # Integration tests (cần Redis/DB)
+├── integration/                # Integration tests (require Redis/DB)
 │   ├── db/                     # Database integration tests
 │   ├── middleware/             # Redis middleware tests
 │   └── state/                  # State integration tests (Redis-backed)
-├── contract/                   # Contract/parity tests (Go + frontend đồng bộ)
+├── contract/                   # Contract/parity tests (Go + frontend synchronization)
 │   ├── config/                 # Config settings tests
 │   ├── db/                     # DB schema parity tests
 │   ├── manifest/               # Manifest documentation tests
@@ -131,13 +131,13 @@ frontend/tests/                 # Frontend test suites
     └── ranges.test.ts          # Range resolution tests
 ```
 
-### Quy tắc tổ chức test
+### Test organization rules
 
-- **Không đặt test file cạnh source code.** Mọi test file phải nằm trong thư mục `tests/` tương ứng.
-- Backend test package dùng external package (`package xxx_test`) để đảm bảo test chỉ chạm vào exported API.
-- Integration test cần Redis gated bằng `TEST_REDIS_ADDR` env var; không có Redis thì skip.
-- `tests/fixtures/` chứa dữ liệu test dùng chung giữa Go và frontend — nếu thay đổi fixture, cả hai suite phải cùng pass.
-- Frontend test chạy bằng vitest, cấu hình trong `frontend/vitest.config.ts`.
+- **Do not place test files alongside source code.** All test files must reside in the corresponding `tests/` directory.
+- Backend test packages use external packages (`package xxx_test`) to ensure tests only access the exported API.
+- Integration tests requiring Redis are gated by the `TEST_REDIS_ADDR` env var; skip if Redis is unavailable.
+- `tests/fixtures/` contains test data shared between Go and frontend — if a fixture changes, both suites must pass together.
+- Frontend tests run with vitest, configured in `frontend/vitest.config.ts`.
 
 ---
 

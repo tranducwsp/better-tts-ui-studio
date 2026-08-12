@@ -89,11 +89,11 @@ ORDER BY created_at DESC
 LIMIT $1
 `
 
-// ListUsers lấy một trang danh sách người dùng, mới nhất trước.
+// ListUsers fetches one page of users, newest first.
 //
-// Có LIMIT vì cùng lý do với ListUserHistorySummaries: trước đây truy vấn trả về mọi hàng
-// trong bảng users, nên một triển khai đông người dùng khiến mỗi lần mở trang quản trị phải
-// tải toàn bộ bảng về. Đây là truy vấn duy nhất còn sót lại không có trần.
+// Has a LIMIT for the same reason as ListUserHistorySummaries: the query previously returned every
+// row in the users table, so a deployment with many users caused every admin page open to load the
+// entire table. This is the only remaining query without a ceiling.
 func (q *Queries) ListUsers(ctx context.Context, limit int32) ([]User, error) {
 	rows, err := q.db.Query(ctx, listUsers, limit)
 	if err != nil {

@@ -76,16 +76,16 @@ type EnsureTTSJobParams struct {
 	Text        string        `json:"text"`
 }
 
-// EnsureTTSJob tạo job nếu chưa có, và trả về chủ sở hữu thật của nó.
+// EnsureTTSJob creates a job if it does not exist yet, and returns the true owner.
 //
-// Thay cho cặp GetTTSJobByID-rồi-CreateTTSJob: hai chunk đầu tiên của cùng một job tới song
-// song đều thấy "chưa tồn tại" rồi cùng chèn, và cái thua bị bỏ lỗi âm thầm. Một câu lệnh
-// vừa hết đua vừa bớt một lượt đi lại tới cơ sở dữ liệu trên đường đi của mỗi chunk.
+// Replaces the GetTTSJobByID-then-CreateTTSJob pair: the first two chunks of the same job arriving
+// concurrently both see "not exists" and both try to insert, and the loser silently drops the error.
+// A single statement both races and saves a round-trip to the database on each chunk's path.
 //
-// DO UPDATE ... id = tts_jobs.id chứ không DO NOTHING: job_id do client gửi lên, nên người
-// gọi phải biết được job đã tồn tại là của ai. DO NOTHING không trả dòng nào khi trùng, nên
-// không phân biệt được "vừa tạo" với "đã có của người khác" — và người gọi chèn chunk của
-// mình vào job của người khác mà không hay. Ghi giả một trường để RETURNING luôn có dòng.
+// DO UPDATE ... id = tts_jobs.id rather than DO NOTHING: job_id is sent by the client, so the caller
+// must know whether an existing job belongs to them. DO NOTHING returns no row on conflict, so it
+// cannot distinguish "just created" from "already owned by someone else" — and the caller would insert
+// its chunk into someone else's job unknowingly. A dummy field write ensures RETURNING always has a row.
 func (q *Queries) EnsureTTSJob(ctx context.Context, arg EnsureTTSJobParams) (string, error) {
 	row := q.db.QueryRow(ctx, ensureTTSJob,
 		arg.ID,
@@ -169,20 +169,20 @@ type ListUserHistorySummariesRow struct {
 	FirstChunkText    string             `json:"first_chunk_text"`
 }
 
-// ListUserHistorySummaries lấy một trang lịch sử, mới nhất trước.
+// ListUserHistorySummaries fetches one page of history, newest first.
 //
-// Có LIMIT vì trước đây truy vấn trả về mọi job của người dùng: ai dùng nhiều thì mỗi lần
-// mở lịch sử là tổng hợp rồi truyền về hàng nghìn dòng mà giao diện chỉ hiển thị một phần.
+// Has a LIMIT because the query previously returned every job for a user: heavy users would cause
+// each history page open to aggregate and transmit thousands of rows while the UI only shows a subset.
 //
-// Phân trang theo con trỏ (keyset) thay vì OFFSET: trang kế tiếp truyền `before_id` của item
-// cuối cùng trang trước cùng `created_at` của nó. Điều kiện so sánh (created_at, id) theo thứ
-// tự của ORDER BY nên bộ lập kế hoạch dùng được chỉ mục thay vì quét dòng thừa; OFFSET thì
-// mỗi trang sâu thêm một nấc phải bỏ đi lại càng nhiều dòng. `before_created_at` nhận NULL
-// cho "trang đầu" — lúc đó mệnh đề rơi vào nhánh đầu nên không lọc gì. Trang tiếp theo chỉ
-// có giá trị khi hai cột cùng được truyền (before_id là cột phụ để chống trùng timestamp).
+// Keyset pagination instead of OFFSET: the next page passes the `before_id` of the last item on the
+// previous page along with its `created_at`. The comparison condition (created_at, id) follows the
+// ORDER BY order so the planner can use the index instead of scanning excess rows; OFFSET requires
+// re-skipping more rows the deeper you page. `before_created_at` accepts NULL for the "first page"
+// — the clause falls into the first branch then and filters nothing. The next page is only valid
+// when both columns are provided (before_id is a tiebreaker for duplicate timestamps).
 //
-// GROUP BY j.id: nhiều chunk nằm trong cùng một job khi tách chạy worker — tôi cần làm phẳng
-// chúng ra một hàng summary.
+// GROUP BY j.id: multiple chunks belong to the same job when workers split them — flattened into
+// one summary row.
 func (q *Queries) ListUserHistorySummaries(ctx context.Context, arg ListUserHistorySummariesParams) ([]ListUserHistorySummariesRow, error) {
 	rows, err := q.db.Query(ctx, listUserHistorySummaries,
 		arg.UserID,

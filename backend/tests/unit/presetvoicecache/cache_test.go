@@ -8,8 +8,8 @@ import (
 	"backend/internal/presetvoicecache"
 )
 
-// TestCacheHitWithNormalizedMode xác nhận mode rỗng ("toàn cảnh") và khoá "all" cùng trỏ
-// tới một entry, đúng với cách handler yêu cầu toàn bộ giọng preset.
+// TestCacheHitWithNormalizedMode confirms that an empty mode ("all") and the key "all" point to
+// the same entry, matching how the handler requests all preset voices.
 func TestCacheHitWithNormalizedMode(t *testing.T) {
 	version := "v1"
 	cache := presetvoicecache.New(presetvoicecache.DefaultTTL, func() string { return version })
@@ -18,15 +18,15 @@ func TestCacheHitWithNormalizedMode(t *testing.T) {
 
 	got, ok := cache.Get("all", now.Add(time.Second))
 	if !ok {
-		t.Fatal("entry vừa lưu phải đọc lại được")
+		t.Fatal("just stored entry must be retrievable")
 	}
 	if len(got) != 1 || got[0].ID != "v-1" {
-		t.Fatalf("cache trả về sai nội dung: %+v", got)
+		t.Fatalf("cache returned wrong content: %+v", got)
 	}
 }
 
-// TestManifestChangeInvalidates xác nhận engine reload và đổi manifest version làm bản cache cũ
-// hết giá trị ngay, không cần chờ TTL.
+// TestManifestChangeInvalidates confirms that engine reload and manifest version change make the old cache
+// stale immediately, without waiting for TTL.
 func TestManifestChangeInvalidates(t *testing.T) {
 	version := "v1"
 	cache := presetvoicecache.New(presetvoicecache.DefaultTTL, func() string { return version })
@@ -35,17 +35,17 @@ func TestManifestChangeInvalidates(t *testing.T) {
 
 	version = "v2"
 	if _, ok := cache.Get("standard", now.Add(time.Second)); ok {
-		t.Fatal("manifest version đổi thì cache cũ phải miss")
+		t.Fatal("manifest version changed so old cache must miss")
 	}
 }
 
-// TestEntryExpiresByTTL xác nhận cache vẫn hết hạn khi engine đổi giọng nhưng không tăng version.
+// TestEntryExpiresByTTL confirms that cache still expires when the engine changes voices but does not bump the version.
 func TestEntryExpiresByTTL(t *testing.T) {
 	cache := presetvoicecache.New(presetvoicecache.DefaultTTL, func() string { return "v1" })
 	now := time.Now()
 	cache.Store("standard", []client.CoreVoice{{Name: "old voice"}}, now)
 
 	if _, ok := cache.Get("standard", now.Add(presetvoicecache.DefaultTTL+time.Second)); ok {
-		t.Fatal("cache quá TTL phải miss")
+		t.Fatal("cache past TTL must miss")
 	}
 }

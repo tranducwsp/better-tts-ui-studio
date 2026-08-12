@@ -19,7 +19,7 @@
     "moduleDetection": "force"
   },
   "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte"],
-  // Tests chạy trên Node (đọc fixture bằng fs) nên không thuộc cấu hình build cho trình
-  // duyệt; vitest tự biên dịch chúng với tsconfig.node.json.
+  // Tests run on Node (read fixtures via fs) so they are not part of the browser build config;
+  // vitest compiles them with tsconfig.node.json.
   "exclude": ["src/**/*.test.ts"]
 }

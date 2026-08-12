@@ -1,5 +1,5 @@
 /**
- * API endpoint逐一测试 — verify mọi route hoạt động đúng.
+ * API endpoint individual test — verify every route works correctly.
  *
  *   k6 run tests/load/api.js
  *   k6 run -e BASE_URL=http://host:8000 tests/load/api.js

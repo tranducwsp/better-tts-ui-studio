@@ -1,7 +1,7 @@
 /**
- * Synthesize专项 — test endpoint tổng hợp dưới tải cao.
+ * Synthesize specialty — test the synthesis endpoint under high load.
  *
- * Tập trung vào throughput: bao nhiêu job/phút hệ thống xử lý được ở 10k VU.
+ * Focus on throughput: how many jobs/minute the system can handle at 10k VU.
  *
  *   k6 run tests/load/synth.js
  *   k6 run -e BASE_URL=http://host:8000 tests/load/synth.js
@@ -49,13 +49,13 @@ export default function (data) {
   if (!token) { errorRate.add(1); sleep(2); return; }
   const headers = authHeaders(token);
 
-  // Chọn mode & voice
+  // Select mode & voice
   const mode = randomMode();
   const voice = mode === 'fast'
-    ? VOICES[Math.floor(Math.random() * 2)]   // fast chỉ có hoai_my, nam_minh
+    ? VOICES[Math.floor(Math.random() * 2)]   // fast only has hoai_my, nam_minh
     : randomVoice();
 
-  // Gửi synthesis
+  // Send synthesis request
   const res = http.post(
     `${BASE_URL}/api/synthesize/${mode}`,
     JSON.stringify({ text: randomText(), voice, speed: 1.0 }),
@@ -76,14 +76,14 @@ export default function (data) {
 
   const taskId = res.json('task_id');
 
-  // Poll cho đến khi xong
+  // Poll until done
   const result = pollTask(token, taskId, 60000);
   synthDuration.add(result.elapsed_ms);
 
   if (result.status === 'done') {
     jobsCompleted.add(1);
 
-    // Tải audio
+    // Download audio
     const dlStart = Date.now();
     const audio = http.get(`${BASE_URL}/api/tasks/${taskId}/audio`, {
       headers,
@@ -97,6 +97,6 @@ export default function (data) {
     errorRate.add(1);
   }
 
-  // Nghỉ ngắn — người dùng tổng hợp liên tục
+  // Short pause — user synthesizing continuously
   sleep(0.5 + Math.random() * 2);
 }

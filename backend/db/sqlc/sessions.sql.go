@@ -55,8 +55,8 @@ DELETE FROM auth_sessions
 WHERE expires_at < CURRENT_TIMESTAMP
 `
 
-// Dọn các phiên đã hết hạn. Gọi opportunistic ngay tại login: bảng nhỏ, DELETE theo index,
-// không cần một tiến trình dọn riêng.
+// Clean up expired sessions. Called opportunistically at login: small table, DELETE by index,
+// no need for a separate cleanup process.
 func (q *Queries) DeleteExpiredAuthSessions(ctx context.Context) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteExpiredAuthSessions)
 	if err != nil {
@@ -94,8 +94,8 @@ WHERE id = $1
   AND revoked_at IS NULL
 `
 
-// Logout: thu hồi token đang dùng. Không đặt replaced_by, nên mọi token khác cùng family
-// (vốn đã revoked+replaced hoặc là token này) đều không còn ai đại diện cho phiên — phiên chết.
+// Logout: revoke the current token. Do not set replaced_by, so every other token in the same family
+// (already revoked+replaced or this token itself) has no representative left for the session — the session is dead.
 func (q *Queries) RevokeAuthSession(ctx context.Context, id string) (int64, error) {
 	result, err := q.db.Exec(ctx, revokeAuthSession, id)
 	if err != nil {
@@ -111,8 +111,8 @@ WHERE session_family_id = $1
   AND revoked_at IS NULL
 `
 
-// Thu hồi mọi token còn sống trong family. Dùng khi phát hiện reuse token cũ (bị đánh cắp):
-// family bị hạ, người dùng phải đăng nhập lại.
+// Revoke all living tokens in the family. Used when an old token reuse is detected (stolen token):
+// the family is taken down, and the user must log in again.
 func (q *Queries) RevokeAuthSessionFamily(ctx context.Context, sessionFamilyID string) (int64, error) {
 	result, err := q.db.Exec(ctx, revokeAuthSessionFamily, sessionFamilyID)
 	if err != nil {
@@ -134,8 +134,8 @@ type RotateAuthSessionParams struct {
 	ReplacedBy pgtype.Text `json:"replaced_by"`
 }
 
-// Đánh dấu token cũ đã bị thay thế bởi token mới trong cùng family (rotation).
-// Guard revoked_at IS NULL: nếu session đã bị revoke (logout, family revoke), không ghi đè replaced_by.
+// Mark the old token as replaced by the new token in the same family (rotation).
+// Guard revoked_at IS NULL: if the session has already been revoked (logout, family revoke), do not overwrite replaced_by.
 func (q *Queries) RotateAuthSession(ctx context.Context, arg RotateAuthSessionParams) (int64, error) {
 	result, err := q.db.Exec(ctx, rotateAuthSession, arg.ID, arg.ReplacedBy)
 	if err != nil {

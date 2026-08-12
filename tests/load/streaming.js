@@ -1,11 +1,11 @@
 /**
- * WebSocket/SSE专项 — test task streaming dưới tải.
+ * WebSocket/SSE specialty — test task streaming under load.
  *
  *   k6 run tests/load/streaming.js
  *   k6 run -e BASE_URL=http://host:8000 tests/load/streaming.js
  *
- * Lưu ý: k6 không hỗ trợ SSE native, nên test này dùng polling để mô phỏng
- * streaming client. Khi k6 hỗ trợ SSE, chuyển sang event stream.
+ * Note: k6 does not support SSE natively, so this test uses polling to simulate
+ * a streaming client. When k6 supports SSE, switch to event stream.
  */
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -39,7 +39,7 @@ export default function () {
   if (!token) { errorRate.add(1); sleep(2); return; }
   const headers = authHeaders(token);
 
-  // Gửi synthesis job
+  // Send synthesis job
   const mode = 'standard';
   const voice = VOICES[Math.floor(Math.random() * VOICES.length)];
   const res = http.post(
@@ -56,7 +56,7 @@ export default function () {
   const taskId = res.json('task_id');
   const startMs = Date.now();
 
-  // Poll task status — mô phỏng SSE client
+  // Poll task status — simulate SSE client
   let chunks = 0;
   let firstEvent = true;
   let done = false;
@@ -87,7 +87,7 @@ export default function () {
       break;
     }
 
-    sleep(0.3);  // Poll mỗi 300ms — giống SSE client
+    sleep(0.3);  // Poll every 300ms — like SSE client
   }
 
   if (!done) {

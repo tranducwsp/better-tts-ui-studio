@@ -1,5 +1,5 @@
 /**
- * Auth专项 — test login/register/refresh/logout dưới tải cao.
+ * Auth specialty — test login/register/refresh/logout under high load.
  *
  *   k6 run tests/load/auth.js
  *   k6 run -e BASE_URL=http://host:8000 tests/load/auth.js
@@ -38,7 +38,7 @@ export default function () {
   }) || authErrorRate.add(1);
 
   if (res.status === 429) {
-    // Rate limit — chờ rồi thử lại
+    // Rate limit — wait then retry
     sleep(5);
     return;
   }
@@ -56,8 +56,8 @@ export default function () {
   check(me, { 'me 200': (r) => r.status === 200 }) || authErrorRate.add(1);
 
   // ── Refresh ───────────────────────────────────────────────────────────
-  // Refresh đọc HttpOnly cookie, k6 không giữ cookie tự động nên test
-  // chỉ verify endpoint trả lỗi đúng khi thiếu cookie.
+  // Refresh reads HttpOnly cookie, k6 does not keep cookies automatically so the test
+  // only verifies the endpoint returns the correct error when the cookie is missing.
   const refresh = http.post(`${BASE_URL}/api/auth/refresh`, null, {
     headers: { 'Content-Type': 'application/json' },
     tags: { name: 'refresh' },

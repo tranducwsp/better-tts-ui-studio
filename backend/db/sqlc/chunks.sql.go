@@ -14,14 +14,14 @@ import (
 const cancelTTSChunk = `-- name: CancelTTSChunk :execrows
 UPDATE tts_chunks
 SET status = 'cancelled',
-    error_msg = COALESCE(error_msg, 'Đã huỷ theo yêu cầu'),
+    error_msg = COALESCE(error_msg, 'Cancelled by request'),
     updated_at = now()
 WHERE id = $1
   AND status IN ('pending', 'processing')
 `
 
-// Chuyển chunk còn đang chờ/xử lý sang 'cancelled'. Guard bằng status để cancel chạy đua với
-// worker hoàn tất không đè được kết quả: chunk đã 'done'/'error' giữ nguyên trạng thái.
+// Transition a pending/processing chunk to 'cancelled'. Guard on status prevents cancel racing with
+// worker completion from overwriting the result: a 'done'/'error' chunk keeps its state.
 func (q *Queries) CancelTTSChunk(ctx context.Context, id string) (int64, error) {
 	result, err := q.db.Exec(ctx, cancelTTSChunk, id)
 	if err != nil {
@@ -121,20 +121,20 @@ func (q *Queries) ListTTSChunksByJobID(ctx context.Context, jobID string) ([]Tts
 const reconcileStaleChunks = `-- name: ReconcileStaleChunks :execrows
 UPDATE tts_chunks
 SET status = 'error',
-    error_msg = COALESCE(error_msg, 'Job mất sau khi Redis khởi động lại, không phục hồi được'),
+    error_msg = COALESCE(error_msg, 'Job lost after Redis restart, cannot be recovered'),
     updated_at = now()
 WHERE status IN ('pending', 'processing')
   AND updated_at < $1::timestamptz
 `
 
-// Chuyển chunk mồ côi về 'error'. Một chunk đứng mãi ở pending/processing nghĩa là không ai
-// đang xử lý nó nữa — người điều hành thấy nó kẹt vĩnh viễn sau khi hàng đợi mất (Redis restart:
-// stream non-persistent, job trong đó trôi thẳng, không gì phục hồi lại được).
+// Transition orphaned chunks to 'error'. A chunk stuck in pending/processing means no one is
+// processing it anymore — the operator sees it permanently stuck after the queue is lost (Redis restart:
+// non-persistent stream, jobs in it are gone, nothing can recover them).
 //
-// updated_at là mốc tiến triển cuối (CreateTTSChunk đến 'processing' chính là cột mốc bắt đầu);
-// tham số $1 là mốc thời gian giới hạn: chunk chưa chuyển trạng thái kể từ trước mốc đó là kẹt.
-// Ngưỡng này do STALE_CHUNK_AFTER_MINUTES quyết định và phải lớn hơn thời gian tối đa một
-// chunk hợp lệ có thể chạy (từng chunk ≤ TTS_CLIENT_TIMEOUT_SECONDS + chờ queue).
+// updated_at is the last progress marker (CreateTTSChunk to 'processing' is the starting point);
+// parameter $1 is the cutoff timestamp: a chunk that has not transitioned since before that cutoff is stuck.
+// This threshold is determined by STALE_CHUNK_AFTER_MINUTES and must be greater than the maximum time
+// a legitimate chunk can run (each chunk ≤ TTS_CLIENT_TIMEOUT_SECONDS + queue wait).
 func (q *Queries) ReconcileStaleChunks(ctx context.Context, dollar_1 pgtype.Timestamptz) (int64, error) {
 	result, err := q.db.Exec(ctx, reconcileStaleChunks, dollar_1)
 	if err != nil {

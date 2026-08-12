@@ -1,11 +1,11 @@
 /**
- * Load test — 10k người dùng đồng thời.
+ * Load test — 10k concurrent users.
  *
- * Mỗi VU mô phỏng 1 người dùng thực: login → duyệt → tổng hợp → nghe → lặp lại.
+ * Each VU simulates a real user: login → browse → synthesize → listen → repeat.
  *
- *   k6 run tests/load/load.js                                # 10k VU, ramp 30 phút
- *   k6 run -e STAGE=stress tests/load/load.js                # 10k VU, ramp 5 phút
- *   k6 run -e STAGE=soak tests/load/load.js                  # 3k VU, 2 giờ
+ *   k6 run tests/load/load.js                                # 10k VU, ramp 30 min
+ *   k6 run -e STAGE=stress tests/load/load.js                # 10k VU, ramp 5 min
+ *   k6 run -e STAGE=soak tests/load/load.js                  # 3k VU, 2 hours
  *   k6 run -e BASE_URL=http://host:8000 tests/load/load.js
  *   k6 run -e STAGE=smoke tests/load/load.js                 # 1 VU, nhanh
  */
@@ -18,9 +18,9 @@ import {
   VOICES, MODES, SAMPLE_TEXTS,
 } from './config.js';
 
-// ── Stages & thresholds (import từ config) ──────────────────────────────────
-// config.js đã export `options` qua stage, nhưng k6 cần options ở top-level.
-// Nên ta định nghĩa lại ở đây.
+// ── Stages & thresholds (imported from config) ──────────────────────────────────
+// config.js exports `options` via stage, but k6 expects options at the top-level.
+// So we define them here.
 
 const stages = {
   smoke: { vus: 1, duration: '30s' },
@@ -74,25 +74,25 @@ export const options = STAGE === 'smoke'
   ? { vus: 1, duration: '30s', thresholds: { checks: ['rate>0.99'], errors: ['rate<0.01'] } }
   : { stages: cfg.stages, thresholds: cfg.thresholds };
 
-// ── VU setup: login 1 lần trước khi lặp ─────────────────────────────────────
+// ── VU setup: login once before looping ─────────────────────────────────────
 let token = null;
 
 export function setup() {
-  // Verify hệ thống lên trước khi chạy
+  // Verify the system is up before running
   const health = http.get(`${BASE_URL}/health`);
   if (health.status !== 200) {
-    throw new Error(`Backend không sẵn sàng: ${health.status}`);
+    throw new Error(`Backend not ready: ${health.status}`);
   }
   const info = http.get(`${BASE_URL}/api/info`);
   if (info.status !== 200) {
-    throw new Error(`Manifest không tải được: ${info.status}`);
+    throw new Error(`Manifest could not be loaded: ${info.status}`);
   }
   console.log(`✅ Backend OK. Modes: ${info.json('supported_modes')?.map(m => m.id).join(', ')}`);
 }
 
 export default function () {
-  // ── Login (1 lần mỗi VU iteration) ────────────────────────────────────
-  // Dùng 2 tài khoản tạo sẵn, luân phiên theo VU id để tránh rate limit
+  // ── Login (once per VU iteration) ────────────────────────────────────
+  // Use 2 pre-created accounts, alternating by VU id to avoid rate limits
   const isAdmin = __VU % 2 === 0;
   const username = isAdmin ? ADMIN_USER : USER_USER;
   const password = isAdmin ? ADMIN_PASS : USER_PASS;
@@ -105,29 +105,29 @@ export default function () {
   }
   const headers = authHeaders(token);
 
-  // ── User journey: duyệt → tổng hợp → nghe → lặp ─────────────────────
+  // ── User journey: browse → synthesize → listen → repeat ─────────────────────
 
-  // 1. Mở trang → fetch manifest
+  // 1. Open page → fetch manifest
   group('browse', () => {
     const info = http.get(`${BASE_URL}/api/info`, { tags: { name: 'info' } });
     check(info, { 'info ok': (r) => r.status === 200 });
   });
 
-  // 2. Chọn mode → fetch voices
+  // 2. Select mode → fetch voices
   const mode = randomMode();
   group('voices', () => {
     const voices = http.get(`${BASE_URL}/api/voices/${mode}`, { headers, tags: { name: 'voices' } });
     check(voices, { 'voices ok': (r) => r.status === 200 });
   });
 
-  // 3. Nhập text → tổng hợp
+  // 3. Input text → synthesize
   const voice = mode === 'fast' ? VOICES[Math.floor(Math.random() * 2)] : randomVoice();
   const text  = randomText();
 
   group('synthesize', () => {
     const body = { text, voice, speed: 1.0 };
     if (mode === 'zero_shot_clone') {
-      // Clone mode — thêm voice_id thay vì voice
+      // Clone mode — use voice_id instead of voice name
       body.voice = voice;
     }
     const res = http.post(
@@ -148,12 +148,12 @@ export default function () {
 
     const taskId = res.json('task_id');
 
-    // 4. Đợi kết quả (poll)
+    // 4. Wait for result (poll)
     const result = pollTask(token, taskId, 60000);
     synthDuration.add(result.elapsed_ms);
 
     if (result.status === 'done') {
-      // 5. Tải audio
+      // 5. Download audio
       const audio = http.get(`${BASE_URL}/api/tasks/${taskId}/audio`, {
         headers,
         tags: { name: 'audio' },
@@ -165,7 +165,7 @@ export default function () {
     }
   });
 
-  // 6. Xem lịch sử (30% người dùng)
+  // 6. View history (30% of users)
   if (Math.random() < 0.3) {
     group('history', () => {
       const hist = http.get(`${BASE_URL}/api/history`, { headers, tags: { name: 'history' } });
@@ -173,10 +173,10 @@ export default function () {
     });
   }
 
-  // Nghỉ ngẫu nhiên 1–5 giây — mô phỏng người dùng thực
+  // Random pause 1–5 seconds — simulating real user behavior
   sleep(1 + Math.random() * 4);
 }
 
 export function teardown(data) {
-  // Cleanup: không cần, backend tự quản lý
+  // Cleanup: not needed, backend manages itself
 }

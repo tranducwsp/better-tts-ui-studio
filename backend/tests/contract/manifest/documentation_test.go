@@ -9,53 +9,53 @@ import (
 	"backend/types"
 )
 
-// Manifest đầy đủ được công bố trong docs/GATEWAY.md phải đi qua bộ kiểm sạch sẽ — không lỗi
-// và không cảnh báo nào. Đọc thẳng block JSON trong Markdown để tài liệu là nguồn duy nhất; một
-// bản JSON chép riêng sẽ sớm muộn trôi khỏi ví dụ mà AI Engineer thực sự đọc và sao chép.
+// The full Manifest published in docs/GATEWAY.md must pass a clean validation — no errors
+// and no warnings. Read the JSON block directly from Markdown so the doc is the single source; a
+// separate JSON copy will inevitably drift from the example that AI Engineers actually read and copy.
 //
-// Đây là hàng rào hai chiều. Nếu ai đó thêm một quy tắc kiểm quá chặt, test này hỏng ngay thay
-// vì để người vận hành thấy cảnh báo trên một Engine lành mạnh rồi học cách bỏ qua mọi cảnh báo.
-// Nếu ví dụ trong tài liệu lỗi thời hoặc không còn là manifest hợp lệ, CI cũng báo ngay.
+// This is a two-way fence. If someone adds an overly strict validation rule, this test breaks instead
+// of letting operators see warnings on a healthy Engine and learn to ignore all warnings.
+// If the doc example becomes stale or is no longer a valid manifest, CI also catches it immediately.
 func TestDocumentedManifestPassesValidation(t *testing.T) {
 	const path = "../../../../docs/GATEWAY.md"
-	const heading = "## 💻 3. MẪU MANIFEST CHUẨN ĐẦY ĐỦ"
+	const heading = "## 💻 3. COMPLETE STANDARD MANIFEST EXAMPLE"
 
 	doc, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("không đọc được %s: %v", path, err)
+		t.Fatalf("cannot read %s: %v", path, err)
 	}
 
 	sectionAt := bytes.Index(doc, []byte(heading))
 	if sectionAt < 0 {
-		t.Fatalf("%s không còn mục %q", path, heading)
+		t.Fatalf("%s no longer contains section %q", path, heading)
 	}
 	section := doc[sectionAt:]
 
 	const openFence = "```json\n"
 	openAt := bytes.Index(section, []byte(openFence))
 	if openAt < 0 {
-		t.Fatalf("mục manifest trong %s không có block ```json", path)
+		t.Fatalf("manifest section in %s has no ```json block", path)
 	}
 	payload := section[openAt+len(openFence):]
 
 	closeAt := bytes.Index(payload, []byte("\n```"))
 	if closeAt < 0 {
-		t.Fatalf("block manifest trong %s không có fence đóng", path)
+		t.Fatalf("manifest block in %s has no closing fence", path)
 	}
 
 	var m types.UniversalManifest
 	if err := json.Unmarshal(payload[:closeAt], &m); err != nil {
-		t.Fatalf("block manifest trong %s không phải JSON hợp lệ: %v", path, err)
+		t.Fatalf("manifest block in %s is not valid JSON: %v", path, err)
 	}
 
 	errs, warnings := m.Validate()
 	for _, w := range warnings {
-		t.Logf("cảnh báo: %s", w)
+		t.Logf("warning: %s", w)
 	}
 	if len(errs) > 0 {
-		t.Errorf("manifest trong tài liệu bị từ chối: %v", errs)
+		t.Errorf("manifest in documentation was rejected: %v", errs)
 	}
 	if len(warnings) > 0 {
-		t.Errorf("manifest trong tài liệu sinh %d cảnh báo; hoặc ví dụ đã lỗi thời, hoặc quy tắc kiểm quá chặt", len(warnings))
+		t.Errorf("manifest in documentation produced %d warnings; either the example is stale or the validation rule is too strict", len(warnings))
 	}
 }

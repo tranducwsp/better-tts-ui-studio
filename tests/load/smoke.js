@@ -1,5 +1,5 @@
 /**
- * Smoke test — 1 VU, chạy nhanh mọi endpoint chính.
+ * Smoke test — 1 VU, quickly runs all main endpoints.
  *
  *   k6 run tests/load/smoke.js
  *   k6 run -e BASE_URL=http://host:8000 tests/load/smoke.js
@@ -18,7 +18,7 @@ export const options = {
 };
 
 export function setup() {
-  // Login 1 lần — không bị rate limit
+  // Login once — not subject to rate limits
   const res = http.post(
     `${BASE_URL}/api/login`,
     JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASS }),

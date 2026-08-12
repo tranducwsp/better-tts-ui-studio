@@ -7,7 +7,7 @@ import (
 	"backend/state"
 )
 
-// TestOnlineUsers_NoRedis trả về map rỗng thay vì panic khi chạy không có Redis.
+// TestOnlineUsers_NoRedis returns an empty map instead of panicking when running without Redis.
 func TestOnlineUsers_NoRedis(t *testing.T) {
 	prev := state.RedisClient
 	state.RedisClient = nil
@@ -15,15 +15,15 @@ func TestOnlineUsers_NoRedis(t *testing.T) {
 
 	online := state.OnlineUsers(context.Background(), []string{"a", "b"})
 	if len(online) != 0 {
-		t.Errorf("không có Redis thì không ai online, nhận %v", online)
+		t.Errorf("without Redis no one is online, got %v", online)
 	}
 }
 
-// TestOnlineUsers_EmptyInput không gọi Redis khi danh sách rỗng: MGET không nhận zero key và
-// sẽ trả lỗi, biến một trang không có người dùng nào thành một lỗi.
+// TestOnlineUsers_EmptyInput does not call Redis with an empty list: MGET does not accept
+// zero keys and would error, turning a page with no users into an error.
 func TestOnlineUsers_EmptyInput(t *testing.T) {
 	online := state.OnlineUsers(context.Background(), nil)
 	if len(online) != 0 {
-		t.Errorf("danh sách rỗng phải trả map rỗng, nhận %v", online)
+		t.Errorf("empty list must return an empty map, got %v", online)
 	}
 }
