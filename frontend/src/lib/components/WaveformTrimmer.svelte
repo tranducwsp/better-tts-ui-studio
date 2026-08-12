@@ -188,9 +188,9 @@
 
   async function handleTrimOnly() {
     if (!audioBuffer) return;
-    // D9: resample về engine default (thường 24kHz) trước khi encode. Gửi 48kHz khiến engine
-    // phát nhanh/chậm hoặc từ chối. OfflineAudioContext resample chất lượng cao, không cần
-    // thư viện ngoài; bỏ qua khi đã đúng sample rate.
+    // D9: resample to engine default (usually 24kHz) before encoding. Sending 48kHz causes the engine
+    // to play audio fast/slow or reject it. OfflineAudioContext provides high-quality resampling, no external
+    // library needed; skips when already at the correct sample rate.
     const targetRate = defaultSampleRate(manifest, mode);
     const resampled = await resampleAudioBuffer(audioBuffer, targetRate);
     const blob = audioBufferToWav(resampled, trimStart, trimEnd);

@@ -13,7 +13,7 @@ export interface Preset {
   name: string;
   speaker: string;
   speed: number;
-  /** Các trường metadata động từ voice_metadata_schema. */
+  /** Dynamic metadata fields from voice_metadata_schema. */
   metadata?: Record<string, string>;
   created_at?: string;
 }

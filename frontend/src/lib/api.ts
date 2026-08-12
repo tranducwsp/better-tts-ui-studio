@@ -13,8 +13,8 @@ export async function fetchManifest(): Promise<UniversalManifest | null> {
 }
 
 export async function refreshSession(): Promise<boolean> {
-  // Deduplicate: nếu refresh đang chạy, mọi caller chia sẻ cùng Promise.
-  // Không có bước này, 10 request 401 đồng thời → 10 lần refresh riêng → token thrashing.
+  // Deduplicate: if a refresh is already in flight, all callers share the same Promise.
+  // Without this, 10 concurrent 401 requests → 10 separate refreshes → token thrashing.
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = doRefresh();
   try {
@@ -32,9 +32,9 @@ async function doRefresh(): Promise<boolean> {
       method: 'POST',
       credentials: 'include',
     });
-    // Rotation: nếu một tab khác vừa rotate trước đó, cookie trong jar đã là token mới nhất
-    // nhưng lượt gửi này mang token cũ bị trả 401 ("already used"). Gửi lại một lần với đúng
-    // cookie hiện tại là tự sửa; lần thứ hai vẫn 401 mới thực sự là phiên chết.
+    // Rotation: if another tab just rotated before, the cookie jar already has the newest token
+    // but this request carried the old token and got 401 ("already used"). Retrying once with the
+    // current cookie fixes it; a second 401 is a genuinely dead session.
     if (res.status === 401) {
       res = await fetch('/api/auth/refresh', {
         method: 'POST',
@@ -47,10 +47,10 @@ async function doRefresh(): Promise<boolean> {
   }
 }
 
-// authFetch giống fetch nhưng tự thử refreshSession() một lần khi gặp 401.
-// Mọi API call cần xác thực nên dùng hàm này thay vì fetch() trần — access token 15 phút,
-// phiên dài hơn 15 phút mà không retry thì mọi request sau bị 401 "Please log in" dù refresh
-// token còn hiệu lực.
+// authFetch works like fetch but automatically retries refreshSession() once on 401.
+// Every API call that needs authentication should use this instead of bare fetch() — access tokens
+// last 15 minutes, and sessions longer than 15 minutes without retry will get 401 "Please log in"
+// even though the refresh token is still valid.
 export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   let res = await fetch(input, { ...init, credentials: 'include' });
   if (res.status === 401 && await refreshSession()) {
@@ -341,16 +341,17 @@ export function subscribeTaskStream(
     }
   };
 
-  // D6: SSE onerror không đóng ngay — trình duyệt tự reconnect khi readyState là CONNECTING
-  // (0). Chỉ gọi onError khi kết nối bị đóng vĩnh viễn (readyState = CLOSED / 2), tức là
-  // server trả 404/403 hoặc lỗi không thể phục hồi. Nếu mất mạng tạm thời, EventSource tự
-  // kết nối lại; backend gửi snapshot trạng thái hiện tại khi SSE mở lại, nên không mất tiến
-  // độ. Trước đây onerror đóng ngay → retry tạo task mới, vứt 90% đã xong.
+  // D6: SSE onerror does not close immediately — the browser auto-reconnects when readyState is
+  // CONNECTING (0). Only call onError when the connection is permanently closed (readyState =
+  // CLOSED / 2), i.e. the server returned 404/403 or an unrecoverable error. If the network is
+  // temporarily lost, EventSource reconnects automatically; the backend sends a status snapshot
+  // when SSE reopens, so no progress is lost. Previously onerror closed immediately → retry
+  // created a new task, discarding 90% of what was already done.
   eventSource.onerror = () => {
     if (eventSource.readyState === EventSource.CLOSED) {
       onError('Connection to Audio Stream closed permanently');
     }
-    // readyState === CONNECTING: browser đang tự reconnect — không làm gì cả.
+    // readyState === CONNECTING: browser is auto-reconnecting — do nothing.
   };
 
   return () => {
@@ -358,8 +359,8 @@ export function subscribeTaskStream(
   };
 }
 
-// HistoryCursor là vị trí dừng của trang trước để lấy trang sau: created_at và job_id của item
-// cuối cùng. Truyền null cho trang đầu tiên.
+// HistoryCursor is the stopping point of the previous page to get the next page: created_at and
+// job_id of the last item. Pass null for the first page.
 export interface HistoryCursor {
   created_at: string;
   job_id: string;

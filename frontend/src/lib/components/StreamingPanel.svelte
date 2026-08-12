@@ -63,10 +63,10 @@
     }
   });
 
-  // D1: Khi component unmount (đóng panel), dừng vòng lặp generation và thu hồi blob URL.
-  // Không có bước này, 50 chunk đóng sau 5 → 45 chunk âm thầm chạy tiếp tốn GPU, mỗi chunk
-  // tạo thêm một dòng lịch sử vô chủ, và blob URL rò cho đến khi trang bị nạp lại.
-  // sseCleanup đóng EventSource còn mở để Promise chờ không treo vĩnh viễn.
+  // D1: When the component unmounts (panel closes), stop the generation loop and revoke blob URLs.
+  // Without this, closing after 5 of 50 chunks means 45 chunks silently continue running on the GPU, each chunk
+  // creates an orphaned history entry, and blob URLs leak until the page is reloaded.
+  // sseCleanup closes any open EventSource so pending Promises don't hang forever.
   onMount(() => {
     return () => {
       isCancelled = true;
@@ -91,12 +91,11 @@
 
       chunks = chunkTexts.map((ctext, i) => {
         const c = dbChunksMap[i];
-        // Luôn đi qua /api/tasks/{id}/audio.
+        // Always go through /api/tasks/{id}/audio.
         //
-        // Trước đây chunk mang audio_path và chỗ này ghép nó thành URL trực tiếp. Đó là khoá
-        // nội bộ của kho, nên nó chỉ có cơ hội hoạt động khi backend tình cờ phục vụ tĩnh
-        // đúng thư mục đó — và với S3 thì không bao giờ. Endpoint API kiểm quyền sở hữu mỗi
-        // lần gọi, còn một URL trỏ thẳng vào kho thì không.
+        // Previously the chunk carried an audio_path and this code assembled it into a direct URL. That was an internal
+        // storage key, so it only worked when the backend happened to serve static files from that exact directory — and
+        // never with S3. The API endpoint checks ownership on every call, while a direct URL to storage does not.
         let url = null;
         if (c?.task_id) {
           url = `/api/tasks/${c.task_id}/audio?format=${defaultFormat(manifest, engine)}`;

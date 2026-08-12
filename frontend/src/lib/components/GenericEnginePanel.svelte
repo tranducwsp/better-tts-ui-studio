@@ -63,7 +63,7 @@
   // user clone voices are fetched after hydration and prepended before presets.
   // Map PresetVoiceSpec → VoiceOption to fix sample_url (snake_case) → sampleUrl (camelCase).
   let activeVoices = $derived.by(() => {
-    // 1. Preset voices from manifest (available ngay trong SSR — không cần async fetch)
+    // 1. Preset voices from manifest (available immediately during SSR — no async fetch needed)
     const preset: VoiceOption[] = (modelOption?.preset_voices || []).map((pv) => ({
       id: pv.id,
       name: pv.name,
@@ -72,11 +72,11 @@
       sampleUrl: pv.sample_url,
     }));
 
-    // 2. Nếu có preset_voices, merge với user clone voices (modeVoices, loaded async)
+    // 2. If preset_voices exist, merge with user clone voices (modeVoices, loaded async)
     if (preset.length > 0) {
       // User clone voices (loaded async, deletable=true)
       const user = modeVoices.filter((v) => v.deletable);
-      // Merge: user voices lên trước, preset_voices sau, deduplicate by id/name
+      // Merge: user voices first, then preset_voices, deduplicate by id/name
       const combined = [...user, ...preset];
       const seen = new Set<string>();
       return combined.filter((v) => {
@@ -89,7 +89,7 @@
       });
     }
 
-    // 3. Không có preset_voices: dùng modeVoices (từ API fallback hoặc user presets)
+    // 3. No preset_voices: use modeVoices (from API fallback or user presets)
     return modeVoices;
   });
 
@@ -106,9 +106,9 @@
   // Synthesize button text/icon per mode — matches old core-tts UI personality.
   let synthLabel = $derived.by(() => {
     const id = activeMode.id;
-    if (id === 'fast' || id === 'express') return { text: 'Tổng hợp Siêu Nhanh', icon: 'fa-bolt' };
-    if (id === 'zero_shot_clone' || id === 'clone') return { text: 'Tổng hợp âm thanh', icon: 'fa-play' };
-    return { text: 'Tổng hợp âm thanh', icon: 'fa-play' };
+    if (id === 'fast' || id === 'express') return { text: 'Express Synthesis', icon: 'fa-bolt' };
+    if (id === 'zero_shot_clone' || id === 'clone') return { text: 'Synthesize Audio', icon: 'fa-play' };
+    return { text: 'Synthesize Audio', icon: 'fa-play' };
   });
   let isCreateModalOpen = $state(false);
   let selectedFile = $state<File | null>(null);
@@ -127,9 +127,9 @@
 
   // Load engine voices & user custom saved clone voices from DB
   //
-  // Guard bằng bộ đếm: mỗi lần gọi tăng generation, fetch xong kiểm tra generation có còn
-  // đúng không — nếu đổi tab giữa chừng thì kết quả cũ bị bỏ. AbortController cũng được
-  // nhưng cần truyền signal qua hai hàm fetchVoices/fetchPresets; bộ đếm chỉ cần một biến.
+  // Guard with a counter: each call increments generation, after fetch completes check if generation
+  // still matches — if the tab changed mid-flight, discard the stale result. AbortController works too
+  // but requires passing signal through both fetchVoices/fetchPresets; a counter only needs one variable.
   let voiceLoadGeneration = 0;
 
   async function loadVoicesForMode(modeId: string) {
@@ -139,8 +139,8 @@
       let combined: VoiceOption[] = [];
       const currentOption = manifest?.ui_schema?.option_panel?.[modeId] || null;
 
-      // Chỉ fetch từ API nếu không có preset_voices trong manifest.
-      // preset_voices được xử lý sync bởi activeVoices derivation nên không cần duplicate ở đây.
+      // Only fetch from API if there are no preset_voices in the manifest.
+      // preset_voices are handled synchronously by the activeVoices derivation so no duplication needed here.
       if (!currentOption?.preset_voices || currentOption.preset_voices.length === 0) {
         const engineVoices = await fetchVoices(modeId);
         if (engineVoices && engineVoices.length > 0) {
@@ -174,7 +174,7 @@
         }
       }
 
-      // Mode đổi giữa chừng — fetch cũ về sau nhưng không ghi đè.
+      // Mode changed mid-flight — the old fetch returns later but does not overwrite.
       if (gen !== voiceLoadGeneration) return;
 
       modeVoices = uniqueVoices;
@@ -222,9 +222,9 @@
     }
   });
 
-  // Auto-select voice đầu tiên khi danh sách voices thay đổi (preset_voices từ SSR
-  // hoặc sau khi user voices load async). Tránh trường hợp selectedVoice rỗng trong
-  // khi activeVoices đã có dữ liệu.
+  // Auto-select the first voice when the voice list changes (preset_voices from SSR
+  // or after user voices load async). Prevents the case where selectedVoice is empty
+  // while activeVoices already has data.
   $effect(() => {
     if (activeVoices.length > 0 && !selectedVoice) {
       selectedVoice = activeVoices[0].id || activeVoices[0].name;
@@ -530,7 +530,7 @@
   </div>
 </div>
 
-<!-- Modal Tạo Giọng Clone Mới -->
+<!-- Create New Clone Voice Modal -->
 {#if isCreateModalOpen}
   <CreateVoiceModal
     isOpen={isCreateModalOpen}

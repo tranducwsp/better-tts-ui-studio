@@ -44,8 +44,8 @@
     if (!target.files?.length) return;
     const file = target.files[0];
     isExtracting = true;
-    // Trả lại control trước lần read đầu: document lớn khiến fetch mất vài giây, và phần tử
-    // input vừa chọn file đang "bận" — không tắt spinner thì khung hình không hiện.
+    // Yield control before the first read: a large document makes fetch take several seconds, and the input
+    // element that just selected a file is "busy" — the spinner won't render without yielding.
     await Promise.resolve();
     toast.show('Reading document...', 'info');
     try {

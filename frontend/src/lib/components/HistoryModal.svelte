@@ -25,8 +25,8 @@
     }
   });
 
-  // requestHistoryPage gọi API lịch sử (người dùng của mình hoặc admin theo user_id) và trả về
-  // cả mục lẫn cờ còn trang. Admin dùng cùng định dạng phân trang nên hai nhánh chia một code.
+  // requestHistoryPage calls the history API (own user or admin by user_id) and returns
+  // both items and the has_more flag. Admin uses the same pagination format so both branches share one code path.
   async function requestHistoryPage(before: HistoryCursor | null): Promise<{ items: HistoryItem[]; has_more: boolean }> {
     if (targetUserId) {
       const params = new URLSearchParams();
@@ -58,9 +58,9 @@
     }
   }
 
-  // loadMore nối thêm trang sau vào danh sách đang hiển thị. Con trỏ là item cuối cùng hiện có —
-  // keyset máy chủ dùng là (created_at, job_id). Cùng job có thể xuất hiện lại ở trang sau khi
-  // hai job trùng timestamp, nên loại ngay khi id đã có ở trang trước.
+  // loadMore appends the next page to the displayed list. The cursor is the last item currently visible —
+  // the server keyset is (created_at, job_id). The same job may appear again on the next page when
+  // two jobs share the same timestamp, so filter out ids already seen in the previous page.
   async function loadMore() {
     if (isLoadingMore || isLoading) return;
     const last = history[history.length - 1];

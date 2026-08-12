@@ -136,7 +136,7 @@
                 type="button"
                 onclick={(e) => playSample(e, v.sampleUrl)}
                 style="background: rgba(99, 102, 241, 0.2); border: 1px solid var(--primary); color: #a5b4fc; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer;"
-                title="Nghe thử mẫu giọng"
+                title="Preview voice sample"
               >
                 <i class="fa-solid {playingSampleUrl === v.sampleUrl ? 'fa-pause' : 'fa-play'}" style="font-size: 0.8rem;"></i>
               </button>
@@ -147,7 +147,7 @@
                 type="button"
                 onclick={(e) => handleDelete(e, v)}
                 style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;"
-                title="Xóa giọng mẫu này"
+                title="Delete this voice"
               >
                 <i class="fa-solid fa-trash-can" style="font-size: 0.8rem;"></i>
               </button>

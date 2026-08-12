@@ -53,7 +53,7 @@ body {
 }
 
 
-/* Custom Scrollbar cho toàn trang */
+/* Custom Scrollbar for the whole page */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -82,7 +82,7 @@ body {
     background: transparent;
 }
 
-/* Scrollbar cho danh sách chunk cuộn ngang */
+/* Scrollbar for horizontally scrolling chunk list */
 #streaming-chunk-list::-webkit-scrollbar {
     height: 6px;
 }
@@ -1060,7 +1060,7 @@ footer {
     transform: scale(0.95);
 }
 
-/* LINE CLAMP 3 DÒNG CHO BẢNG */
+/* LINE CLAMP 3 ROWS FOR TABLES */
 .line-clamp-3 {
     display: -webkit-box;
     -webkit-line-clamp: 3;
