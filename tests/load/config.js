@@ -31,11 +31,11 @@ const audioBytes     = new Trend('audio_response_bytes', true);
 
 // ── Sample data ──────────────────────────────────────────────────────────────
 const SAMPLE_TEXTS = new SharedArray('sample_texts', () => [
-  'Xin chào! Đây là ứng dụng tổng hợp giọng nói tiếng Việt.',
-  'Hôm nay thời tiết rất đẹp, trời trong xanh, không có mây.',
-  'Chào mừng bạn đến với AI Voice Studio, nền tảng tổng hợp giọng nói hàng đầu Việt Nam.',
-  'Việt Nam là một quốc gia đông dân, nằm ở bán đảo Đông Dương.',
-  'Công nghệ trí tuệ nhân tạo đang thay đổi cách chúng ta sống và làm việc mỗi ngày.',
+  'Hello! This is a high quality text to speech synthesis application.',
+  'The weather today is very pleasant, clear blue sky with no clouds.',
+  'Welcome to AI Voice Studio, a state of the art speech synthesis platform.',
+  'Artificial intelligence technology is transforming how we live and work every day.',
+  'Experience fast and reliable voice generation with flexible dynamic manifests.',
 ]);
 
 const VOICES = ['hoai_my', 'nam_minh', 'thu_hien'];

@@ -28,8 +28,6 @@ type Config struct {
 	FEBuilderURL               string
 	DefaultAdminUsername       string
 	DefaultAdminPassword       string
-	DefaultUserUsername        string
-	DefaultUserPassword        string
 
 	// Redis Cache & PubSub Broker configuration
 	RedisURL      string
@@ -182,8 +180,6 @@ func LoadConfig() *Config {
 
 		DefaultAdminUsername: str("DEFAULT_ADMIN_USERNAME"),
 		DefaultAdminPassword: str("DEFAULT_ADMIN_PASSWORD"),
-		DefaultUserUsername:  str("DEFAULT_USER_USERNAME"),
-		DefaultUserPassword:  str("DEFAULT_USER_PASSWORD"),
 
 		RedisURL:      str("REDIS_URL"),
 		RedisPassword: str("REDIS_PASSWORD"),
@@ -231,7 +227,7 @@ func LoadConfig() *Config {
 // only show their presence, not their value.
 func (c *Config) logSummary() {
 	seeded := "no accounts seeded"
-	if c.DefaultAdminUsername != "" || c.DefaultUserUsername != "" {
+	if c.DefaultAdminUsername != "" {
 		seeded = "accounts will be seeded"
 	}
 

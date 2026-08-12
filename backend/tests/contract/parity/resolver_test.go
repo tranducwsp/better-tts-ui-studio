@@ -12,7 +12,7 @@ import (
 // Test cases shared with the frontend. To add new cases, edit
 // docs/capability-resolution-cases.json and both sides pick it up — that is the point of
 // keeping the data outside the source code.
-const fixturePath = "../../docs/capability-resolution-cases.json"
+const fixturePath = "../../../../tests/fixtures/capability-resolution-cases.json"
 
 
 type parityFixture struct {

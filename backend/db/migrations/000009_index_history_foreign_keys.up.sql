@@ -1,13 +1,13 @@
--- Postgres không tự tạo index cho cột tham chiếu khoá ngoại, nên hai cột mà mọi trang
--- lịch sử đều lọc theo vẫn phải quét tuần tự.
+-- Postgres does not automatically create indexes for foreign key reference columns,
+-- so history queries would otherwise perform sequential scans.
 --
--- ListUserHistorySummaries join tts_jobs với tts_chunks rồi GROUP BY: không có index trên
--- tts_chunks.job_id, mỗi lần mở lịch sử là một lần quét TOÀN BỘ bảng chunks — của mọi
--- người dùng, không riêng người đang xem. Bảng đó tăng một dòng mỗi chunk và không bao giờ
--- co lại, nên chi phí đi theo dữ liệu toàn hệ thống chứ không theo dữ liệu của một người.
+-- ListUserHistorySummaries joins tts_jobs with tts_chunks and performs GROUP BY: without
+-- an index on tts_chunks.job_id, opening history forces a scan of the ENTIRE chunks table
+-- across all users. That table grows with every chunk and never shrinks, so query cost scales
+-- with global system data rather than per-user data.
 --
--- Index thứ hai gộp cả cột lọc và cột sắp xếp, vì truy vấn luôn kết thúc bằng
--- ORDER BY created_at DESC. ON DELETE CASCADE trên cả hai khoá ngoại cũng dùng chính
--- những index này khi xoá người dùng.
+-- The second index covers both the filter and sort columns, as queries end with
+-- ORDER BY created_at DESC. ON DELETE CASCADE on both foreign keys also uses these indexes
+-- when deleting users.
 CREATE INDEX IF NOT EXISTS idx_tts_chunks_job_id ON tts_chunks (job_id);
 CREATE INDEX IF NOT EXISTS idx_tts_jobs_user_created ON tts_jobs (user_id, created_at DESC);

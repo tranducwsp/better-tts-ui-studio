@@ -111,7 +111,7 @@ func InitDB(cfg *config.Config, opts InitOptions) {
 	Pool = pool
 	Queries = sqlc.New(pool)
 
-	// 4. Seed default accounts (Admin & User)
+	// 4. Seed default admin account
 	if opts.Seed {
 		seedDefaultAccounts(ctx, cfg)
 	}
@@ -152,7 +152,7 @@ func runDatabaseMigrations(dbURL string) {
 	log.Println("Database migrations applied successfully (Schema up-to-date)!")
 }
 
-// seedDefaultAccounts automatically creates default Admin and User accounts if they do not
+// seedDefaultAccounts automatically creates a default Admin account if it does not
 // already exist in PostgreSQL.
 func seedDefaultAccounts(ctx context.Context, cfg *config.Config) {
 	type account struct {
@@ -170,13 +170,6 @@ func seedDefaultAccounts(ctx context.Context, cfg *config.Config) {
 		})
 	}
 
-	if cfg.DefaultUserUsername != "" && cfg.DefaultUserPassword != "" {
-		accounts = append(accounts, account{
-			username: cfg.DefaultUserUsername,
-			password: cfg.DefaultUserPassword,
-			role:     "user",
-		})
-	}
 
 	for _, acc := range accounts {
 		_, err := Queries.GetUserByUsername(ctx, acc.username)

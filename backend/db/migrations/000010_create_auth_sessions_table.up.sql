@@ -1,23 +1,22 @@
 -- 000010_create_auth_sessions_table.up.sql
 
--- Sổ đăng ký refresh token: mỗi dòng = MỘT refresh token đang được phát hành, thuộc về một
--- phiên đăng nhập (session_family_id). Trước đây refresh token là JWT stateless sống 30 ngày,
--- không có cách nào thu hồi — logout chỉ xoá cookie, token vẫn hợp lệ phía server.
+-- Refresh token registry: each row = ONE issued refresh token belonging to a
+-- login session (session_family_id). Previously refresh tokens were stateless 30-day JWTs
+-- with no revocation mechanism — logout only cleared cookies while the token remained server-valid.
 --
--- Rotation: mỗi lượt refresh tạo dòng MỚI (jti mới) cùng family, và đánh dấu dòng cũ
--- revoked_at + replaced_by. Một family chỉ có đúng một dòng còn sống tại mỗi thời điểm.
+-- Rotation: each refresh creates a NEW row (new jti) in the same family, marking the old row
+-- revoked_at + replaced_by. Exactly one active row exists per family at any given time.
 --
--- Replay: token cũ (revoked + replaced) được trình lên → bị từ chối. Với trình duyệt mở nhiều
--- tab, cookie refresh được chia sẻ chung một jar nên lượt retry tự dùng token mới nhất — không
--- cần tự sát hại family khi gặp race.
+-- Replay: presenting an old token (revoked + replaced) is rejected. For multi-tab browser access,
+-- shared cookies ensure retries use the latest token without killing the family on race conditions.
 CREATE TABLE IF NOT EXISTS auth_sessions (
-    id                VARCHAR(64) PRIMARY KEY,  -- jti của refresh JWT
-    session_family_id VARCHAR(64) NOT NULL,     -- 1 login = 1 family; rotation giữ nguyên
+    id                VARCHAR(64) PRIMARY KEY,  -- Refresh JWT jti
+    session_family_id VARCHAR(64) NOT NULL,     -- 1 login = 1 family; preserved across rotation
     user_id           VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at        TIMESTAMPTZ NOT NULL,     -- hạn TUYỆT ĐỐI, không bị rotation kéo dài
-    revoked_at        TIMESTAMPTZ,              -- NULL = còn sống
-    replaced_by       VARCHAR(64),              -- jti của token thay thế (rotation)
+    expires_at        TIMESTAMPTZ NOT NULL,     -- ABSOLUTE expiration, not extended by rotation
+    revoked_at        TIMESTAMPTZ,              -- NULL = active
+    replaced_by       VARCHAR(64),              -- Replacement token jti (rotation)
     user_agent        TEXT,
     ip                VARCHAR(64)
 );

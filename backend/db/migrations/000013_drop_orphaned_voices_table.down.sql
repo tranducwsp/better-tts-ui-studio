@@ -1,4 +1,4 @@
--- Khôi phục lại bảng voices nếu cần quay lại. Schema khớp với migration 000003 gốc.
+-- Re-create legacy voices table if rollback is needed. Schema matches original migration 000003.
 CREATE TABLE IF NOT EXISTS voices (
     id VARCHAR(64) PRIMARY KEY,
     user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,

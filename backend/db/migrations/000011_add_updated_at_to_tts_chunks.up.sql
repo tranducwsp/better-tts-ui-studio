@@ -1,7 +1,7 @@
 -- 000011_add_updated_at_to_tts_chunks.up.sql
 
--- Mốc "lần cuối tiến triển" của một chunk. Trước đây bảng không có cột thời gian nào, nên
--- không thể hỏi "chunk này còn sống hay đã bị kẹt" — một chunk mồ côi do mất hàng đợi (Redis
--- restart) cứ đứng mãi ở 'processing'. updated_at là cái neo để cron reconcile khẳng định
--- chunk đã quá hạn: status chỉ đổi tại các mốc tiến triển, và mọi đường ghi phải dời nó về now().
+-- Tracks the last progress timestamp of a chunk. Previously the table had no timestamp column,
+-- making it impossible to determine if a chunk was still active or stuck — an orphaned chunk due to
+-- lost queue messages (e.g. Redis restart) would stay in 'processing' forever. updated_at serves as
+-- an anchor for cron reconciliation to confirm stale chunks.
 ALTER TABLE tts_chunks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;

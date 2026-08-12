@@ -113,7 +113,7 @@ func TestLocalStore_RoundTrip(t *testing.T) {
 	}
 
 	// Deleting a nonexistent key is not an error: the caller wants it gone, and it is gone.
-	if err := s.Delete(ctx, "temp/khong-ton-tai.wav"); err != nil {
+	if err := s.Delete(ctx, "temp/non-existent.wav"); err != nil {
 		t.Errorf("deleting a nonexistent key should not be an error: %v", err)
 	}
 	if err := s.Delete(ctx, key); err != nil {

@@ -17,21 +17,21 @@ FROM alpine:latest
 
 RUN apk add --no-cache ca-certificates ffmpeg
 
-# Chạy bằng non-root user. Container root không khác gì root trên host — nếu attacker
-# có code exec, mọi thứ trong container là của họ. appuser không cần quyền đặc biệt:
-# chỉ ghi vào /app/storage (do volume mount) và chạy ffmpeg.
+# Run as non-root user. Container root is identical to host root — if an attacker
+# achieves code execution, they own everything in the container. appuser needs no special privileges:
+# it only writes to /app/storage (via volume mount) and executes ffmpeg.
 RUN adduser -D -u 1000 appuser
 
 WORKDIR /app
 
 COPY --from=builder /app/web /app/worker /app/cron .
 
-# Không COPY .env vào image.
+# Do not COPY .env into the image.
 #
-# Dòng `COPY .env* ./` trước đây đưa tệp môi trường của máy build vào image, nên SECRET_KEY và
-# mật khẩu tài khoản khởi tạo nằm sẵn trong mọi bản pull được. Cấu hình đến từ môi trường lúc
-# chạy — compose truyền qua `environment:`, k8s qua secretRef — và requireAll dừng tiến trình
-# nếu thiếu biến bắt buộc, nên không có gì phải điền sẵn.
+# Previously `COPY .env* ./` bundled build-machine environment files into the image, leaking SECRET_KEY
+# and initial seed passwords in pulled images. Configuration must come from runtime environment
+# variables — Compose passes via `environment:`, Kubernetes via secretRef — and requireAll halts startup
+# if required variables are missing, so nothing should be baked in.
 
 USER appuser
 

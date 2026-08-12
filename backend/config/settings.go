@@ -81,8 +81,6 @@ var Settings = []Setting{
 			"without a password is skipped.",
 	},
 	{Key: "DEFAULT_ADMIN_PASSWORD", Kind: KindSecret, Default: "", Group: "Seed accounts"},
-	{Key: "DEFAULT_USER_USERNAME", Kind: KindString, Default: "", Group: "Seed accounts"},
-	{Key: "DEFAULT_USER_PASSWORD", Kind: KindSecret, Default: "", Group: "Seed accounts"},
 
 	{Key: "HOST", Kind: KindString, Default: "0.0.0.0", Group: "Server"},
 	{Key: "PORT", Kind: KindString, Default: "8000", Group: "Server"},
