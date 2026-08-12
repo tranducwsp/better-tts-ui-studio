@@ -75,9 +75,9 @@
     <div class="selected-voice-info" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
       {#if currentVoice}
         <strong style="font-weight: 600; color: white; font-size: 0.95rem;">{currentVoice.name}</strong>
-        {#if (currentVoice.descriptions && currentVoice.descriptions.length > 0) || (currentVoice.metadata && Object.keys(currentVoice.metadata).length > 0)}
+        {#if currentVoice.metadata && Object.keys(currentVoice.metadata).length > 0}
           <div class="voice-badges" style="display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap;">
-            {#each (currentVoice.descriptions && currentVoice.descriptions.length > 0 ? currentVoice.descriptions : Object.values(currentVoice.metadata || {}).filter((d) => typeof d === 'string' && d.trim() !== '')).slice(0, 3) as desc, idx}
+            {#each Object.values(currentVoice.metadata).filter((d) => typeof d === 'string' && d.trim() !== '').slice(0, 3) as desc, idx}
               <span class="badge {BADGE_COLORS[idx % BADGE_COLORS.length]}">{desc}</span>
             {/each}
           </div>
@@ -121,9 +121,9 @@
         >
           <div style="display: flex; flex-direction: column; gap: 4px;">
             <div class="voice-title" style="font-weight: 600; color: white;">{v.name}</div>
-            {#if (v.descriptions && v.descriptions.length > 0) || (v.metadata && Object.keys(v.metadata).length > 0)}
+            {#if v.metadata && Object.keys(v.metadata).length > 0}
               <div class="voice-badges" style="display: flex; gap: 5px; margin-top: 2px;">
-                {#each (v.descriptions && v.descriptions.length > 0 ? v.descriptions : Object.values(v.metadata || {}).filter((d) => typeof d === 'string' && d.trim() !== '')).slice(0, 5) as desc, idx}
+                {#each Object.values(v.metadata).filter((d) => typeof d === 'string' && d.trim() !== '').slice(0, 5) as desc, idx}
                   <span class="badge {BADGE_COLORS[idx % BADGE_COLORS.length]}">{desc}</span>
                 {/each}
               </div>

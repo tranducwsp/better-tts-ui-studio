@@ -51,7 +51,6 @@ func asMap(r types.ResolvedCapabilities) map[string]bool {
 		"supports_speed":         r.SupportsSpeed,
 		"supports_pitch":         r.SupportsPitch,
 		"supports_emotion":       r.SupportsEmotion,
-		"supports_ssml":          r.SupportsSsml,
 	}
 }
 

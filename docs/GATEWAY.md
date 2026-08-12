@@ -209,8 +209,7 @@ This is the block that determines the visual presentation of control components.
         {
           "id": "vi_female_1",
           "name": "Standard Hanoi Female",
-          "gender": "female",
-          "descriptions": ["Northern", "Expressive"],
+          "metadata": {"gender": "female", "accent": "Northern", "style": "Expressive"},
           "sample_url": "/samples/vi_female_1.wav"
         }
       ],
@@ -266,8 +265,7 @@ Used to declare the list of standard Model voices directly in the Manifest (grea
 | :--- | :--- | :--- | :--- |
 | `id` | `string` | **Yes** | Unique ID of the voice (e.g., `"vi_female_hn"`) |
 | `name` | `string` | **Yes** | Display name of the voice (e.g., `"Hanoi Female - Thanh Ngan"`) |
-| `gender` | `string` | No | `"female"` or `"male"` |
-| `descriptions` | `array[string]`| No | Characteristic description labels (e.g., `["Northern", "Expressive", "News"]`) |
+| `metadata` | `object` | No | Dynamic key-value metadata (e.g., `{"accent": "Northern", "style": "Expressive"}`). Displayed as badges in the Voice Select dropdown. |
 | `sample_url` | `string` | No | Sample audio file URL for preview (e.g., `"/static/samples/hn_female.wav"`) |
 
 ---
@@ -381,15 +379,13 @@ AI Engineers can copy the complete Manifest template below to apply directly to 
           {
             "id": "vi_female_hn",
             "name": "Hanoi Female - Thanh Ngan",
-            "gender": "female",
-            "descriptions": ["Northern", "Expressive", "News"],
+            "metadata": {"gender": "female", "accent": "Northern", "style": "Expressive"},
             "sample_url": "/samples/hn_female.wav"
           },
           {
             "id": "vi_male_sg",
             "name": "Saigon Male - Minh Triet",
-            "gender": "male",
-            "descriptions": ["Southern", "Warm", "Storytelling"],
+            "metadata": {"gender": "male", "accent": "Southern", "style": "Warm"},
             "sample_url": "/samples/sg_male.wav"
           }
         ],

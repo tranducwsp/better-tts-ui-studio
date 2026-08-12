@@ -2,7 +2,6 @@ export interface VoiceOption {
   id: string;
   name: string;
   metadata?: Record<string, string>;
-  descriptions?: string[];
   sampleUrl?: string;
   createdAt?: string;
   deletable?: boolean;
@@ -11,7 +10,6 @@ export interface VoiceOption {
 export interface Preset {
   id: string;
   name: string;
-  speaker: string;
   speed: number;
   /** Dynamic metadata fields from voice_metadata_schema. */
   metadata?: Record<string, string>;
@@ -78,7 +76,6 @@ export interface EngineCapabilities {
   supports_speed?: boolean;
   supports_pitch?: boolean;
   supports_emotion?: boolean;
-  supports_ssml?: boolean;
 }
 
 /** Capabilities after the mode/engine merge — no undefined left, safe to read. */
@@ -179,7 +176,6 @@ export interface PresetVoiceSpec {
   id: string;
   name: string;
   metadata?: Record<string, string>;
-  descriptions?: string[];
   sample_url?: string;
 }
 

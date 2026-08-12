@@ -29,6 +29,7 @@
   let isReadOnly = $state(false);
   let reloadedJob = $state<JobDetailResponse | null>(null);
   let currentUser = $state<UserResponse | null>(null);
+  let page = $state<'loading' | 'auth' | 'app'>('loading');
 
   // Manifest fetched at runtime. Falls back to the SSG-injected prop until it resolves,
   // so the prerendered markup and the first hydrated render agree.
@@ -94,7 +95,6 @@
   });
 
   // Modals
-  let isAuthOpen = $state(false);
   let isHistoryOpen = $state(false);
   let isAdminOpen = $state(false);
   let adminTargetUserId = $state<string | null>(null);
@@ -102,9 +102,18 @@
 
   // Standardized Runtime Lifecycle: Check auth & refresh manifest if not pre-rendered
   onMount(() => {
-    checkCurrentUser().then((user) => {
-      currentUser = user;
-    });
+    checkCurrentUser()
+      .then((user) => {
+        if (user) {
+          currentUser = user;
+          page = 'app';
+        } else {
+          page = 'auth';
+        }
+      })
+      .catch(() => {
+        page = 'auth';
+      });
     if (!initialManifest) {
       fetchManifest().then((m) => {
         if (m) fetchedManifest = m;
@@ -114,13 +123,13 @@
 
   function handleAuthSuccess(user: UserResponse) {
     currentUser = user;
-    isAuthOpen = false;
+    page = 'app';
   }
 
   async function handleLogout() {
     await logout();
     currentUser = null;
-    isAuthOpen = true;
+    page = 'auth';
     toast.show('Logged out successfully', 'info');
   }
 
@@ -205,101 +214,106 @@
   <div class="blob blob-2"></div>
 </div>
 
-<div class="app-container">
-  <Header
-    {currentUser}
-    onOpenAuth={() => isAuthOpen = true}
-    onOpenHistory={handleOpenMyHistory}
-    onOpenAdmin={() => isAdminOpen = true}
-    onLogout={handleLogout}
-  />
+{#if page === 'loading'}
+  <!-- Auth check in progress — render nothing yet -->
+{:else if page === 'auth'}
+  <AuthModal isOpen={true} onSuccess={handleAuthSuccess} />
+{:else}
+  <div class="app-container">
+    <Header
+      {currentUser}
+      onOpenAuth={() => {}}
+      onOpenHistory={handleOpenMyHistory}
+      onOpenAdmin={() => isAdminOpen = true}
+      onLogout={handleLogout}
+    />
 
-  <main>
-    <!-- Text Content Input Panel -->
-    <TextInputPanel bind:text={mainText} bind:isReadOnly={isReadOnly} bind:isCollapsed={isTextCollapsed} inputPanelSpec={manifest?.ui_schema?.input_panel || null} {manifest} />
+    <main>
+      <!-- Text Content Input Panel -->
+      <TextInputPanel bind:text={mainText} bind:isReadOnly={isReadOnly} bind:isCollapsed={isTextCollapsed} inputPanelSpec={manifest?.ui_schema?.input_panel || null} {manifest} />
 
-    <!-- Main Tabs dynamically ordered by Manifest -->
-    <div id="main-tabs-container" style="margin-bottom: 1.5rem; width: 100%;">
-      <div class="tabs">
-        {#each activeModes as mode (mode.id)}
-          <button
-            class="tab-btn"
-            class:active={activeTab === mode.id}
-            onclick={() => activeTab = mode.id}
-          >
-            {mode.name}
-          </button>
-        {/each}
-      </div>
-    </div>
-
-    <!--
-      Universal Dynamic Audio Settings panel. Collapsible like the text panel, and
-      collapsed automatically while a job runs so the streaming panel is what the user
-      sees — the same accordion behaviour as the original app.
-    -->
-    <div class="glass-panel" class:collapsed={isSettingsCollapsed} style="margin-bottom: 1.5rem; transition: all 0.3s ease; {isSettingsCollapsed ? '' : 'min-height: 360px;'}">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 8px; font-weight: 600;">
-          <i class="fa-solid fa-sliders"></i> Audio Settings
-        </span>
-        <button
-          onclick={() => isSettingsCollapsed = !isSettingsCollapsed}
-          style="background: rgba(255,255,255,0.1); border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.8em; display: flex; align-items: center; gap: 5px; cursor: pointer;"
-        >
-          <i class="fa-solid {isSettingsCollapsed ? 'fa-chevron-down' : 'fa-chevron-up'}"></i>
-          <span>{isSettingsCollapsed ? 'Expand' : 'Collapse'}</span>
-        </button>
-      </div>
-
-      {#if !isSettingsCollapsed}
-        <div style="margin-top: 0.5rem;">
-          {#if activeTab}
-            <GenericEnginePanel
-              text={mainText}
-              activeMode={currentModeSpec}
-              {manifest}
-              {reloadedJob}
-              onStartStreaming={handleStartStreaming}
-            />
-          {:else}
-            <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0;">
-              Waiting for the engine to report its available modes…
-            </p>
-          {/if}
+      <!-- Main Tabs dynamically ordered by Manifest -->
+      <div id="main-tabs-container" style="margin-bottom: 1.5rem; width: 100%;">
+        <div class="tabs">
+          {#each activeModes as mode (mode.id)}
+            <button
+              class="tab-btn"
+              class:active={activeTab === mode.id}
+              onclick={() => activeTab = mode.id}
+            >
+              {mode.name}
+            </button>
+          {/each}
         </div>
+      </div>
+
+      <!--
+        Universal Dynamic Audio Settings panel. Collapsible like the text panel, and
+        collapsed automatically while a job runs so the streaming panel is what the user
+        sees — the same accordion behaviour as the original app.
+      -->
+      <div class="glass-panel" class:collapsed={isSettingsCollapsed} style="margin-bottom: 1.5rem; transition: all 0.3s ease; {isSettingsCollapsed ? '' : 'min-height: 360px;'}">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 8px; font-weight: 600;">
+            <i class="fa-solid fa-sliders"></i> Audio Settings
+          </span>
+          <button
+            onclick={() => isSettingsCollapsed = !isSettingsCollapsed}
+            style="background: rgba(255,255,255,0.1); border: none; color: white; padding: 4px 10px; border-radius: 6px; font-size: 0.8em; display: flex; align-items: center; gap: 5px; cursor: pointer;"
+          >
+            <i class="fa-solid {isSettingsCollapsed ? 'fa-chevron-down' : 'fa-chevron-up'}"></i>
+            <span>{isSettingsCollapsed ? 'Expand' : 'Collapse'}</span>
+          </button>
+        </div>
+
+        {#if !isSettingsCollapsed}
+          <div style="margin-top: 0.5rem;">
+            {#if activeTab}
+              <GenericEnginePanel
+                text={mainText}
+                activeMode={currentModeSpec}
+                {manifest}
+                {reloadedJob}
+                onStartStreaming={handleStartStreaming}
+              />
+            {:else}
+              <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0;">
+                Waiting for the engine to report its available modes…
+              </p>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <!--
+        Streaming panel is a sibling of the settings panel, not a child of it, mirroring
+        panel-settings-content vs streaming-panel in the original app. Keyed on the job so
+        that starting a new job remounts it and re-splits the text — without the key it
+        would keep the first job's chunks forever.
+      -->
+      {#if streamingJob}
+        {#key streamingJob.id}
+          <StreamingPanel
+            text={mainText}
+            engine={streamingJob.engine}
+            voice={streamingJob.voice}
+            speed={streamingJob.speed}
+            pitch={streamingJob.pitch}
+            emotion={streamingJob.emotion}
+            {manifest}
+            {reloadedJob}
+            onClose={handleCloseStreaming}
+          />
+        {/key}
       {/if}
-    </div>
+    </main>
 
-    <!--
-      Streaming panel is a sibling of the settings panel, not a child of it, mirroring
-      panel-settings-content vs streaming-panel in the original app. Keyed on the job so
-      that starting a new job remounts it and re-splits the text — without the key it
-      would keep the first job's chunks forever.
-    -->
-    {#if streamingJob}
-      {#key streamingJob.id}
-        <StreamingPanel
-          text={mainText}
-          engine={streamingJob.engine}
-          voice={streamingJob.voice}
-          speed={streamingJob.speed}
-          pitch={streamingJob.pitch}
-          emotion={streamingJob.emotion}
-          {manifest}
-          {reloadedJob}
-          onClose={handleCloseStreaming}
-        />
-      {/key}
-    {/if}
-  </main>
+    <footer>
+      <p>AI Voice Studio &copy; 2026 - Powered by Svelte 5, Go Chi & Core AI Engine</p>
+    </footer>
+  </div>
+{/if}
 
-  <footer>
-    <p>AI Voice Studio &copy; 2026 - Powered by Svelte 5, Go Chi & Core AI Engine</p>
-  </footer>
-</div>
-
-<AuthModal isOpen={isAuthOpen} onClose={() => isAuthOpen = false} onSuccess={handleAuthSuccess} />
 <HistoryModal
   isOpen={isHistoryOpen}
   onClose={() => isHistoryOpen = false}

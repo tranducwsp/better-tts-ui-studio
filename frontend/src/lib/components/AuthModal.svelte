@@ -14,11 +14,18 @@
   let username = $state('');
   let password = $state('');
   let isLoading = $state(false);
+  let errorMsg = $state('');
+
+  function switchMode(m: 'login' | 'register') {
+    mode = m;
+    errorMsg = '';
+  }
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
+    errorMsg = '';
     if (!username.trim() || !password.trim()) {
-      toast.show('Please enter both Username & Password', 'error');
+      errorMsg = 'Please enter both Username & Password';
       return;
     }
 
@@ -36,7 +43,8 @@
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      toast.show(errMsg || 'Operation failed', 'error');
+      errorMsg = errMsg || 'Operation failed';
+      toast.show(errorMsg, 'error');
     } finally {
       isLoading = false;
     }
@@ -90,6 +98,13 @@
             style="width: 100%; padding: 12px; border-radius: 8px; background: rgba(15,23,42,0.8); border: 1px solid var(--glass-border); color: white;"
           />
         </div>
+
+        {#if errorMsg}
+          <div style="padding: 10px 14px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; color: #f87171; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-circle-exclamation" style="flex-shrink: 0;"></i>
+            <span>{errorMsg}</span>
+          </div>
+        {/if}
 
         <button type="submit" disabled={isLoading} class="btn primary-btn" style="margin-top: 10px; padding: 12px;">
           <i class="fa-solid {mode === 'login' ? 'fa-right-to-bracket' : 'fa-user-plus'}"></i>

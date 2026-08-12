@@ -40,8 +40,7 @@
         "supports_streaming": true,
         "supports_speed": true,
         "supports_pitch": false,
-        "supports_emotion": false,
-        "supports_ssml": false
+        "supports_emotion": false
       }
     },
     {
@@ -54,8 +53,7 @@
         "supports_streaming": true,
         "supports_speed": true,
         "supports_pitch": true,
-        "supports_emotion": true,
-        "supports_ssml": false
+        "supports_emotion": true
       }
     },
     {
@@ -68,8 +66,7 @@
         "supports_streaming": false,
         "supports_speed": true,
         "supports_pitch": false,
-        "supports_emotion": false,
-        "supports_ssml": false
+        "supports_emotion": false
       }
     },
     {
@@ -82,8 +79,7 @@
         "supports_streaming": true,
         "supports_speed": true,
         "supports_pitch": false,
-        "supports_emotion": false,
-        "supports_ssml": false
+        "supports_emotion": false
       }
     },
     {
@@ -96,8 +92,7 @@
         "supports_streaming": true,
         "supports_speed": true,
         "supports_pitch": false,
-        "supports_emotion": false,
-        "supports_ssml": false
+        "supports_emotion": false
       }
     },
     {
@@ -110,8 +105,7 @@
         "supports_streaming": true,
         "supports_speed": true,
         "supports_pitch": false,
-        "supports_emotion": false,
-        "supports_ssml": false
+        "supports_emotion": false
       }
     }
   ],
@@ -122,8 +116,7 @@
     "supports_streaming": true,
     "supports_speed": true,
     "supports_pitch": false,
-    "supports_emotion": false,
-    "supports_ssml": false
+    "supports_emotion": false
   },
   "default_max_text_length": 3000
 }

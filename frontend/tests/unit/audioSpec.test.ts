@@ -9,6 +9,8 @@ import {
   referenceSizeError,
   resolveAudioSpec,
 } from '../../src/lib/audioSpec';
+import { PLATFORM_DEFAULTS } from '../../src/lib/capabilities';
+import { resolveInputPanel } from '../../src/lib/inputPanel';
 import type { UniversalManifest } from '../../src/lib/types';
 
 // Mirrors the bundled engine: WAV engine-wide, MP3 for the Edge-TTS-backed mode.
@@ -67,6 +69,95 @@ describe('per-mode audio spec', () => {
 
   it('ignores an unknown mode id rather than erroring', () => {
     expect(defaultFormat(manifest, 'no_such_mode')).toBe('wav');
+  });
+
+  it('returns engine-wide defaults for empty mode id string', () => {
+    expect(defaultFormat(manifest, '')).toBe('wav');
+  });
+
+  it('mode partial override: only some fields override engine', () => {
+    const fast = resolveAudioSpec(manifest, 'fast');
+    // fast overrides supported_formats AND default_format — check both
+    expect(fast.supported_formats).toEqual(['mp3', 'wav']);
+    expect(fast.default_format).toBe('mp3');
+    // Inherited from engine
+    expect(fast.default_sample_rate).toBe(24000);
+  });
+});
+
+describe('resolveAudioSpec', () => {
+  it('returns platform defaults when manifest has no audio_spec', () => {
+    const m = { supported_modes: [] } as unknown as UniversalManifest;
+    const spec = resolveAudioSpec(m);
+    expect(spec.default_format).toBe('wav');
+    expect(spec.default_sample_rate).toBe(24000);
+    expect(spec.supported_formats).toEqual(['wav']);
+    expect(spec.max_upload_bytes).toBe(100 * 1024 * 1024);
+    expect(spec.max_reference_bytes).toBe(10 * 1024 * 1024);
+  });
+
+  it('empty mode AudioSpec fields do not override engine', () => {
+    const m = {
+      audio_spec: {
+        supported_formats: ['wav', 'mp3'],
+        default_format: 'wav',
+        default_sample_rate: 24000,
+        max_upload_bytes: 50 * 1024 * 1024,
+      },
+      supported_modes: [
+        {
+          id: 'empty',
+          name: 'Empty',
+          description: '',
+          audio_spec: {},
+        },
+      ],
+    } as unknown as UniversalManifest;
+    const spec = resolveAudioSpec(m, 'empty');
+    expect(spec.default_format).toBe('wav');
+    expect(spec.supported_formats).toEqual(['wav', 'mp3']);
+    expect(spec.max_upload_bytes).toBe(50 * 1024 * 1024);
+  });
+
+  it('resolves full mode override on all fields', () => {
+    const m = {
+      audio_spec: {
+        supported_formats: ['wav'],
+        supported_sample_rates: [24000],
+        default_format: 'wav',
+        default_sample_rate: 24000,
+        reference_audio_formats: ['wav'],
+        reference_audio_seconds: 5.0,
+        max_upload_bytes: 100 * 1024 * 1024,
+        max_reference_bytes: 10 * 1024 * 1024,
+      },
+      supported_modes: [
+        {
+          id: 'full',
+          name: 'Full',
+          description: '',
+          audio_spec: {
+            supported_formats: ['flac', 'wav'],
+            supported_sample_rates: [48000],
+            default_format: 'flac',
+            default_sample_rate: 48000,
+            reference_audio_formats: ['flac', 'wav'],
+            reference_audio_seconds: 10.0,
+            max_upload_bytes: 200 * 1024 * 1024,
+            max_reference_bytes: 20 * 1024 * 1024,
+          },
+        },
+      ],
+    } as unknown as UniversalManifest;
+    const spec = resolveAudioSpec(m, 'full');
+    expect(spec.supported_formats).toEqual(['flac', 'wav']);
+    expect(spec.supported_sample_rates).toEqual([48000]);
+    expect(spec.default_format).toBe('flac');
+    expect(spec.default_sample_rate).toBe(48000);
+    expect(spec.reference_audio_formats).toEqual(['flac', 'wav']);
+    expect(spec.reference_audio_seconds).toBe(10.0);
+    expect(spec.max_upload_bytes).toBe(200 * 1024 * 1024);
+    expect(spec.max_reference_bytes).toBe(20 * 1024 * 1024);
   });
 });
 
