@@ -7,22 +7,23 @@ import (
 	"testing"
 )
 
-// RepoRoot trả thư mục gốc repository dựa trên vị trí file helper này, không phụ thuộc working
-// directory hay độ sâu của package test. Marker bắt lỗi nếu cây source bị đóng gói thiếu.
+// RepoRoot returns the repository root directory based on the location of this helper file,
+// independent of the working directory or test package depth. The marker catches errors if the
+// source tree is packaged incorrectly.
 func RepoRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		t.Fatal("không xác định được vị trí testsupport")
+		t.Fatal("cannot determine testsupport location")
 	}
 	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
 	if _, err := os.Stat(filepath.Join(root, "backend", "go.mod")); err != nil {
-		t.Fatalf("không tìm thấy repo root từ %s: %v", file, err)
+		t.Fatalf("cannot find repo root from %s: %v", file, err)
 	}
 	return root
 }
 
-// Path dựng đường dẫn tuyệt đối tới một tệp trong repository.
+// Path builds an absolute path to a file within the repository.
 func Path(t *testing.T, parts ...string) string {
 	t.Helper()
 	return filepath.Join(append([]string{RepoRoot(t)}, parts...)...)

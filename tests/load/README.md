@@ -13,7 +13,7 @@ docker run --rm -i --network=host -v $(pwd)/tests/load:/tests/load grafana/k6 ru
 docker run --rm -i --network=host -v $(pwd)/tests/load:/tests/load grafana/k6 run /tests/load/load.js
 ```
 
-## Option: Cài đặt k6 lên máy host
+## Option: Install k6 on the host machine
 
 ```bash
 # Debian/Ubuntu
@@ -26,104 +26,100 @@ sudo apt-get install k6
 # macOS
 brew install k6
 
-# Hoặc tải trực tiếp
+# Or download directly
 curl -sL https://github.com/grafana/k6/releases/latest/download/k6-v0.55.0-linux-amd64.tar.gz | tar xz
 ```
 
-## Chạy nhanh
+## Quick Run
 
 ```bash
-# Smoke — 1 VU, verify mọi endpoint
-k6 run tests/load/smoke.js
+# Smoke — 1 VU, verify all endpoints
+k6 run test/smoke.js
 
-# API — 1 VU, test từng endpoint
-k6 run tests/load/api.js
+# API — 1 VU, test each endpoint
+k6 run test/api.js
 
-# Chỉ định backend khác
-k6 run -e BASE_URL=http://192.168.1.100:8000 tests/load/smoke.js
+# Specify a different backend
+k6 run -e BASE_URL=http://192.168.1.100:8000 test/smoke.js
 ```
 
-## Chạy tải 10k VU
+## Run 10k VU Load
 
 ```bash
-# Load — 10k VU, ramp 30 phút
-k6 run tests/load/load.js
+# Load — 10k VU, 30-minute ramp
+k6 run test/load.js
 
-# Stress — 10k VU, ramp 5 phút
-k6 run -e STAGE=stress tests/load/load.js
+# Stress — 10k VU, 5-minute ramp
+k6 run -e STAGE=stress test/load.js
 
-# Soak — 3k VU, 2 giờ
-k6 run -e STAGE=soak tests/load/load.js
+# Soak — 3k VU, 2 hours
+k6 run -e STAGE=soak test/load.js
 ```
 
-## Chạy từng chuyên mục
+## Run Per Category
 
 ```bash
 # Auth — login/register/refresh/logout
 k6 run tests/load/auth.js
 
-# Synthesize — throughput tổng hợp
-k6 run tests/load/synth.js
+# Synthesize — synthesis throughput
+k6 run test/synth.js
 
 # Streaming — SSE task progress
 k6 run tests/load/streaming.js
 ```
 
-## Kết quả ra file
+## Output Results to File
 
 ```bash
 # JSON summary
 k6 run --out json=results.json tests/load/load.js
 
-# InfluxDB (cần Grafana)
-k6 run --out influxdb=http://localhost:8086/k6 tests/load/load.js
+# InfluxDB (requires Grafana)
+k6 run --out influxdb=http://localhost:8086/k6 test/load.js
 
 # k6 Cloud
 k6 cloud tests/load/load.js
 ```
 
-## Cấu trúc
+## Structure
 
 ```
-tests/
-├── load/            # K6 load test scripts
-│   ├── config.js    # Shared config, stages, helpers
-│   ├── smoke.js     # 1 VU, nhanh — verify hệ thống lên
-│   ├── api.js       # 1 VU — test từng endpoint đúng/sai
-│   ├── load.js      # 10k VU — user journey (login → duyệt → tổng hợp → nghe)
-│   ├── auth.js      # Auth — login/register/refresh/logout
-│   ├── synth.js     # Synthesize — throughput
-│   └── streaming.js # SSE — task streaming
-├── monitoring/      # Python monitoring scripts
-├── reports/         # HTML/JSON metrics and reports
-└── fixtures/        # Shared test fixtures (Go + frontend)
+test/
+├── config.js        # Shared config, stages, helpers
+├── smoke.js         # 1 VU, quick — verify system is up
+├── api.js           # 1 VU — test each endpoint pass/fail
+├── load.js          # 10k VU — user journey (login → browse → synthesize → listen)
+├── auth.js          # Auth — login/register/refresh/logout
+├── synth.js         # Synthesize — throughput
+└── streaming.js     # SSE — task streaming
 ```
 
 ## Stages
 
-| Stage | VU | Thời gian | Mục đích |
-|-------|-----|-----------|----------|
-| smoke | 1 | 30s | Verify hệ thống lên |
-| load | 10k | 30m | Kiểm tra tải thực tế |
-| stress | 10k | 7m | Tìm điểm gãy |
-| soak | 3k | 2h | Kiểm tra memory leak |
+| Stage | VU | Duration | Purpose |
+|-------|-----|----------|----------|
+| smoke | 1 | 30s | Verify system is up |
+| load | 10k | 30m | Real-world load test |
+| stress | 10k | 7m | Find breaking point |
+| soak | 3k | 2h | Check for memory leaks |
 
-## Custom metrics
+## Custom Metrics
 
-| Metric | Mô tả |
-|--------|--------|
-| `errors` | Tỷ lệ lỗi tổng |
+| Metric | Description |
+|--------|-------------|
+| `errors` | Overall error rate |
 | `synthesis_e2e_ms` | Submit → done (ms) |
-| `audio_response_bytes` | Kích thước audio |
-| `auth_errors` | Tỷ lệ lỗi auth |
-| `jobs_completed` | Số job hoàn thành |
-| `jobs_failed` | Số job thất bại |
-| `stream_first_event_ms` | Đợi first event |
-| `chunks_per_job` | Chunks mỗi job |
+| `audio_response_bytes` | Audio size |
+| `auth_errors` | Auth error rate |
+| `jobs_completed` | Number of completed jobs |
+| `jobs_failed` | Number of failed jobs |
+| `stream_first_event_ms` | Wait for first event |
+| `chunks_per_job` | Chunks per job |
 
-## Chú ý
+## Notes
 
-- 2 tài khoản `admin`/`user` tạo sẵn, VU luân phiên để tránh rate limit
-- Rate limit auth: 10 requests/60s — smoke/api không bị, load/stress cần 2 tài khoản
-- Engine example sinh sóng sin 5-10s, không phản ánh hiệu năng engine thật
-- `streaming.js` dùng polling vì k6 chưa hỗ trợ SSE native
+- 2 pre-created accounts `admin`/`user`, VUs alternate to avoid rate limits
+- Auth rate limit: 10 requests/60s — smoke/api are unaffected, load/stress need 2 accounts
+- The example engine generates a 5-10s sine wave, not reflecting real engine performance
+- `streaming.js` uses polling because k6 does not yet support native SSE

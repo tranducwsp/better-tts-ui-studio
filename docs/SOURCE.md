@@ -1,94 +1,93 @@
-# 🗺️ Cấu Trúc Mã Nguồn (Source Code Structure)
+# 🗺️ Source Code Structure
 
-Tài liệu này giải thích chi tiết cấu trúc mã nguồn toàn bộ hệ thống **Better TTS UI Studio**, bao gồm vị trí các thư mục, vai trò của từng file và cách tổ chức các tầng xử lý (Layered Architecture).
+This document explains the detailed source code structure of the entire **Better TTS UI Studio** system, including directory locations, the role of each file, and the organization of processing layers (Layered Architecture).
 
 ---
 
-## 📁 Sơ Đồ Cấu Trúc Thư Mục Tổng Thể
+## 📁 Overall Directory Structure Diagram
 
 ```
 better-tts-ui-studio/
-├── README.md                   # Hướng dẫn chính dành cho AI Engineer
-├── docker-compose.yml          # Triển khai Docker Compose toàn bộ stack
-├── .env.example                # File mẫu biến môi trường (Sinh tự động từ backend)
-├── backend/                    # Control Plane Gateway (Mã nguồn Go 1.22)
+├── README.md                   # Main guide for AI Engineers
+├── docker-compose.yml          # Docker Compose deployment for the entire stack
+├── .env.example                # Environment variable sample file (Auto-generated from backend)
+├── backend/                    # Control Plane Gateway (Go 1.22 Source Code)
 ├── frontend/                   # Web User Interface (Svelte 5 + Vite)
-├── core-tts-example/           # Python AI TTS Compute Engine Mẫu (FastAPI + gRPC)
-├── tests/                      # Test suites, fixtures, k6, monitoring, reports
+├── core-tts-example/           # Python AI TTS Compute Engine Example (FastAPI + gRPC)
 ├── k8s/                        # Kubernetes Deployment Manifests (K3s)
-└── docs/                       # Thư mục chứa toàn bộ tài liệu kỹ thuật
-    ├── SOURCE.md               # [Tài liệu này] Giải thích cấu trúc mã nguồn
-    ├── ARCHITECTURE.md         # Kiến trúc hệ thống & Luồng dữ liệu (Data Flow)
-    ├── GATEWAY.md              # Chi tiết Endpoints & Hướng dẫn viết Manifest
-    ├── CONFIG.md               # Giải thích chi tiết cấu hình biến môi trường
-    ├── FRONTEND.md             # Đặc tả kỹ thuật Frontend (Svelte 5 Runes)
-    └── BACKEND.md              # Đặc tả kỹ thuật Backend (Go Chi Gateway)
+└── docs/                       # Directory containing all technical documentation
+    ├── SOURCE.md               # [This document] Explains the source code structure
+    ├── ARCHITECTURE.md         # System Architecture & Data Flow
+    ├── GATEWAY.md              # Endpoint Details & Manifest Writing Guide
+    ├── CONFIG.md               # Detailed environment variable configuration explanation
+    ├── FRONTEND.md             # Frontend Technical Specification (Svelte 5 Runes)
+    └── BACKEND.md              # Backend Technical Specification (Go Chi Gateway)
 ```
 
 ---
 
 ## 🔧 1. Backend Gateway (`backend/`)
 
-Thư mục `backend/` chứa toàn bộ mã nguồn của Control Plane Gateway được viết bằng ngôn ngữ **Go (Golang 1.22)**.
+The `backend/` directory contains all source code for the Control Plane Gateway written in **Go (Golang 1.22)**.
 
 ```
 backend/
 ├── cmd/
-│   ├── server/main.go          # Entrypoint chính khởi động backend HTTP server
-│   └── gen-env/main.go         # Script tự động đọc config/settings.go để sinh .env.example
+│   ├── server/main.go          # Main entrypoint to start the backend HTTP server
+│   └── gen-env/main.go         # Script that auto-reads config/settings.go to generate .env.example
 ├── config/
-│   ├── config.go               # Struct Config & hàm LoadConfig() phân tích ENV
-│   └── settings.go             # [SINGLE SOURCE OF TRUTH] Khai báo toàn bộ đặc tả biến môi trường
+│   ├── config.go               # Config Struct & LoadConfig() function that parses ENV
+│   └── settings.go             # [SINGLE SOURCE OF TRUTH] Declares all environment variable specifications
 ├── app/
-│   └── bootstrap.go            # Khởi tạo DB, chạy migration, tạo tài khoản Admin seed
+│   └── bootstrap.go            # Initialize DB, run migrations, create seed Admin account
 ├── router/
-│   └── router.go               # Khởi tạo Chi Router, mount middleware và đăng ký tất cả route API
+│   └── router.go               # Initialize Chi Router, mount middleware, and register all API routes
 ├── middleware/
-│   ├── auth.go                 # Middleware xác thực JWT Access Token từ Cookie
-│   ├── cors.go                 # Middleware cấu hình CORS cho phép cross-origin
-│   ├── logging.go              # Middleware ghi log request HTTP
-│   ├── rate_limit.go           # Middleware giới hạn tần suất request (Rate Limiter)
-│   ├── concurrency.go          # Middleware giới hạn số lượng request xử lý đồng thời
-│   ├── body_limit.go           # Middleware khống chế dung lượng tối đa của HTTP Request Body
-│   └── recovery.go             # Middleware bắt panic tránh sập tiến trình
+│   ├── auth.go                 # Middleware for JWT Access Token authentication from Cookie
+│   ├── cors.go                 # Middleware for CORS configuration allowing cross-origin
+│   ├── logging.go              # Middleware for HTTP request logging
+│   ├── rate_limit.go           # Middleware for request rate limiting (Rate Limiter)
+│   ├── concurrency.go          # Middleware for limiting concurrent request processing count
+│   ├── body_limit.go           # Middleware for capping maximum HTTP Request Body size
+│   └── recovery.go             # Middleware to catch panics and prevent process crashes
 ├── handlers/
-│   ├── auth.go                 # Đăng ký, Đăng nhập, Logout, Refresh Token, Lấy thông tin user
-│   ├── engine_sync.go          # Reload Manifest và kích hoạt webhook rebuild Frontend
-│   ├── health.go               # Endpoints /health và /ready cho Load Balancer/K8s
-│   ├── history.go              # Quản lý lịch sử tổng hợp của user và admin
-│   ├── respond.go              # Helper chuẩn hóa định dạng phản hồi JSON
-│   ├── swagger.go              # Phục vụ giao diện OpenAPI / Swagger UI
-│   ├── tasks.go                # Tra cứu trạng thái task, hủy task, stream SSE tiến độ, tải audio
-│   ├── tts_clone.go            # Đăng ký giọng clone mới, tải file âm thanh tham chiếu lên
-│   ├── unified.go              # Endpoint tổng hợp tiếng nói đa năng (/api/synthesize/{model_id})
-│   ├── upload.go               # Upload file âm thanh mẫu cho Voice Cloning
-│   ├── utils.go                # Trích xuất văn bản từ file (DOCX, PDF, TXT)
-│   └── preset_voices.go        # Danh sách & bộ đệm giọng mẫu (preset) của hệ thống
+│   ├── auth.go                 # Register, Login, Logout, Refresh Token, Get user info
+│   ├── engine_sync.go          # Reload Manifest and trigger webhook to rebuild Frontend
+│   ├── health.go               # /health and /ready endpoints for Load Balancer/K8s
+│   ├── history.go              # Manage user and admin synthesis history
+│   ├── respond.go              # Helper to standardize JSON response format
+│   ├── swagger.go              # Serve OpenAPI / Swagger UI interface
+│   ├── tasks.go                # Look up task status, cancel task, SSE progress stream, download audio
+│   ├── tts_clone.go            # Register new clone voice, upload reference audio file
+│   ├── unified.go              # Universal speech synthesis endpoint (/api/synthesize/{model_id})
+│   ├── upload.go               # Upload sample audio file for Voice Cloning
+│   ├── utils.go                # Extract text from files (DOCX, PDF, TXT)
+│   └── voice_cache.go          # In-memory cache for voice information
 ├── synth/
-│   ├── pipeline.go             # Luồng tổng hợp tiếng nói: Phân đoạn văn bản (chunking) & điều phối
-│   └── local.go                # Tương tác với công cụ ffmpeg để chuyển đổi định dạng âm thanh
+│   ├── pipeline.go             # Speech synthesis flow: Text chunking & coordination
+│   └── local.go                # Interaction with ffmpeg tool for audio format conversion
 ├── queue/
-│   └── job_queue.go            # Hàng đợi công việc (Task Queue) dựa trên Redis Streams
+│   └── redis_stream.go         # Job Queue (Task Queue) based on Redis Streams
 ├── storage/
-│   ├── store.go                # Interface Store định nghĩa các thao tác lưu trữ
-│   ├── local.go                # Triển khai lưu trữ file trên ổ đĩa cục bộ (Local Disk)
-│   ├── s3.go                   # Triển khai lưu trữ file trên AWS S3 / MinIO
-│   ├── paths.go                # Helper tạo đường dẫn thư mục chuẩn hóa
-│   └── sweeper.go              # Tiến trình dọn dẹp các file âm thanh tạm bị hết hạn
+│   ├── store.go                # Store Interface defining storage operations
+│   ├── local.go                # Implementation for storing files on local disk
+│   ├── s3.go                   # Implementation for storing files on AWS S3 / MinIO
+│   ├── paths.go                # Helper to create standardized directory paths
+│   └── sweeper.go              # Background process to clean up expired temporary audio files
 ├── database/
-│   ├── db.go                   # Khởi tạo Connection Pool kết nối PostgreSQL (pgxpool)
-│   ├── queries.go              # Thực thi các câu lệnh SQL (CRUD User, Job, Voice, Task)
-│   ├── migrations.go           # Tự động thực thi Migration bảng DB khi khởi động
-│   └── sweeper.go              # Tiến trình background dọn dẹp các task bị treo/mồ côi (stale tasks)
+│   ├── db.go                   # Initialize PostgreSQL Connection Pool (pgxpool)
+│   ├── queries.go              # Execute SQL statements (CRUD User, Job, Voice, Task)
+│   ├── migrations.go           # Automatically execute DB table Migrations on startup
+│   └── sweeper.go              # Background process to clean up stuck/orphaned tasks (stale tasks)
 ├── client/
-│   ├── engine_client_http.go   # HTTP Client gọi API Manifest và Synthesize tới Python Core TTS Engine
-│   └── engine_client_grpc.go   # gRPC Client kết nối tới Python Core TTS Engine qua Protocol Buffers
+│   ├── core_tts.go             # HTTP Client calling Manifest and Synthesize API to Python Core TTS Engine
+│   └── grpc_tts.go             # gRPC Client connecting to Python Core TTS Engine via Protocol Buffers
 ├── types/
-│   ├── manifest.go             # Định nghĩa Go Struct cho Engine Manifest & UI Schema
-│   └── validate.go             # Hàm kiểm tra tính hợp lệ của Manifest
+│   ├── manifest.go             # Define Go Structs for Engine Manifest & UI Schema
+│   └── validate.go             # Function to check Manifest validity
 ├── security/
-│   └── auth.go                 # Hàm băm mật khẩu (Bcrypt) và Tạo/Giải mã JWT Tokens
-└── go.mod                      # Khai báo các phụ thuộc thư viện Go
+│   └── auth.go                 # Password hashing (Bcrypt) and Create/Decode JWT Tokens
+└── go.mod                      # Declare Go library dependencies
 ```
 
 ---
@@ -144,75 +143,75 @@ frontend/tests/                 # Frontend test suites
 
 ## 🎨 2. Frontend Studio (`frontend/`)
 
-Thư mục `frontend/` chứa giao diện người dùng Web Studio được xây dựng bằng **Svelte 5 (Runes)** và **Vite**.
+The `frontend/` directory contains the Web Studio user interface built with **Svelte 5 (Runes)** and **Vite**.
 
 ```
 frontend/
-├── index.html                  # HTML entrypoint cho trang web
-├── vite.config.ts              # Cấu hình trình đóng gói Vite
-├── svelte.config.js            # Cấu hình Svelte compiler
-├── package.json                # Danh sách thư viện phụ thuộc (Svelte 5, FontAwesome,...)
-├── public/                     # Các tệp tĩnh (Fonts Inter, FontAwesome Webfonts, Favicon)
+├── index.html                  # HTML entrypoint for the website
+├── vite.config.ts              # Vite bundler configuration
+├── svelte.config.js            # Svelte compiler configuration
+├── package.json                # List of dependencies (Svelte 5, FontAwesome, etc.)
+├── public/                     # Static files (Inter Fonts, FontAwesome Webfonts, Favicon)
 ├── scripts/
-│   ├── prerender.js            # Script tải Manifest từ Backend và prerender trang HTML
-│   └── builder_server.js       # Server lắng nghe Webhook reload từ Backend để dựng lại bundle
+│   ├── prerender.js            # Script to fetch Manifest from Backend and prerender the HTML page
+│   └── builder_server.js       # Server that listens for Webhook reload from Backend to rebuild the bundle
 └── src/
-    ├── main.ts                 # Entrypoint khởi tạo ứng dụng Svelte
-    ├── App.svelte              # Component gốc chứa layout chính và chuyển đổi màn hình (Auth/Studio)
-    ├── app.css                 # File định kiểu CSS toàn cục (Design System & Glassmorphic variables)
+    ├── main.ts                 # Entrypoint to initialize the Svelte application
+    ├── App.svelte              # Root component containing main layout and screen switching (Auth/Studio)
+    ├── app.css                 # Global CSS stylesheet (Design System & Glassmorphic variables)
     └── lib/
-        ├── api.ts              # HTTP Client giao tiếp với Backend Gateway (Fetch wrapper với Cookie Credentials)
-        ├── capabilities.ts     # Phân tích capabilities và kiểm tra tính năng hỗ trợ của Model
-        ├── ranges.ts           # Xử lý tính toán giá trị tham số slider
-        ├── textLimits.ts       # Kiểm tra giới hạn số ký tự/từ của đoạn văn bản
-        ├── audioWav.ts         # Xử lý decode/encode file âm thanh WAV ở trình duyệt
-        ├── toast.svelte.ts     # Hệ thống thông báo Toasts reactive dùng Svelte 5 $state
+        ├── api.ts              # HTTP Client communicating with Backend Gateway (Fetch wrapper with Cookie Credentials)
+        ├── capabilities.ts     # Analyze capabilities and check Model feature support
+        ├── ranges.ts           # Handle slider parameter value calculations
+        ├── textLimits.ts       # Check character/word limits of text segments
+        ├── audioWav.ts         # Handle WAV audio file decode/encode in the browser
+        ├── toast.svelte.ts     # Reactive Toast notification system using Svelte 5 $state
         └── components/
-            ├── Header.svelte            # Thanh điều hướng trên cùng (User info, Admin link, Reload manifest)
-            ├── TextInputPanel.svelte    # Panel nhập liệu văn bản, công cụ Tìm/Thay thế & Tự động format
-            ├── GenericEnginePanel.svelte# Panel tự động sinh các Slider, Dropdown tham số từ Manifest UI Schema
-            ├── StreamingPanel.svelte    # Bảng phát âm thanh realtime từng chunk và thanh tiến độ SSE
-            ├── VoiceSelect.svelte       # Dropdown chọn giọng đọc (System voices & User clone voices)
-            ├── CreateVoiceModal.svelte  # Modal tạo giọng clone mới (Upload file & Nhập metadata)
-            ├── WaveformTrimmer.svelte   # Component hiển thị dạng sóng (Waveform) và cắt file âm thanh mẫu
-            ├── HistoryModal.svelte      # Modal xem danh sách lịch sử các đoạn audio đã tổng hợp
-            ├── AuthModal.svelte         # Modal Đăng nhập / Đăng ký tài khoản
-            └── AdminModal.svelte        # Modal dành cho Admin duyệt tài khoản người dùng
+            ├── Header.svelte            # Top navigation bar (User info, Admin link, Reload manifest)
+            ├── TextInputPanel.svelte    # Text input panel, Find/Replace tool & Auto-format
+            ├── GenericEnginePanel.svelte# Panel auto-generating Sliders, Dropdowns from Manifest UI Schema
+            ├── StreamingPanel.svelte    # Realtime per-chunk audio playback panel and SSE progress bar
+            ├── VoiceSelect.svelte       # Voice selection dropdown (System voices & User clone voices)
+            ├── CreateVoiceModal.svelte  # Modal to create new clone voice (Upload file & Enter metadata)
+            ├── WaveformTrimmer.svelte   # Component displaying waveform and trimming sample audio file
+            ├── HistoryModal.svelte      # Modal to view the history list of synthesized audio segments
+            ├── AuthModal.svelte         # Login / Register account modal
+            └── AdminModal.svelte        # Modal for Admin to approve user accounts
 ```
 
 ---
 
-## 🐍 3. Compute Engine Mẫu (`core-tts-example/`)
+## 🐍 3. Compute Engine Example (`core-tts-example/`)
 
-Thư mục `core-tts-example/` là một mô hình ví dụ hoàn chỉnh bằng **Python (FastAPI + PyTorch/gRPC)** thể hiện cách AI Engineer kết nối mô hình của mình vào nền tảng.
+The `core-tts-example/` directory is a complete example model in **Python (FastAPI + PyTorch/gRPC)** demonstrating how an AI Engineer connects their model to the platform.
 
 ```
 core-tts-example/
-├── main.py                     # Entrypoint khởi chạy FastAPI REST Server (Trả về Manifest và xử lý tổng hợp)
-├── grpc_server.py              # Server gRPC phục vụ tổng hợp tiếng nói tốc độ cao
-├── schemas.py                  # Pydantic Schemas cho Manifest, Engine Info, Synthesis Requests
-├── Dockerfile                  # Containerize dịch vụ Python AI Model
-├── requirements.txt            # Thư viện Python (FastAPI, uvicorn, grpcio, torch, pydantic)
+├── main.py                     # Entrypoint to start FastAPI REST Server (Returns Manifest and handles synthesis)
+├── grpc_server.py              # gRPC Server serving high-speed speech synthesis
+├── schemas.py                  # Pydantic Schemas for Manifest, Engine Info, Synthesis Requests
+├── Dockerfile                  # Containerize the Python AI Model service
+├── requirements.txt            # Python libraries (FastAPI, uvicorn, grpcio, torch, pydantic)
 ├── proto/
-│   ├── tts.proto               # File định nghĩa gRPC Protocol Buffers cho TTS Service
-│   ├── tts_pb2.py              # File mã nguồn Python sinh ra từ Protobuf
-│   └── tts_pb2_grpc.py         # File gRPC Stubs
+│   ├── tts.proto               # gRPC Protocol Buffers definition file for TTS Service
+│   ├── tts_pb2.py              # Python source code generated from Protobuf
+│   └── tts_pb2_grpc.py         # gRPC Stubs
 ├── utils/
-│   └── audio_utils.py          # Helper tạo dữ liệu âm thanh tín hiệu thử nghiệm (Sine wave WAV generator)
+│   └── audio_utils.py          # Helper to create test audio signal data (Sine wave WAV generator)
 └── scripts/
-    ├── build_proto.sh          # Script biên dịch file .proto thành mã Python
-    └── run_example.sh          # Script khởi chạy nhanh dịch vụ Python
+    ├── build_proto.sh          # Script to compile .proto files into Python code
+    └── run_example.sh          # Quick launch script for the Python service
 ```
 
 ---
 
 ## 🐳 4. Deployment & Configuration (`k8s/`, `docker-compose.yml`)
 
-- **`docker-compose.yml`**: Định nghĩa 5 container chính hoạt động cùng nhau:
-  1. `backend`: Gateway Go Chi (cổng `8000`).
-  2. `frontend`: Web Server Nginx phục vụ Svelte 5 UI static bundle (cổng `5173`).
-  3. `frontend-builder`: Tiến trình Node.js lắng nghe webhook để rebuild prerender HTML bundle (cổng `3001`).
-  4. `postgres`: Cơ sở dữ liệu PostgreSQL 16 (cổng `5432` nội bộ).
-  5. `redis`: Redis server lưu trữ Task Streams và Cache (cổng `6379` nội bộ).
-  6. `core-engine`: Dịch vụ AI Model mẫu (cổng `8001` nội bộ).
-- **`k8s/`**: Chứa các file Kubernetes Deployment, Service, ConfigMap, StatefulSet phục vụ triển khai sản phẩm lên cụm Kubernetes (K3s).
+- **`docker-compose.yml`**: Defines 6 main containers working together:
+  1. `backend`: Go Chi Gateway (port `8000`).
+  2. `frontend`: Nginx Web Server serving Svelte 5 UI static bundle (port `5173`).
+  3. `frontend-builder`: Node.js process listening for webhook to rebuild the prerender HTML bundle (port `3001`).
+  4. `postgres`: PostgreSQL 16 database (internal port `5432`).
+  5. `redis`: Redis server for Task Streams storage and Cache (internal port `6379`).
+  6. `core-engine`: Example AI Model service (internal port `8001`).
+- **`k8s/`**: Contains Kubernetes Deployment, Service, ConfigMap, StatefulSet files for deploying the product to a Kubernetes cluster (K3s).

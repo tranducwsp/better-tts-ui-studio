@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# check-test-layout.sh — Kiểm tra test file không nằm cạnh source code.
+# check-test-layout.sh — Check that test files are not placed next to source code.
 #
-# Quy tắc:
-# 1. Backend: Không có file *_test.go nào nằm ngoài backend/tests/ (trừ backend/tests/ chính nó).
-# 2. Frontend: Không có file *.test.ts nào nằm ngoài frontend/tests/.
-# 3. Root-level: Không có file *.js hay *.py test nào nằm ngoài tests/ (k6/monitoring).
+# Rules:
+# 1. Backend: No *_test.go files outside backend/tests/ (except backend/tests/ itself).
+# 2. Frontend: No *.test.ts files outside frontend/tests/.
+# 3. Root-level: No *.js or *.py test files outside tests/ (k6/monitoring).
 #
-# Chạy: scripts/check-test-layout.sh
-# Exit code: 0 nếu hợp lệ, 1 nếu có vi phạm.
+# Run: scripts/check-test-layout.sh
+# Exit code: 0 if valid, 1 if violations found.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HAS_ERROR=0
 
-# Màu cho output
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
@@ -61,7 +61,7 @@ if [ "$HAS_ERROR" -eq 0 ]; then
   echo -e "  ${GREEN}✓${NC} No test scripts at repo root (all in tests/)"
 fi
 
-# ── Kết luận ──────────────────────────────────────────────────────────────────
+# ── Conclusion ─────────────────────────────────────────────────────────────────
 echo ""
 if [ "$HAS_ERROR" -eq 0 ]; then
   echo -e "${GREEN}✅ Test layout is clean.${NC}"

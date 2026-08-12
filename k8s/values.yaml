@@ -90,10 +90,10 @@ frontend:
 # ---------------------------------------------------------------------------
 # 6. Frontend Builder (Node.js sidecar for on-demand rebuild)
 #
-# Chia PVC frontend-dist với frontend. Cần storageClass hỗ trợ ReadWriteMany
-# (NFS, CephFS, v.v.) nếu hai pod nằm trên khác node. Nếu dùng
-# storageClass chỉ hỗ trợ ReadWriteOnce, cần đảm bảo cả hai pod cùng node
-# (thêm affinity) hoặc chuyển sang S3 để không cần shared volume.
+# Shares the frontend-dist PVC with frontend. Requires a storageClass that supports
+# ReadWriteMany (NFS, CephFS, etc.) if the two pods are on different nodes. If using
+# a storageClass that only supports ReadWriteOnce, ensure both pods are on the same node
+# (add affinity) or switch to S3 to avoid needing a shared volume.
 # ---------------------------------------------------------------------------
 frontendBuilder:
   enabled: true
@@ -161,10 +161,10 @@ frontendDist:
 # ---------------------------------------------------------------------------
 # Sensitive config — override via --set or values override file.
 #
-# KHÔNG đặt giá trị thật ở đây. Dùng một trong các cách sau:
+# DO NOT put real values here. Use one of the following methods:
 #   1. helm install --set secret.secretKey=xxx ...
-#   2. Tạo values override riêng (không commit vào git)
-#   3. Sealed Secrets (kubeseal) hoặc External Secrets Operator
+#   2. Create a separate values override file (do not commit to git)
+#   3. Sealed Secrets (kubeseal) or External Secrets Operator
 # ---------------------------------------------------------------------------
 secret:
   secretKey: ""

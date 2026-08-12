@@ -5,11 +5,12 @@ services:
     container_name: app-postgres
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD chưa được đặt trong .env}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set in .env}
       - POSTGRES_DB=${POSTGRES_DB:-ai_studio}
-    # Không publish 5432 ra host: backend nói chuyện với Postgres qua network nội bộ của
-    # compose theo tên service. Mở ra host là đưa cơ sở dữ liệu lên mọi giao diện mạng của máy.
-    # Cần psql từ ngoài thì dùng `docker compose exec postgres psql`.
+    # Do not publish 5432 to host: the backend talks to Postgres over the compose
+    # internal network by service name. Exposing to host places the database on every
+    # network interface of the machine.
+    # If you need psql from outside, use `docker compose exec postgres psql`.
     expose:
       - "5432"
     volumes:
@@ -25,7 +26,7 @@ services:
   redis:
     image: redis:alpine
     container_name: app-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD chưa được đặt trong .env}
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is not set in .env}
     expose:
       - "6379"
     healthcheck:
@@ -41,9 +42,9 @@ services:
       context: ./core-tts-example
       dockerfile: Dockerfile
     container_name: ai-engine
-    # Engine không có lớp xác thực nào: mọi endpoint (/synthesize, /voices/clone) và cả gRPC
-    # đều mở cho bất kỳ ai gọi được tới nó. Nó chỉ nên tiếp nhận traffic từ backend qua
-    # network nội bộ, nên cổng không ra host.
+    # The engine has no authentication layer: every endpoint (/synthesize, /voices/clone) and
+    # gRPC are open to anyone who can reach it. It should only accept traffic from the backend
+    # over the internal network, so the port is not exposed to the host.
     expose:
       - "8001"
       - "50051"
@@ -58,8 +59,8 @@ services:
       - UI_MODE=${UI_MODE:-beauty}
     volumes:
       - ./core-tts-example:/app
-    # Dùng python main.py thay vì uvicorn trực tiếp: main.py khởi gRPC server khi GRPC_PORT
-    # được đặt, rồi mới gọi uvicorn. Gọi uvicorn trực tiếp thì gRPC không bao giờ start.
+    # Use python main.py instead of uvicorn directly: main.py starts the gRPC server when GRPC_PORT
+    # is set, then calls uvicorn. Calling uvicorn directly means gRPC never starts.
     command: python main.py
     restart: unless-stopped
 
@@ -74,7 +75,7 @@ services:
     environment:
       - PORT=8000
       - HOST=0.0.0.0
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY chưa được đặt trong .env}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is not set in .env}
       - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
       - REDIS_URL=redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -84,12 +85,12 @@ services:
       - ENABLE_PPROF=${ENABLE_PPROF:-false}
       - ENABLE_SWAGGER=${ENABLE_SWAGGER:-true}
 
-      # Tài khoản tạo sẵn ở lần khởi động đầu, khi cơ sở dữ liệu còn trống. Để trống cả bốn
-      # thì không tài khoản nào được tạo và người dùng đầu tiên tự đăng ký qua giao diện.
+      # Accounts created on first startup, when the database is empty. Leave all four empty
+      # and no accounts will be created; the first user registers via the UI.
       #
-      # Trước đây compose không truyền chúng, mà image lại chứa sẵn một .env có tài khoản —
-      # nên tài khoản được tạo là tài khoản của người dựng image, và đặt biến trong .env của
-      # mình không có tác dụng gì.
+      # Previously compose did not pass these, but the image contained a baked-in .env with
+      # accounts — so the accounts created were those of the image builder, and setting
+      # variables in your own .env had no effect.
       - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME:-}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-}
       - DEFAULT_USER_USERNAME=${DEFAULT_USER_USERNAME:-}
@@ -98,12 +99,12 @@ services:
       - CORE_ENGINE_GRPC_URL=engine:50051
       - FE_BUILDER_URL=http://frontend-builder:3001
 
-      # Kho lưu trữ. Mặc định local để `docker compose up` chạy được ngay mà không cần tài
-      # khoản nào; đặt STORAGE_BACKEND=s3 trong .env để chuyển sang MinIO/S3.
+      # Storage backend. Default local so `docker compose up` works immediately without any
+      # account; set STORAGE_BACKEND=s3 in .env to switch to MinIO/S3.
       #
-      # Các biến S3_* truyền xuống vô điều kiện: khi backend chạy local nó không đọc chúng,
-      # nên để trống là vô hại — còn khai chúng có điều kiện thì compose sẽ cần hai khối
-      # environment và chúng sẽ trôi ra khỏi nhau.
+      # S3_* variables are passed unconditionally: when the backend runs local it doesn't read
+      # them, so leaving them empty is harmless — but declaring them conditionally would require
+      # compose to have two environment blocks and they would drift apart.
       - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
       - STORAGE_DIR=/app/storage
       - S3_BUCKET=${S3_BUCKET:-}
@@ -126,30 +127,31 @@ services:
     command: ./web
     restart: unless-stopped
 
-  # 2.1 Synthesis Worker (cùng image, binary riêng)
+  # 2.1 Synthesis Worker (same image, separate binary)
   #
-  # Tách khỏi web vì ba lý do: một lượt tổng hợp không còn chết khi deploy lại web, số lượt
-  # gọi Engine cùng lúc có trần thật thay vì bằng số request đang tới, và số worker tăng giảm
-  # độc lập với số web.
+  # Separated from web for three reasons: a synthesis job no longer dies when the web is redeployed,
+  # the number of concurrent Engine calls has a real ceiling instead of being equal to the number of
+  # incoming requests, and the number of workers scales independently of the number of web instances.
   #
-  # Hàng đợi nằm trên Redis và KHÔNG bền: Redis ở đây chạy không có AOF/RDB, nên job đang chờ
-  # mất khi Redis khởi động lại. Đó là lựa chọn có chủ ý — một chunk chỉ tốn vài giây để tổng
-  # hợp lại, và giao diện đã tự thử lại ba lần cho mỗi chunk.
+  # The queue lives on Redis and is NOT persistent: Redis here runs without AOF/RDB, so pending jobs
+  # are lost when Redis restarts. This is intentional — a chunk only takes a few seconds to synthesize
+  # again, and the UI already retries each chunk three times.
   worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: ai-worker
     environment:
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY chưa được đặt trong .env}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is not set in .env}
       - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
       - REDIS_URL=redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - CORE_ENGINE_URL=http://engine:8001
       - CORE_ENGINE_GRPC_URL=engine:50051
 
-      # Worker ghi âm thanh vào cùng kho mà web đọc ra. Với STORAGE_BACKEND=local, hai tiến
-      # trình phải nằm trên cùng một máy và cùng volume — dùng S3 khi tách ra nhiều node.
+      # The worker writes audio to the same store that the web reads from. With STORAGE_BACKEND=local,
+      # both processes must be on the same machine with the same volume — use S3 when splitting across
+      # multiple nodes.
       - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
       - STORAGE_DIR=/app/storage
       - S3_BUCKET=${S3_BUCKET:-}
@@ -171,15 +173,15 @@ services:
     command: ./worker
     restart: unless-stopped
 
-  # Sweeper dọn âm thanh tạm quá hạn. Cron, không phải worker: nó chạy theo đồng hồ
-  # nên nhiều bản không chia được việc. Giữ đúng 1 replica.
+  # Sweeper cleans up expired temporary audio. Cron, not a worker: it runs on a clock
+  # so multiple replicas cannot divide the work. Keep exactly 1 replica.
   cron:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: ai-cron
     environment:
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY chưa được đặt trong .env}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is not set in .env}
       - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
       - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
       - STORAGE_DIR=/app/storage
@@ -206,13 +208,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.builder
     container_name: ai-studio-frontend-builder
-    # /rebuild không có xác thực và mỗi lần gọi là một lượt build tốn CPU, nên nó chỉ nhận
-    # webhook từ backend trong network nội bộ.
+    # /rebuild has no authentication and each call is a CPU-intensive build, so it only accepts
+    # webhooks from the backend on the internal network.
     expose:
       - "3001"
     environment:
       - PORT=3001
-      # Nửa còn lại của liên kết với FE_BUILDER_URL; xem backend/config/settings.go.
+      # The other half of the link with FE_BUILDER_URL; see backend/config/settings.go.
       - VITE_BACKEND_URL=${VITE_BACKEND_URL:-http://backend:8000}
     volumes:
       - ./frontend:/app

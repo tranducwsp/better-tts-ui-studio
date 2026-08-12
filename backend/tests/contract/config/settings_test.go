@@ -28,11 +28,11 @@ func configSourcePath(t *testing.T) string {
 	return testsupport.Path(t, "backend", "config", "config.go")
 }
 
-// TestEnvExampleIsUpToDate chạy lại generator vào tệp tạm và so với tệp đã commit.
+// TestEnvExampleIsUpToDate runs the generator into a temp file and compares it with the committed file.
 //
-// Không có bài test này, quên `go generate` sau khi sửa config.Settings sẽ để .env.example mô tả
-// một cấu hình mà backend không còn dùng — đúng loại sai lệch âm thầm mà bảng đặc tả sinh
-// ra để loại bỏ.
+// Without this test, forgetting `go generate` after editing config.Settings would leave .env.example describing
+// a configuration the backend no longer uses — exactly the kind of silent drift that generated specs are
+// meant to eliminate.
 func TestEnvExampleIsUpToDate(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), ".env.example")
 
@@ -40,30 +40,30 @@ func TestEnvExampleIsUpToDate(t *testing.T) {
 	cmd.Dir = backendDir(t)
 	cmd.Env = append(os.Environ(), "GEN_ENV_OUT="+tmp)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("chạy gen-env thất bại: %v\n%s", err, out)
+		t.Fatalf("gen-env failed: %v\n%s", err, out)
 	}
 
 	want, err := os.ReadFile(tmp)
 	if err != nil {
-		t.Fatalf("đọc tệp vừa sinh: %v", err)
+		t.Fatalf("reading generated file: %v", err)
 	}
 	got, err := os.ReadFile(envExamplePath(t))
 	if err != nil {
-		t.Fatalf("đọc .env.example đã commit: %v", err)
+		t.Fatalf("reading committed .env.example: %v", err)
 	}
 
 	if string(got) != string(want) {
-		t.Error(".env.example đã lệch khỏi config/settings.go.\n" +
-			"Chạy: cd backend && go generate ./config")
+		t.Error(".env.example has drifted from config/settings.go.\n" +
+			"Run: cd backend && go generate ./config")
 	}
 }
 
-// TestEnvExampleCoversEverySetting đọc tệp đã commit như một người vận hành sẽ đọc, và
-// kiểm tra không biến nào bị thiếu hay thừa.
+// TestEnvExampleCoversEverySetting reads the committed file as an operator would, and
+// checks that no variable is missing or extra.
 func TestEnvExampleCoversEverySetting(t *testing.T) {
 	f, err := os.Open(envExamplePath(t))
 	if err != nil {
-		t.Fatalf("mở .env.example: %v", err)
+		t.Fatalf("opening .env.example: %v", err)
 	}
 	defer f.Close()
 
@@ -79,29 +79,29 @@ func TestEnvExampleCoversEverySetting(t *testing.T) {
 		}
 	}
 	if err := sc.Err(); err != nil {
-		t.Fatalf("đọc .env.example: %v", err)
+		t.Fatalf("reading .env.example: %v", err)
 	}
 
 	inSpec := map[string]bool{}
 	for _, s := range config.Settings {
 		inSpec[s.Key] = true
 		if !inFile[s.Key] {
-			t.Errorf("%s có trong config.Settings nhưng thiếu trong .env.example", s.Key)
+			t.Errorf("%s is in config.Settings but missing from .env.example", s.Key)
 		}
 	}
 	for k := range inFile {
 		if !inSpec[k] {
-			t.Errorf("%s có trong .env.example nhưng không có trong config.Settings", k)
+			t.Errorf("%s is in .env.example but not in config.Settings", k)
 		}
 	}
 }
 
-// TestSecretsNeverCarryAValue bảo vệ điều dễ vô tình phá: một khoá thật bị điền vào tệp mẫu
-// rồi commit.
+// TestSecretsNeverCarryAValue protects against an easy accident: a real key being filled into the sample file
+// and committed.
 func TestSecretsNeverCarryAValue(t *testing.T) {
 	raw, err := os.ReadFile(envExamplePath(t))
 	if err != nil {
-		t.Fatalf("đọc .env.example: %v", err)
+		t.Fatalf("reading .env.example: %v", err)
 	}
 	text := string(raw)
 
@@ -110,52 +110,52 @@ func TestSecretsNeverCarryAValue(t *testing.T) {
 			continue
 		}
 		if !strings.Contains(text, s.Key+"=\n") && !strings.HasSuffix(text, s.Key+"=") {
-			t.Errorf("%s là bí mật nên phải để trống trong .env.example", s.Key)
+			t.Errorf("%s is a secret so it must be left empty in .env.example", s.Key)
 		}
 	}
 }
 
-// TestIntSettingsHaveUsableRanges bắt lỗi khai báo: mặc định nằm ngoài chính khoảng nó
-// tuyên bố, hoặc min lớn hơn max. num() sẽ log.Fatalf lúc chạy, tức là chỉ lộ ra khi triển
-// khai; bài test này làm nó lộ ra lúc build.
+// TestIntSettingsHaveUsableRanges catches declaration errors: default outside the declared range,
+// or min greater than max. num() would log.Fatalf at runtime, exposing it only at deploy time;
+// this test catches it at build time.
 func TestIntSettingsHaveUsableRanges(t *testing.T) {
 	for _, s := range config.Settings {
 		if s.Kind != config.KindInt {
 			continue
 		}
 		if s.Min > s.Max {
-			t.Errorf("%s: Min (%d) lớn hơn Max (%d)", s.Key, s.Min, s.Max)
+			t.Errorf("%s: Min (%d) is greater than Max (%d)", s.Key, s.Min, s.Max)
 		}
 		v, err := strconv.Atoi(s.Default)
 		if err != nil {
-			t.Errorf("%s: mặc định %q không phải số nguyên", s.Key, s.Default)
+			t.Errorf("%s: default %q is not an integer", s.Key, s.Default)
 			continue
 		}
 		if v < s.Min || v > s.Max {
-			t.Errorf("%s: mặc định %d nằm ngoài khoảng đã khai (%d đến %d)", s.Key, v, s.Min, s.Max)
+			t.Errorf("%s: default %d is outside the declared range (%d to %d)", s.Key, v, s.Min, s.Max)
 		}
 	}
 }
 
-// TestNoDuplicateKeys bắt trường hợp một khoá bị khai hai lần, khi đó lookup() lặng lẽ trả
-// về bản đầu tiên và bản thứ hai không bao giờ có tác dụng.
+// TestNoDuplicateKeys catches a key being declared twice, where lookup() silently returns
+// the first one and the second never takes effect.
 func TestNoDuplicateKeys(t *testing.T) {
 	seen := map[string]bool{}
 	for _, s := range config.Settings {
 		if seen[s.Key] {
-			t.Errorf("khoá %s được khai nhiều lần trong config.Settings", s.Key)
+			t.Errorf("key %s is declared multiple times in config.Settings", s.Key)
 		}
 		seen[s.Key] = true
 	}
 }
 
-// TestReadByVarsAreNotLoaded giữ ranh giới: một biến đánh dấu ReadBy thuộc về dịch vụ
-// khác, nên LoadConfig không được đọc nó. Nếu sau này backend cần dùng thật, hãy bỏ ReadBy
-// thay vì để bảng nói một đằng còn mã nguồn làm một nẻo.
+// TestReadByVarsAreNotLoaded maintains the boundary: a variable marked with ReadBy belongs to another
+// service, so LoadConfig must not read it. If the backend later needs it, remove ReadBy
+// instead of letting the spec say one thing and the source do another.
 func TestReadByVarsAreNotLoaded(t *testing.T) {
 	raw, err := os.ReadFile(configSourcePath(t))
 	if err != nil {
-		t.Fatalf("đọc config.go: %v", err)
+		t.Fatalf("reading config.go: %v", err)
 	}
 	src := string(raw)
 
@@ -165,32 +165,32 @@ func TestReadByVarsAreNotLoaded(t *testing.T) {
 		}
 		for _, call := range []string{`str("` + s.Key + `")`, `num("` + s.Key + `")`} {
 			if strings.Contains(src, call) {
-				t.Errorf("%s được đánh dấu ReadBy=%q nhưng LoadConfig vẫn gọi %s", s.Key, s.ReadBy, call)
+				t.Errorf("%s is marked ReadBy=%q but LoadConfig still calls %s", s.Key, s.ReadBy, call)
 			}
 		}
 	}
 }
 
-// TestRequiredSettingsAreEnforced xác nhận cờ Required thực sự chặn khởi động.
+// TestRequiredSettingsAreEnforced confirms the Required flag actually blocks startup.
 //
-// Trước đây nó chỉ là trang trí: gen-env đọc để in dòng "BẮT BUỘC" vào .env.example, còn lúc
-// chạy không ai kiểm — nên một triển khai thiếu SECRET_KEY vẫn lên bình thường bằng khoá
-// ngẫu nhiên, và người vận hành chỉ biết nếu tình cờ đọc log.
+// Previously it was purely decorative: gen-env read it to print "REQUIRED" in .env.example, but at
+// runtime no one checked — so a deployment missing SECRET_KEY would still start with a random key,
+// and operators would only know if they happened to read the logs.
 //
-// requireAll gọi log.Fatalf nên không gọi trực tiếp được trong test; thay vào đó kiểm chính
-// tập hợp mà nó duyệt, và kiểm rằng nó được gọi từ LoadConfig.
+// requireAll calls log.Fatalf, so it cannot be called directly in a test; instead, verify the
+// set it iterates over, and confirm it is called from LoadConfig.
 func TestRequiredSettingsAreEnforced(t *testing.T) {
 	raw, err := os.ReadFile(configSourcePath(t))
 	if err != nil {
-		t.Fatalf("đọc config.go: %v", err)
+		t.Fatalf("reading config.go: %v", err)
 	}
 	src := string(raw)
 
 	if !strings.Contains(src, "requireAll()") {
-		t.Error("LoadConfig phải gọi requireAll(), nếu không cờ Required chỉ là chú thích")
+		t.Error("LoadConfig must call requireAll(), otherwise the Required flag is just a comment")
 	}
 
-	// Ít nhất một biến phải được đánh dấu Required, nếu không bài test trên là vô nghĩa.
+	// At least one variable must be marked Required, otherwise the test above is meaningless.
 	found := false
 	for _, s := range config.Settings {
 		if s.Required {
@@ -199,16 +199,16 @@ func TestRequiredSettingsAreEnforced(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("không có biến nào Required — kiểm tra lại bảng config.Settings")
+		t.Error("no variable is Required — check the config.Settings table")
 	}
 }
 
-// TestRequiredBackendVarsHaveNoDefault: một biến vừa Required vừa có Default là tự mâu thuẫn.
-// requireAll chỉ xét ENV, nên Default sẽ không bao giờ dùng tới và chỉ gây hiểu sai khi đọc bảng.
+// TestRequiredBackendVarsHaveNoDefault: a variable being both Required and having a Default is contradictory.
+// requireAll only checks ENV, so Default would never be used and only causes confusion when reading the table.
 func TestRequiredBackendVarsHaveNoDefault(t *testing.T) {
 	for _, s := range config.Settings {
 		if s.Required && s.Default != "" {
-			t.Errorf("%s vừa Required vừa có Default %q — bỏ một trong hai", s.Key, s.Default)
+			t.Errorf("%s is both Required and has a Default %q — drop one of the two", s.Key, s.Default)
 		}
 	}
 }

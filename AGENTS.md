@@ -1,34 +1,34 @@
-# AGENT.md — Hướng dẫn cho coding agent
+# AGENT.md — Coding Agent Guide
 
-## Phạm vi
+## Scope
 
-File này áp dụng cho toàn bộ repository. Nếu một thư mục có file hướng dẫn riêng trong tương lai, hướng dẫn gần file đang sửa nhất được ưu tiên.
+This file applies to the entire repository. If a directory has its own guide file in the future, the guide closest to the file being modified takes precedence.
 
-## Mục tiêu sản phẩm
+## Product Goals
 
-Better TTS UI Studio là **Web UI và control plane schema-driven** để AI Engineer đưa một TTS engine ra sử dụng như sản phẩm. Repository này sở hữu phần giao diện, gateway, auth, queue, storage và vận hành; không sở hữu phần model/inference.
+Better TTS UI Studio is a **Web UI and schema-driven control plane** for AI Engineers to deploy a TTS engine as a product. This repository owns the interface, gateway, auth, queue, storage, and operations; it does not own the model/inference part.
 
-- Giữ nền tảng độc lập với model và engine cụ thể.
-- UI và gateway phải lấy model, capability, giới hạn và component động từ manifest `GET /info`.
-- Không hard-code tên model, voice, mode hay tham số riêng của một engine vào luồng dùng chung.
-- Sản phẩm cạnh tranh với Gradio ở lớp UI/control plane triển khai model, không cạnh tranh ở lớp huấn luyện hoặc inference model.
+- Keep the platform independent of specific models and engines.
+- UI and gateway must derive model, capability, constraints, and dynamic components from the manifest `GET /info`.
+- Do not hard-code model names, voices, modes, or engine-specific parameters into shared flows.
+- The product competes with Gradio at the UI/control plane layer for model deployment, not at the training or inference layer.
 
-## Ràng buộc bắt buộc
+## Mandatory Constraints
 
-### Không sửa Core TTS
+### Do Not Modify Core TTS
 
-`core-tts-example/` chỉ là stub/reference cho contract tích hợp. Core TTS thật nằm ở repository do AI Engineer quản lý.
+`core-tts-example/` is only a stub/reference for the integration contract. The real Core TTS resides in a repository managed by the AI Engineer.
 
-- **Không sửa bất kỳ file nào trong `core-tts-example/`.**
-- Nếu một yêu cầu cần thay đổi phía engine, hãy mô tả contract/behavior engine cần cung cấp thay vì triển khai nó tại đây.
-- Thay đổi protocol hoặc manifest phải giữ tương thích giữa platform và engine ngoài repository; không tự ý phá contract hiện tại.
+- **Do not modify any file in `core-tts-example/`.**
+- If a requirement needs changes on the engine side, describe the contract/behavior the engine needs to provide rather than implementing it here.
+- Protocol or manifest changes must maintain compatibility between the platform and the engine outside this repository; do not break the existing contract arbitrarily.
 
-### Triển khai bằng Docker Compose
+### Deploy Using Docker Compose
 
-Workflow triển khai chuẩn của repository là `docker compose`; không build hoặc chạy các binary/image thủ công để thay thế quy trình này.
+The standard deployment workflow for this repository is `docker compose`; do not build or run binaries/images manually to replace this process.
 
 ```bash
-cp .env.example .env   # chỉ ở lần thiết lập đầu tiên; điền secret thật
+cp .env.example .env   # only on first setup; fill in real secrets
 
 docker compose config
 docker compose up -d --build
@@ -36,89 +36,89 @@ docker compose ps
 docker compose logs -f backend worker frontend-builder frontend
 ```
 
-Dùng `docker compose down` khi cần dừng stack. Không dùng `down -v` trừ khi người dùng xác nhận muốn xóa dữ liệu PostgreSQL.
+Use `docker compose down` when the stack needs to be stopped. Do not use `down -v` unless the user confirms they want to delete PostgreSQL data.
 
-### Secret và cấu hình
+### Secrets and Configuration
 
-- Không commit `.env`, secret, token, mật khẩu, credential S3 hoặc dữ liệu người dùng.
-- `backend/config/settings.go` là **single source of truth** cho cấu hình backend.
-- `.env.example` là file sinh tự động. Khi thay đổi setting, sửa `backend/config/settings.go`, cập nhật `LoadConfig`, rồi chạy:
+- Do not commit `.env`, secrets, tokens, passwords, S3 credentials, or user data.
+- `backend/config/settings.go` is the **single source of truth** for backend configuration.
+- `.env.example` is an auto-generated file. When changing a setting, modify `backend/config/settings.go`, update `LoadConfig`, then run:
 
   ```bash
   cd backend
   go generate ./config
   ```
 
-- Local HTTP thường cần `COOKIE_SECURE=0`; production sau HTTPS phải giữ `COOKIE_SECURE=1`.
-- Không mở Postgres, Redis, engine hoặc frontend-builder ra host nếu không có yêu cầu kiến trúc rõ ràng. Chúng là service nội bộ trong Compose.
+- Local HTTP typically requires `COOKIE_SECURE=0`; production behind HTTPS must keep `COOKIE_SECURE=1`.
+- Do not expose Postgres, Redis, engine, or frontend-builder to the host without a clear architectural requirement. They are internal services within Compose.
 
-## Cấu trúc repository
+## Repository Structure
 
-- `backend/`: Go control plane, API, auth, queue, worker, cron, storage và database.
-- `frontend/`: Svelte 5 + TypeScript + Vite SPA/prerendered UI; không phải SvelteKit.
-- `core-tts-example/`: stub contract chỉ đọc, không sửa.
+- `backend/`: Go control plane, API, auth, queue, worker, cron, storage, and database.
+- `frontend/`: Svelte 5 + TypeScript + Vite SPA/prerendered UI; not SvelteKit.
+- `core-tts-example/`: read-only stub contract, do not modify.
 - `k8s/`: Helm/Kubernetes deployment manifests.
-- `tests/`: Test suites, fixtures, k6 smoke/load/soak tests, monitoring, và reports.
-	  - `tests/load/`: k6 load test scripts.
-	  - `tests/monitoring/`: Python monitoring scripts.
-	  - `tests/reports/`: HTML/JSON metrics reports.
-	  - `tests/fixtures/`: Shared test fixtures (dùng chung Go + frontend).
-- `docs/`: tài liệu kiến trúc, backend, frontend, gateway và cấu hình.
-- `docker-compose.yml`: cách chạy/deploy tích hợp chuẩn.
+- `tests/`: Test suites, fixtures, k6 smoke/load/soak tests, monitoring, and reports.
+      - `tests/load/`: k6 load test scripts.
+      - `tests/monitoring/`: Python monitoring scripts.
+      - `tests/reports/`: HTML/JSON metrics reports.
+      - `tests/fixtures/`: Shared test fixtures (shared across Go + frontend).
+- `docs/`: architecture, backend, frontend, gateway, and configuration documentation.
+- `docker-compose.yml`: standard integrated run/deploy method.
 
-Đọc `README.md` và tài liệu liên quan trong `docs/` trước khi thay đổi luồng xuyên nhiều service. Kiểm tra code hiện tại nếu tài liệu và implementation mâu thuẫn; cập nhật tài liệu đã lỗi thời trong cùng thay đổi khi phù hợp.
+Read `README.md` and related documentation in `docs/` before changing flows that span multiple services. Check the current code if documentation and implementation contradict; update outdated documentation in the same change when appropriate.
 
-## Quy ước backend
+## Backend Conventions
 
-- Module Go nằm trong `backend/`; phiên bản Go trong `backend/go.mod` là nguồn chuẩn.
-- Các process có trách nhiệm riêng:
+- Go modules reside in `backend/`; the Go version in `backend/go.mod` is the authoritative source.
+- Processes have distinct responsibilities:
   - `cmd/web`: HTTP API/control plane.
-  - `cmd/worker`: consume Redis stream và chạy synthesis pipeline.
-  - `cmd/cron`: dọn file tạm và chunk stale; chỉ chạy một replica.
-- Không đưa inference dài hạn vào request handler. Web enqueue công việc, worker xử lý, client theo dõi qua SSE.
-- Giữ authorization/ownership checks cho mọi tài nguyên user: job, chunk, history, voice và audio.
-- Giữ abstraction `storage.Store`; code nghiệp vụ không được phụ thuộc trực tiếp vào local filesystem khi S3 cũng phải hoạt động.
-- Redis có fallback in-memory cho triển khai đơn replica. Không giả định fallback này hỗ trợ semantics đa replica.
-- Dùng error/JSON response helpers hiện có và giữ style comment, naming, package layout của code xung quanh.
-- Chạy `gofmt` trên mọi file Go đã sửa.
+  - `cmd/worker`: consume Redis stream and run synthesis pipeline.
+  - `cmd/cron`: clean up temp files and stale chunks; run only one replica.
+- Do not put long-running inference in request handlers. Web enqueues work, the worker processes it, and the client tracks progress via SSE.
+- Maintain authorization/ownership checks for every user resource: job, chunk, history, voice, and audio.
+- Maintain the `storage.Store` abstraction; business code must not depend directly on the local filesystem when S3 also needs to work.
+- Redis has an in-memory fallback for single-replica deployments. Do not assume this fallback supports multi-replica semantics.
+- Use existing error/JSON response helpers and keep the comment style, naming, and package layout of surrounding code.
+- Run `gofmt` on every modified Go file.
 
-### Database và code sinh tự động
+### Database and Auto-Generated Code
 
-- Mọi thay đổi schema runtime cần migration `up` và `down` mới trong `backend/db/migrations/`; không sửa migration đã được phát hành để thay đổi lịch sử.
-- Đồng bộ `backend/db/schema.sql` với schema cuối cùng mà query/codegen cần thấy.
-- SQL query nguồn nằm trong `backend/db/query/`.
-- `backend/db/sqlc/` là code sinh tự động; không sửa tay. Sau khi đổi schema hoặc query, chạy từ `backend/`:
+- Every runtime schema change requires new `up` and `down` migrations in `backend/db/migrations/`; do not modify already-released migrations to alter history.
+- Keep `backend/db/schema.sql` in sync with the final schema that queries/codegen need to see.
+- Source SQL queries reside in `backend/db/query/`.
+- `backend/db/sqlc/` is auto-generated code; do not modify manually. After changing schema or queries, run from `backend/`:
 
   ```bash
   sqlc generate
   ```
 
-- `backend/proto/tts.pb.go` và `backend/proto/tts_grpc.pb.go` là generated files; không sửa tay. Chỉ thay contract protobuf khi yêu cầu đã được phối hợp với engine ngoài repository, rồi regenerate bằng toolchain protobuf tương ứng.
+- `backend/proto/tts.pb.go` and `backend/proto/tts_grpc.pb.go` are generated files; do not modify manually. Only change the protobuf contract when the requirement has been coordinated with the engine outside the repository, then regenerate using the appropriate protobuf toolchain.
 
-## Quy ước frontend
+## Frontend Conventions
 
-- Dùng Svelte 5 runes và TypeScript theo pattern hiện có; không đưa SvelteKit/router/framework state mới vào nếu không có lý do được duyệt.
-- Giữ UI schema-driven. Component động, range, text limit, audio spec và capability phải xuất phát từ manifest hoặc helper dùng chung.
-- API cần đăng nhập phải dùng `authFetch` trong `frontend/src/lib/api.ts` để giữ cookie và refresh-token retry. Không dùng `fetch` trần cho endpoint protected.
-- Giữ request relative (`/api/...`, `/storage/...`) để Vite/Nginx proxy quyết định backend target.
-- Khi thêm behavior thuần logic, ưu tiên tách helper TypeScript và thêm test `*.test.ts` thay vì nhúng toàn bộ logic vào component `.svelte`.
-- Không sửa hoặc commit output runtime/build như `frontend/dist/`, `frontend/node_modules/` hay dữ liệu trong `backend/storage/`.
+- Use Svelte 5 runes and TypeScript following existing patterns; do not introduce SvelteKit/router/framework new state without an approved reason.
+- Keep the UI schema-driven. Dynamic components, ranges, text limits, audio specs, and capabilities must derive from the manifest or shared helpers.
+- Authenticated API calls must use `authFetch` in `frontend/src/lib/api.ts` to preserve cookies and refresh-token retry. Do not use bare `fetch` for protected endpoints.
+- Keep requests relative (`/api/...`, `/storage/...`) so the Vite/Nginx proxy decides the backend target.
+- When adding purely logic behavior, prefer extracting a TypeScript helper and adding a `*.test.ts` test rather than embedding all logic in a `.svelte` component.
+- Do not modify or commit runtime/build output such as `frontend/dist/`, `frontend/node_modules/`, or data in `backend/storage/`.
 
-## Lệnh kiểm tra
+## Test Commands
 
-Chạy kiểm tra nhỏ nhất liên quan trước, sau đó chạy suite đầy đủ của phần đã sửa.
+Run the minimal relevant checks first, then the full suite for the modified area.
 
 ### Backend
 
 ```bash
 cd backend
-gofmt -w <go-files-da-sua>
+gofmt -w <modified-go-files>
 go test ./...
 go vet ./...
 go build ./cmd/...
 ```
 
-`go test ./...` là kiểm tra tối thiểu cho thay đổi backend. Nếu thay config, test cũng phải xác nhận `.env.example` vẫn đồng bộ. Nếu thay query/schema, chạy `sqlc generate` trước test và kiểm tra generated diff.
+`go test ./...` is the minimum check for backend changes. If config is changed, tests must also confirm `.env.example` is still in sync. If queries/schema are changed, run `sqlc generate` before tests and check the generated diff.
 
 ### Frontend
 
@@ -130,11 +130,11 @@ npm test
 npm run build
 ```
 
-Dùng `npm ci` khi cần cài dependency từ lockfile; không thay `package-lock.json` nếu dependency không đổi.
+Use `npm ci` when dependencies need to be installed from the lockfile; do not change `package-lock.json` if dependencies are unchanged.
 
-### Tích hợp
+### Integration
 
-Sau thay đổi chạm contract giữa frontend/backend, queue, storage hoặc deployment:
+After changes touching the contract between frontend/backend, queue, storage, or deployment:
 
 ```bash
 docker compose config
@@ -143,36 +143,36 @@ docker compose ps
 curl -f http://localhost:8000/health
 ```
 
-Smoke test k6 khi stack đã sẵn sàng:
+Smoke test with k6 when the stack is ready:
 
 ```bash
 docker run --rm -i --network=host \
   -v "$(pwd)/tests/load:/tests/load" grafana/k6 run /tests/load/smoke.js
 ```
 
-Không chạy load/stress/soak test nếu người dùng chưa yêu cầu: chúng tốn tài nguyên và có thể tạo nhiều dữ liệu.
+Do not run load/stress/soak tests unless the user requests them: they consume resources and may generate a lot of data.
 
-## Test layout
+## Test Layout
 
-Mọi test file phải nằm trong thư mục `tests/` tương ứng — không đặt test file cạnh source code:
+Every test file must reside in the corresponding `tests/` directory — do not place test files next to source code:
 
-- `backend/tests/{unit,integration,contract}/` cho Go test
-- `frontend/tests/unit/` cho TypeScript/vitest test
-- `tests/{load,monitoring,reports,fixtures}/` cho k6, Python, reports, fixtures
+- `backend/tests/{unit,integration,contract}/` for Go tests
+- `frontend/tests/unit/` for TypeScript/vitest tests
+- `tests/{load,monitoring,reports,fixtures}/` for k6, Python, reports, fixtures
 
-Kiểm tra layout:
+Check layout:
 
 ```bash
 scripts/check-test-layout.sh
 ```
 
-## Checklist trước khi hoàn tất
+## Pre-Completion Checklist
 
-1. Thay đổi chỉ nằm trong phạm vi yêu cầu; không có refactor không liên quan.
-2. Không file nào trong `core-tts-example/` bị sửa.
-3. Không secret, `.env`, runtime data hay generated build output bị thêm vào Git.
-4. Behavior mới có test hoặc có giải thích rõ vì sao chưa thể test tự động.
-5. Đã chạy các lệnh kiểm tra phù hợp và báo chính xác lệnh nào pass/fail/skipped.
-6. Thay đổi schema có migration; thay query/config có regenerated artifacts đúng nguồn.
-7. Thay đổi API/manifest/deployment có cập nhật tài liệu liên quan khi contract đã đổi.
-8. Luồng schema-driven, auth, ownership, storage abstraction và ranh giới service vẫn được giữ nguyên.
+1. Changes are within the scope of the requirement; no unrelated refactoring.
+2. No file in `core-tts-example/` has been modified.
+3. No secrets, `.env`, runtime data, or generated build output have been added to Git.
+4. New behavior has tests or a clear explanation of why automated testing is not yet possible.
+5. Appropriate test commands have been run and accurately reported as pass/fail/skipped.
+6. Schema changes include migrations; query/config changes have correctly regenerated artifacts from the source.
+7. API/manifest/deployment changes include updates to related documentation when the contract has changed.
+8. Schema-driven flow, auth, ownership, storage abstraction, and service boundaries are preserved.

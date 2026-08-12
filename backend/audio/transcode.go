@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-// transcodeTimeout giới hạn thời gian chạy ffmpeg cho một lần chuyển mã.
+// transcodeTimeout limits the time ffmpeg runs for a single transcoding operation.
 var transcodeTimeout = 60 * time.Second
 
 var transcodeSlots = make(chan struct{}, 2)
 
-// ConfigureTranscoding đặt policy chuyển mã một lần lúc khởi động.
+// ConfigureTranscoding sets the transcoding policy once at startup.
 func ConfigureTranscoding(timeout time.Duration, maxConcurrency int) {
 	if timeout <= 0 || maxConcurrency < 1 {
 		panic("invalid transcoding configuration")
@@ -22,9 +22,9 @@ func ConfigureTranscoding(timeout time.Duration, maxConcurrency int) {
 	transcodeSlots = make(chan struct{}, maxConcurrency)
 }
 
-// ffmpegArgs mô tả tham số mã hoá cho từng định dạng đầu ra được hỗ trợ.
-// Đầu vào luôn đọc từ stdin ("-i pipe:0") và kết quả ghi ra stdout ("pipe:1"), nên không
-// cần tạo tập tin tạm trên đĩa.
+// ffmpegArgs describes encoding parameters for each supported output format.
+// Input always reads from stdin ("-i pipe:0") and output writes to stdout ("pipe:1"),
+// so no temporary files are needed on disk.
 var ffmpegArgs = map[string][]string{
 	"mp3":  {"-f", "mp3", "-codec:a", "libmp3lame", "-q:a", "2"},
 	"ogg":  {"-f", "ogg", "-codec:a", "libvorbis", "-q:a", "5"},
@@ -35,16 +35,16 @@ var ffmpegArgs = map[string][]string{
 	"wav":  {"-f", "wav", "-codec:a", "pcm_s16le"},
 }
 
-// CanTranscode cho biết định dạng đích có nằm trong danh sách ffmpeg được cấu hình không.
+// CanTranscode reports whether the target format is in the configured ffmpeg list.
 func CanTranscode(format string) bool {
 	_, ok := ffmpegArgs[format]
 	return ok
 }
 
-// Transcode chuyển đổi dữ liệu âm thanh sang định dạng khác bằng ffmpeg qua pipe.
+// Transcode converts audio data to another format using ffmpeg over a pipe.
 //
-// Trả về lỗi thay vì dữ liệu gốc khi thất bại: gửi WAV kèm Content-Type của MP3 sẽ tạo ra
-// tập tin mà nhiều trình phát từ chối mở, và người dùng không có cách nào biết.
+// Returns an error instead of the original data on failure: sending WAV with MP3 Content-Type
+// creates a file that many players refuse to open, and the user has no way to tell.
 func Transcode(ctx context.Context, input []byte, format string) ([]byte, error) {
 	args, ok := ffmpegArgs[format]
 	if !ok {
@@ -54,8 +54,8 @@ func Transcode(ctx context.Context, input []byte, format string) ([]byte, error)
 		return nil, fmt.Errorf("no audio data to transcode")
 	}
 
-	// Chờ một chỗ, nhưng chỉ trong lúc client còn kết nối: ai đã bỏ đi thì không có lý do
-	// để vẫn xếp hàng chờ CPU.
+	// Waits for a slot, but only while the client is still connected: someone who has
+	// disconnected has no reason to still queue for CPU.
 	select {
 	case transcodeSlots <- struct{}{}:
 		defer func() { <-transcodeSlots }()
@@ -89,7 +89,7 @@ func Transcode(ctx context.Context, input []byte, format string) ([]byte, error)
 	return out.Bytes(), nil
 }
 
-// MimeType trả về Content-Type tương ứng với định dạng âm thanh.
+// MimeType returns the Content-Type corresponding to the audio format.
 func MimeType(format string) string {
 	switch format {
 	case "mp3":
@@ -111,8 +111,8 @@ func MimeType(format string) string {
 	}
 }
 
-// KnownFormats liệt kê các định dạng nền tảng nhận biết, dùng khi phải dò tệp trên đĩa mà
-// không biết trước Task đã sinh ra định dạng nào.
+// KnownFormats lists the formats the platform recognizes, used when probing a file on disk
+// without knowing which format the Task produced.
 func KnownFormats() []string {
 	return []string{"wav", "mp3", "flac", "ogg", "opus", "aac", "m4a"}
 }

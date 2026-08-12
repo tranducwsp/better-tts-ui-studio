@@ -1,16 +1,16 @@
-# 🏗️ Kiến Trúc Hệ Thống & Luồng Dữ Liệu (Deployed Architecture & Data Flow)
+# 🏗️ System Architecture & Data Flow (Deployed Architecture & Data Flow)
 
-Tài liệu này đặc tả cấu trúc tổng thể của hệ thống **Better TTS UI Studio** khi triển khai trên môi trường Production, cách các thành phần giao tiếp với nhau, luồng dữ liệu (Data Flow), cơ chế hoạt động của các Task Worker và tiến trình ngầm Cron/Sweeper.
+This document specifies the overall structure of the **Better TTS UI Studio** system when deployed in a Production environment, how components communicate with each other, the Data Flow, the operation mechanism of Task Workers, and Cron/Sweeper background processes.
 
 ---
 
-## 🏛️ 1. Sơ Đồ Kiến Trúc Hệ Thống Triển Khai (Deployed Architecture)
+## 🏛️ 1. Deployed Architecture Diagram
 
-Khi được triển khai hoàn chỉnh (thông qua Docker Compose hoặc Kubernetes), hệ thống phân tách làm 3 tầng độc lập: **Presentation Layer (Frontend)**, **Control Plane Gateway (Backend Go)** và **Compute Layer (Python AI Engine)**.
+When fully deployed (via Docker Compose or Kubernetes), the system is split into 3 independent layers: **Presentation Layer (Frontend)**, **Control Plane Gateway (Backend Go)**, and **Compute Layer (Python AI Engine)**.
 
 ```mermaid
 flowchart TB
-    subgraph Client [" Trình Duyệt Người Dùng (Browser) "]
+    subgraph Client [" User Browser "]
         UI["Svelte 5 App (Dynamic UI)"]
         AudioEngine["Web Audio API Engine (PCM Player)"]
     end
@@ -28,7 +28,7 @@ flowchart TB
         StorageEngine["Storage Abstraction Layer"]
     end
 
-    subgraph Infrastructure [" Cơ Sở Dữ Liệu & Bộ Nhớ "]
+    subgraph Infrastructure [" Database & Memory "]
         PG[("PostgreSQL 16 (Users, Jobs, Voices)")]
         RedisDB[("Redis (Stream Queue & Auth Cache)")]
         DiskStorage[("Storage System (Local Disk / AWS S3)")]
@@ -41,27 +41,27 @@ flowchart TB
     end
 
     UI <-->|"REST API & SSE Stream (Cookie Session)"| Router
-    UI -->|"Tải HTML/JS/CSS Static Bundle"| Nginx
-    Router <-->|"Ghi & Truy vấn dữ liệu"| PG
+    UI -->|"Download HTML/JS/CSS Static Bundle"| Nginx
+    Router <-->|"Write & Query Data"| PG
     Router <-->|"Task Streams & User Cache"| RedisDB
-    JobManager <-->|"Lưu trữ file âm thanh & giọng Clone"| StorageEngine
-    StorageEngine <-->|"Ghi/Đọc file"| DiskStorage
+    JobManager <-->|"Store Audio Files & Clone Voices"| StorageEngine
+    StorageEngine <-->|"Read/Write Files"| DiskStorage
     
     JobManager <-->|"HTTP / gRPC Synthesis Request"| FastAPI
     JobManager <-->|"gRPC Audio Stream"| gRPCServer
 
-    Router -->|"Kích hoạt Reload Webhook"| Builder
-    Builder -->|"Đọc /api/info lấy Manifest"| Router
-    Builder -->|"Dựng lại index.html Bundle"| Nginx
+    Router -->|"Trigger Reload Webhook"| Builder
+    Builder -->|"Read /api/info to get Manifest"| Router
+    Builder -->|"Rebuild index.html Bundle"| Nginx
 ```
 
 ---
 
-## 🔄 2. Chi Tiết Luồng Dữ Liệu (Data Flow)
+## 🔄 2. Detailed Data Flow
 
-### 2.1. Luồng Đồng Bộ Manifest (`GET /info` & Webhook Reload)
+### 2.1. Manifest Synchronization Flow (`GET /info` & Webhook Reload)
 
-Khi AI Engineer khởi chạy hoặc cập nhật mô hình AI:
+When the AI Engineer starts or updates the AI model:
 
 ```mermaid
 sequenceDiagram
@@ -72,23 +72,23 @@ sequenceDiagram
     participant Builder as Frontend Builder (Node.js)
     participant Client as Frontend Browser (Svelte 5)
 
-    GoGateway->>PythonEngine: Khởi động: GET /info (Lấy Engine Manifest)
-    PythonEngine-->>GoGateway: Trả về JSON Manifest (Model, UI Schema, Regex Rules)
-    GoGateway->>GoGateway: Validate & Cache Manifest trong bộ nhớ RAM
+    GoGateway->>PythonEngine: Startup: GET /info (Get Engine Manifest)
+    PythonEngine-->>GoGateway: Return JSON Manifest (Model, UI Schema, Regex Rules)
+    GoGateway->>GoGateway: Validate & Cache Manifest in RAM
     
-    Admin->>GoGateway: Gọi POST /api/internal/engine/reload
-    GoGateway->>PythonEngine: Gửi lại GET /info lấy Manifest mới
-    GoGateway->>Builder: Gọi HTTP Webhook (POST FE_BUILDER_URL/reload)
-    Builder->>GoGateway: Gọi GET /api/info để lấy Manifest mới nhất
-    Builder->>Builder: Thực thi script prerender dựng lại index.html
-    GoGateway-->>Client: Người dùng truy cập/reload nhận ngay UI mới
+    Admin->>GoGateway: Call POST /api/internal/engine/reload
+    GoGateway->>PythonEngine: Send GET /info again to get new Manifest
+    GoGateway->>Builder: Call HTTP Webhook (POST FE_BUILDER_URL/reload)
+    Builder->>GoGateway: Call GET /api/info to get latest Manifest
+    Builder->>Builder: Execute prerender script to rebuild index.html
+    GoGateway-->>Client: User accesses/reloads and immediately gets new UI
 ```
 
 ---
 
-### 2.2. Luồng Tổng Hợp Tiếng Nói (Text-to-Speech Processing Flow)
+### 2.2. Text-to-Speech Processing Flow
 
-Đây là luồng chính khi người dùng tạo âm thanh từ văn bản:
+This is the main flow when the user generates audio from text:
 
 ```mermaid
 sequenceDiagram
@@ -101,40 +101,40 @@ sequenceDiagram
     participant Python as Python AI Core Engine
     participant Storage as Storage (Disk / S3)
 
-    Client->>Client: Áp dụng Regex Rules tự chuẩn hóa văn bản tại Client
-    Client->>Client: Chia đoạn văn bản thành các Chunk nhỏ (theo giới hạn max_chars)
-    Client->>Gateway: POST /api/jobs/init (Khởi tạo Job tổng hợp mới)
-    Gateway->>DB: Tạo bản ghi Job và danh sách các Chunks trạng thái 'pending'
-    Gateway-->>Client: Trả về Job ID và Danh sách Task IDs
+    Client->>Client: Apply Regex Rules to auto-normalize text on Client side
+    Client->>Client: Split text into small Chunks (based on max_chars limit)
+    Client->>Gateway: POST /api/jobs/init (Create new synthesis Job)
+    Gateway->>DB: Create Job record and list of Chunks with 'pending' status
+    Gateway-->>Client: Return Job ID and Task ID List
 
-    Client->>Gateway: POST /api/synthesize/{model_id} (Gửi từng Task Chunk)
-    Gateway->>Redis: Xử lý đẩy Task vào Redis Stream Queue `tts:tasks`
-    Gateway-->>Client: Trả về HTTP 202 Accepted (Task ID)
+    Client->>Gateway: POST /api/synthesize/{model_id} (Send each Task Chunk)
+    Gateway->>Redis: Push Task into Redis Stream Queue `tts:tasks`
+    Gateway-->>Client: Return HTTP 202 Accepted (Task ID)
 
-    Client->>Gateway: Kết nối SSE /api/stream/tasks/{task_id} lắng nghe tiến độ
+    Client->>Gateway: Connect SSE /api/stream/tasks/{task_id} to listen to progress
 
-    loop Tiến Trình Xử Lý Trong Queue
-        Worker->>Redis: XreadGroup lấy Task cần xử lý từ Queue
-        Worker->>DB: Cập nhật trạng thái Task thành 'processing'
-        Worker->>Python: Gửi HTTP POST /tts (hoặc gRPC Synthesize) kèm tham số
-        Python->>Python: Chạy PyTorch/CUDA Model sinh ra Audio Binary (WAV)
-        Python-->>Worker: Trả về Audio Stream Binary
-        Worker->>Worker: Chuyển đổi định dạng audio bằng ffmpeg (nếu cần)
-        Worker->>Storage: Ghi file âm thanh vào kho lưu trữ (storage/audio/{id}.wav)
-        Worker->>DB: Cập nhật Task status='completed', lưu file_path
-        Worker->>Gateway: Bắn sự kiện SSE Event: `progress` & `completed`
+    loop Queue Processing Pipeline
+        Worker->>Redis: XreadGroup fetch Task to process from Queue
+        Worker->>DB: Update Task status to 'processing'
+        Worker->>Python: Send HTTP POST /tts (or gRPC Synthesize) with parameters
+        Python->>Python: Run PyTorch/CUDA Model to generate Audio Binary (WAV)
+        Python-->>Worker: Return Audio Stream Binary
+        Worker->>Worker: Convert audio format using ffmpeg (if needed)
+        Worker->>Storage: Write audio file to storage (storage/audio/{id}.wav)
+        Worker->>DB: Update Task status='completed', save file_path
+        Worker->>Gateway: Emit SSE Events: `progress` & `completed`
     end
 
-    Gateway-->>Client: Sự kiện SSE thông báo Task đã hoàn tất
-    Client->>Gateway: GET /api/tasks/{task_id}/audio (Tải audio binary)
-    Gateway->>Storage: Đọc file âm thanh
-    Gateway-->>Client: Trả về Audio File Buffer (Audio/WAV)
-    Client->>Client: Web Audio API phát đoạn âm thanh nối tiếp trên giao diện
+    Gateway-->>Client: SSE Event notifying Task has completed
+    Client->>Gateway: GET /api/tasks/{task_id}/audio (Download audio binary)
+    Gateway->>Storage: Read audio file
+    Gateway-->>Client: Return Audio File Buffer (Audio/WAV)
+    Client->>Client: Web Audio API plays consecutive audio segments on the interface
 ```
 
 ---
 
-### 2.3. Luồng Tải Lên Giọng Mẫu Clone (Voice Cloning Flow)
+### 2.3. Voice Cloning Upload Flow
 
 ```mermaid
 sequenceDiagram
@@ -145,62 +145,62 @@ sequenceDiagram
     participant Python as Python AI Core Engine
     participant DB as PostgreSQL
 
-    Client->>Client: Cắt và chọn phân đoạn âm thanh chất lượng tốt nhất
+    Client->>Client: Trim and select the best quality audio segment
     Client->>Gateway: POST /api/clone/upload (File WAV + Metadata: Name, Gender, Accent, Age)
-    Gateway->>Gateway: Kiểm tra dung lượng file (không vượt quá max_upload_bytes của Manifest)
-    Gateway->>Storage: Lưu trữ file tham chiếu vào `storage/{user_id}/voice/{id}.wav`
+    Gateway->>Gateway: Check file size (must not exceed max_upload_bytes from Manifest)
+    Gateway->>Storage: Store reference file to `storage/{user_id}/voice/{id}.wav`
     
-    alt Nếu Core Engine cần đăng ký trước (Register Endpoint)
-        Gateway->>Python: Gọi POST /clone gửi file âm thanh tham chiếu
-        Python-->>Gateway: Trả về embedding_id hoặc voice_id từ Model
+    alt If Core Engine requires pre-registration (Register Endpoint)
+        Gateway->>Python: Call POST /clone to send reference audio file
+        Python-->>Gateway: Return embedding_id or voice_id from Model
     end
 
-    Gateway->>DB: Ghi nhận thông tin Voice Clone mới gắn với user_id
-    Gateway-->>Client: Trả về thông tin Voice Clone vừa khởi tạo
-    Client->>Client: Cập nhật danh sách giọng đọc trong VoiceSelect Dropdown
+    Gateway->>DB: Record new Voice Clone information linked to user_id
+    Gateway-->>Client: Return newly created Voice Clone information
+    Client->>Client: Update voice list in VoiceSelect Dropdown
 ```
 
 ---
 
-## ⚙️ 3. Quản Lý Tiến Trình Worker (Task Workers & Concurrency)
+## ⚙️ 3. Task Worker & Concurrency Management
 
-Hệ thống xử lý hàng đợi tổng hợp tiếng nói thông qua hai chế độ hoạt động:
+The speech synthesis queue processing system operates in two modes:
 
-1. **Chế Độ Distributed Queue (Khi có Redis)**:
-   - Gateway đóng vai trò làm Producer đẩy các yêu cầu tổng hợp vào **Redis Streams** (Stream key: `tts:tasks`).
-   - Các tiến trình Worker (nằm ngay trong backend hoặc chạy thành các Pod Worker riêng biệt) đóng vai trò Consumer sử dụng **Redis Consumer Groups**.
-   - Số lượng công việc chạy đồng thời trong mỗi Worker được khống chế bởi biến môi trường `WORKER_MAX_IN_FLIGHT` (mặc định: `2`).
+1. **Distributed Queue Mode (When Redis is available)**:
+   - The Gateway acts as a Producer pushing synthesis requests into **Redis Streams** (Stream key: `tts:tasks`).
+   - Worker processes (running within the backend or as separate Worker Pods) act as Consumers using **Redis Consumer Groups**.
+   - The number of concurrent jobs in each Worker is limited by the `WORKER_MAX_IN_FLIGHT` environment variable (default: `2`).
 
-2. **Chế Độ In-Memory Queue Fallback (Khi không có Redis)**:
-   - Hệ thống tự động chuyển sang sử dụng Go Channels nội bộ trong RAM.
-   - Thích hợp cho môi trường phát triển cục bộ (Local Development) hoặc triển khai đơn giản 1 replica.
+2. **In-Memory Queue Fallback Mode (When Redis is unavailable)**:
+   - The system automatically switches to using internal Go Channels in RAM.
+   - Suitable for local development environments or simple single-replica deployments.
 
-3. **Pool Chuyển Đổi Định Dạng Audio (ffmpeg Transcoder Pool)**:
-   - Các file âm thanh tổng hợp đầu ra từ AI Model nếu khác định dạng mong muốn sẽ được đẩy qua công cụ `ffmpeg`.
-   - Tiến trình chuyển mã được giới hạn bởi semaphore `TRANSCODE_MAX_CONCURRENCY` (mặc định: `2`) để tránh ngốn toàn bộ CPU/RAM của server.
+3. **Audio Format Conversion Pool (ffmpeg Transcoder Pool)**:
+   - Synthesized audio files from the AI Model, if in a different format than desired, are piped through the `ffmpeg` tool.
+   - The transcoding process is limited by the semaphore `TRANSCODE_MAX_CONCURRENCY` (default: `2`) to avoid consuming all server CPU/RAM.
 
 ---
 
-## 🕒 4. Tiến Trình Ngầm (Cron Jobs & Sweepers)
+## 🕒 4. Background Processes (Cron Jobs & Sweepers)
 
-Hệ thống duy trì 2 tiến trình dọn dẹp ngầm (Background Sweeper Jobs) tự động chạy theo chu kỳ để đảm bảo tính ổn định và tiết kiệm tài nguyên lưu trữ:
+The system maintains 2 background cleanup processes (Background Sweeper Jobs) that run automatically on a schedule to ensure stability and save storage resources:
 
 ```
  ┌────────────────────────────────────────────────────────┐
  │            1. Storage Temp Audio Sweeper               │
- │   - Tần suất: Chạy mỗi 1 giờ một lần                   │
- │   - Nhiệm vụ: Xóa các file audio tạm trong           │
- │     `storage/temp/` quá thời hạn                     │
- │     `TEMP_AUDIO_RETENTION_HOURS` (Mặc định: 24 giờ).    │
+ │   - Frequency: Runs once every hour                    │
+ │   - Task: Deletes temporary audio files in             │
+ │     `storage/temp/` that exceed the retention period    │
+ │     `TEMP_AUDIO_RETENTION_HOURS` (Default: 24 hours).   │
  └────────────────────────────────────────────────────────┘
 
  ┌────────────────────────────────────────────────────────┐
  │            2. Database Stale Task Sweeper              │
- │   - Tần suất: Chạy mỗi 5 phút một lần                  │
- │   - Nhiệm vụ: Tim các Task đứng ở trạng thái           │
- │     'pending' hoặc 'processing' quá khoảng thời gian    │
- │     `STALE_CHUNK_AFTER_MINUTES` (Mặc định: 30 phút).    │
- │   - Hành động: Đánh dấu các Task mồ côi này thành      │
- │     'failed' kèm lỗi 'Task timed out / Worker lost'.   │
+ │   - Frequency: Runs once every 5 minutes               │
+ │   - Task: Finds Tasks stuck in 'pending' or            │
+ │     'processing' status beyond the time period          │
+ │     `STALE_CHUNK_AFTER_MINUTES` (Default: 30 minutes).  │
+ │   - Action: Marks these orphaned Tasks as               │
+ │     'failed' with error 'Task timed out / Worker lost'. │
  └────────────────────────────────────────────────────────┘
 ```

@@ -1,12 +1,12 @@
 /**
  * k6 load test — AI Voice Studio
  *
- * Chạy:
- *   k6 run tests/load/smoke.js                     # 1 VU, nhanh
- *   k6 run tests/load/load.js                      # 10k VU, ramp 30 phút
- *   k6 run -e BASE_URL=http://host:8000 tests/load/load.js
- *   k6 run -e STAGE=stress tests/load/load.js      # 10k VU, ramp 5 phút
- *   k6 cloud tests/load/load.js                    # chạy trên k6 Cloud
+ * Run:
+ *   k6 run test/smoke.js                     # 1 VU, quick
+ *   k6 run test/load.js                      # 10k VU, 30-minute ramp
+ *   k6 run -e BASE_URL=http://host:8000 test/load.js
+ *   k6 run -e STAGE=stress test/load.js      # 10k VU, 5-minute ramp
+ *   k6 cloud test/load.js                    # run on k6 Cloud
  */
 
 import http from 'k6/http';
@@ -14,22 +14,22 @@ import { check, sleep, group } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 import { SharedArray } from 'k6/data';
 
-// ── Tuỳ chỉnh qua biến môi trường ──────────────────────────────────────────
+// ── Customize via environment variables ──────────────────────────────────────
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
 const STAGE    = __ENV.STAGE    || 'load';   // smoke | load | stress | soak
 
-// ── Tài khoản tạo sẵn ──────────────────────────────────────────────────────
+// ── Pre-created accounts ─────────────────────────────────────────────────────
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'devadmin';
 const USER_USER  = 'user';
 const USER_PASS  = 'devuser';
 
-// ── Custom metrics ─────────────────────────────────────────────────────────
+// ── Custom metrics ───────────────────────────────────────────────────────────
 const errorRate      = new Rate('errors');
 const synthDuration  = new Trend('synthesis_e2e_ms', true);   // submit → done
 const audioBytes     = new Trend('audio_response_bytes', true);
 
-// ── Dữ liệu mẫu ────────────────────────────────────────────────────────────
+// ── Sample data ──────────────────────────────────────────────────────────────
 const SAMPLE_TEXTS = new SharedArray('sample_texts', () => [
   'Xin chào! Đây là ứng dụng tổng hợp giọng nói tiếng Việt.',
   'Hôm nay thời tiết rất đẹp, trời trong xanh, không có mây.',
@@ -44,13 +44,13 @@ const MODES  = ['fast', 'standard', 'zero_shot_clone'];
 // ── Stages ──────────────────────────────────────────────────────────────────
 
 const stages = {
-  // Smoke — 1 VU, kiểm tra nhanh mọi endpoint hoạt động
+  // Smoke — 1 VU, quick check that all endpoints work
   smoke: {
     vus: 1,
     duration: '30s',
   },
 
-  // Load — 10k VU, ramp từ từ 30 phút
+  // Load — 10k VU, gradual 30-minute ramp
   load: {
     stages: [
       { duration: '5m',  target: 1000 },   // warm-up
@@ -68,7 +68,7 @@ const stages = {
     },
   },
 
-  // Stress — 10k VU, ramp nhanh 5 phút
+  // Stress — 10k VU, fast 5-minute ramp
   stress: {
     stages: [
       { duration: '1m',  target: 5000 },
@@ -84,7 +84,7 @@ const stages = {
     },
   },
 
-  // Soak — 3k VU, chạy 2 giờ kiểm tra leak
+  // Soak — 3k VU, run 2 hours to check for leaks
   soak: {
     stages: [
       { duration: '5m',  target: 3000 },
@@ -105,9 +105,9 @@ export const options = STAGE === 'smoke'
   ? { vus: 1, duration: '30s', thresholds: { checks: ['rate>0.99'], errors: ['rate<0.01'] } }
   : { stages: cfg.stages, thresholds: cfg.thresholds };
 
-// ── Helper ─────────────────────────────────────────────────────────────────
+// ── Helper ───────────────────────────────────────────────────────────────────
 
-/** Login, trả access_token hoặc null. */
+/** Login, returns access_token or null. */
 export function login(username, password) {
   const res = http.post(
     `${BASE_URL}/api/login`,
@@ -122,7 +122,7 @@ export function login(username, password) {
   return ok ? res.json('access_token') : null;
 }
 
-/** Tạo header Authorization. */
+/** Create Authorization header. */
 export function authHeaders(token) {
   return {
     'Content-Type': 'application/json',
@@ -130,7 +130,7 @@ export function authHeaders(token) {
   };
 }
 
-/** Random text từ danh sách mẫu. */
+/** Random text from the sample list. */
 export function randomText() {
   return SAMPLE_TEXTS[Math.floor(Math.random() * SAMPLE_TEXTS.length)];
 }
@@ -145,7 +145,7 @@ export function randomMode() {
   return MODES[Math.floor(Math.random() * MODES.length)];
 }
 
-/** Poll task cho đến khi done hoặc timeout. Trả { status, elapsed_ms }. */
+/** Poll task until done or timeout. Returns { status, elapsed_ms }. */
 export function pollTask(token, taskId, maxWaitMs = 30000) {
   const start = Date.now();
   const interval = 500;
@@ -171,5 +171,5 @@ export function pollTask(token, taskId, maxWaitMs = 30000) {
   return { status: 'timeout', elapsed_ms: Date.now() - start };
 }
 
-// ── Exported cho các script chuyên biệt ─────────────────────────────────────
+// ── Exported for specialized scripts ────────────────────────────────────────
 export { BASE_URL, STAGE, ADMIN_USER, ADMIN_PASS, USER_USER, USER_PASS, errorRate, synthDuration, audioBytes, VOICES, MODES, SAMPLE_TEXTS };
