@@ -72,16 +72,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-<<<<<<< HEAD
-		// bcrypt chỉ nhận 72 byte, kiểm trước để trả 400 thay vì 500.
+		// Check before hashing: bcrypt only accepts 72 bytes, so a longer password would cause
+		// HashPassword below to return an error and the user would see "500 Failed to hash password"
+		// for an input-level error. Block here and return 400 with the correct reason. Positioned
+		// after the empty check so the two cases have distinct messages.
 		if err := security.ValidatePassword(req.Password); err != nil {
-=======
-	// Check before hashing: bcrypt only accepts 72 bytes, so a longer password would cause
-	// HashPassword below to return an error and the user would see "500 Failed to hash password"
-	// for an input-level error. Block here and return 400 with the correct reason. Positioned
-	// after the empty check so the two cases have distinct messages.
-	if err := security.ValidatePassword(req.Password); err != nil {
->>>>>>> worktree-agent-a6f4d5609ff61827b
 		w.WriteHeader(http.StatusBadRequest)
 		_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": err.Error()})
 		return
@@ -408,16 +403,11 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-<<<<<<< HEAD
-// usersPageSize là trần số người dùng trả về cho trang quản trị.
-// Truy vấn không có trần nghĩa là một triển khai đông người
-// phải tải toàn bộ bảng users cho mỗi lần mở trang.
-=======
 // usersPageSize is the cap on the number of users returned for the admin page.
 //
 // Same reason as historyPageSize: an un-capped query means a large deployment must load the
 // entire users table every time the page is opened.
->>>>>>> worktree-agent-a6f4d5609ff61827b
+
 const usersPageSize = 500
 
 // GetUsers (Admin API) returns the list of all users in the system with real-time Online status from Redis.

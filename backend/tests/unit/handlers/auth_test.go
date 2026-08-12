@@ -91,7 +91,7 @@ func TestAuth_Register_PasswordLength(t *testing.T) {
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("password of %d bytes must be rejected with 400, got %d", c.wantLen, rec.Code)
 			}
-			if !strings.Contains(rec.Body.String(), "72 byte") && !strings.Contains(rec.Body.String(), "8 ký tự") {
+			if !strings.Contains(rec.Body.String(), "72 byte") && !strings.Contains(rec.Body.String(), "8 characters") {
 				t.Errorf("400 message must state the reason, got: %s", rec.Body.String())
 			}
 		})

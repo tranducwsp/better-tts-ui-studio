@@ -8,14 +8,14 @@ import (
 	"backend/state"
 )
 
-// TestWatchCancel_CrossProcess kiểm tra cancel qua Redis giữa hai tiến trình.
+// TestWatchCancel_CrossProcess verifies cancel across two processes via Redis.
 func TestWatchCancel_CrossProcess(t *testing.T) {
 	redisOrSkip(t)
 
 	const taskID = "watch-cancel-cross"
 	t.Cleanup(func() { state.RedisClient.Del(context.Background(), "task:"+taskID) })
 
-	// Tiến trình "worker": đang chạy job và nghe lệnh dừng.
+	// "Worker" process: running the job and listening for the stop command.
 	worker := state.NewTaskManager()
 	workerItem := worker.GetOrCreate(taskID)
 	workerItem.Notify(state.TaskUpdate{Status: "processing", Progress: 10})
@@ -23,28 +23,28 @@ func TestWatchCancel_CrossProcess(t *testing.T) {
 	ctx, stop := workerItem.WatchCancel(context.Background())
 	defer stop()
 
-	// Subscribe của go-redis nối lười; chờ một nhịp để nó kịp đăng ký trước khi phát.
+	// go-redis subscribes lazily; wait one tick so it can register before the publish.
 	time.Sleep(300 * time.Millisecond)
 
 	select {
 	case <-ctx.Done():
-		t.Fatal("context huỷ trước khi có ai yêu cầu dừng")
+		t.Fatal("context cancelled before anyone requested stop")
 	default:
 	}
 
-	// Tiến trình "web": nhận cú bấm dừng của người dùng.
+	// "Web" process: receives the user's stop click.
 	web := state.NewTaskManager()
 	if !web.Cancel(taskID) {
-		t.Fatal("tiến trình web không huỷ được task")
+		t.Fatal("web process could not cancel the task")
 	}
 
 	select {
 	case <-ctx.Done():
 	case <-time.After(5 * time.Second):
-		t.Fatal("lệnh dừng ở tiến trình web không tới được lượt tổng hợp ở worker — GPU vẫn chạy hết")
+		t.Fatal("stop command from the web process did not reach the synthesis in the worker — GPU would still run to completion")
 	}
 
 	if !workerItem.IsCancelled() {
-		t.Error("worker chưa ghi nhận task đã bị huỷ")
+		t.Error("worker has not acknowledged the task was cancelled")
 	}
 }
