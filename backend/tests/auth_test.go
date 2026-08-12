@@ -63,9 +63,9 @@ func TestAuth_Register_EmptyPayload(t *testing.T) {
 	}
 }
 
-// TestAuth_Register_PasswordLength chặn cú 500 cũ: password quá 72 byte từng làm
-// HashPassword lỗi và trả "500 Failed to hash password" cho một lỗi của đầu vào. Validation
-// chạy trước khi chạm DB (GetUserByUsername ở sau), nên test không cần database.
+// TestAuth_Register_PasswordLength prevents the old 500 error: a password over 72 bytess used to
+// cause HashPassword to fail and return "500 Failed to hash password" for an input error. Validation
+// runs before touching the DB (GetUserByUsername comes later), so this test does not need a database.
 func TestAuth_Register_PasswordLength(t *testing.T) {
 	cfg := &config.Config{SecretKey: "test-secret"}
 	h := handlers.NewAuthHandler(cfg)
@@ -89,10 +89,10 @@ func TestAuth_Register_PasswordLength(t *testing.T) {
 			h.Register(rec, req)
 
 			if rec.Code != http.StatusBadRequest {
-				t.Fatalf("password dài %d byte phải bị chặn 400, got %d", c.wantLen, rec.Code)
+				t.Fatalf("password of %d bytes must be rejected with 400, got %d", c.wantLen, rec.Code)
 			}
 			if !strings.Contains(rec.Body.String(), "72 byte") && !strings.Contains(rec.Body.String(), "8 ký tự") {
-				t.Errorf("thông điệp 400 phải nói lý do, got: %s", rec.Body.String())
+				t.Errorf("400 message must state the reason, got: %s", rec.Body.String())
 			}
 		})
 	}

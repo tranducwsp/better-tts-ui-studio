@@ -8,9 +8,10 @@ import (
 	"backend/middleware"
 )
 
-// Cache tồn tại để mỗi request đã đăng nhập không phải hỏi PostgreSQL cùng một câu, nên
-// điều đáng kiểm là nó thực sự trả lại bản đã nhớ, thực sự hết hạn, và thực sự bị xoá khi
-// tài khoản được duyệt — nếu mất điểm cuối, người vừa được duyệt vẫn bị chặn mà không rõ lý do.
+// The cache exists so each authenticated request does not need to ask PostgreSQL the same
+// question, so what matters is that it truly returns the cached record, truly expires, and
+// truly gets evicted when an account is approved — if the last part is missing, a newly
+// approved user is still blocked with no clear reason.
 func TestUserCacheServesThenExpires(t *testing.T) {
 	middleware.ConfigureUserCache(50 * time.Millisecond)
 	defer middleware.ConfigureUserCache(0)
@@ -20,15 +21,15 @@ func TestUserCacheServesThenExpires(t *testing.T) {
 
 	got, ok := middleware.GetUserForTest("alice")
 	if !ok {
-		t.Fatal("vừa ghi vào cache mà đọc không ra")
+		t.Fatal("just wrote to cache but cannot read it back")
 	}
 	if got.ID != "u1" || !got.IsApproved {
-		t.Fatalf("bản ghi trả về không khớp: %+v", got)
+		t.Fatalf("returned record does not match: %+v", got)
 	}
 
 	time.Sleep(70 * time.Millisecond)
 	if _, ok := middleware.GetUserForTest("alice"); ok {
-		t.Error("entry đã quá TTL mà vẫn được trả về")
+		t.Error("entry past TTL is still being returned")
 	}
 }
 
@@ -38,22 +39,22 @@ func TestUserCacheInvalidateDropsEntry(t *testing.T) {
 
 	middleware.PutUserForTest("bob", sqlc.User{ID: "u2", Username: "bob"})
 	if _, ok := middleware.GetUserForTest("bob"); !ok {
-		t.Fatal("chuẩn bị dữ liệu thất bại")
+		t.Fatal("data preparation failed")
 	}
 
 	middleware.InvalidateUser("bob")
 	if _, ok := middleware.GetUserForTest("bob"); ok {
-		t.Error("Invalidate không xoá được entry, nên tài khoản vừa duyệt vẫn đọc trạng thái cũ")
+		t.Error("Invalidate failed to remove the entry, so a just-approved account still reads the old state")
 	}
 }
 
-// TTL 0 nghĩa là tắt hẳn: đặt được như vậy thì mới có đường quay về hành vi truy vấn từng
-// request nếu cache gây rắc rối trong triển khai thật.
+// TTL 0 means fully disabled: being able to set it this way provides a path back to
+// per-request query behavior if the cache causes trouble in production.
 func TestUserCacheDisabledStoresNothing(t *testing.T) {
 	middleware.ConfigureUserCache(0)
 
 	middleware.PutUserForTest("carol", sqlc.User{ID: "u3", Username: "carol"})
 	if _, ok := middleware.GetUserForTest("carol"); ok {
-		t.Error("cache đang tắt mà vẫn ghi nhớ")
+		t.Error("cache is disabled but still storing entries")
 	}
 }

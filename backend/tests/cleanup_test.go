@@ -7,12 +7,13 @@ import (
 	"backend/state"
 )
 
-// TestCleanup_KeepsRunningTask là bất biến mà đường tổng hợp dài dựa vào.
+// TestCleanup_KeepsRunningTask is an invariant the long synthesis path relies on.
 //
-// Trước đây Cleanup xoá theo tuổi bất kể trạng thái, mà TTS_CLIENT_TIMEOUT_SECONDS cho phép
-// tới một giờ. Một job dài hơn ngưỡng bị xoá giữa chừng, rồi lượt Get kế tiếp dựng một
-// TaskItem THỨ HAI từ Redis — trong khi synth.Run vẫn giữ con trỏ bản cũ. Khi kho ghi hỏng và
-// bản RAM là phương án dự phòng duy nhất, âm thanh nằm ở bản A còn handler đọc bản B.
+// Previously Cleanup deleted by age regardless of status, and TTS_CLIENT_TIMEOUT_SECONDS allows
+// up to an hour. A job longer than the threshold got deleted mid-flight, then the next Get call
+// created a SECOND TaskItem from Redis — while synth.Run still held the pointer to the old one.
+// When the object store failed and the RAM copy was the only fallback, the audio lived in copy A
+// while the handler read copy B.
 func TestCleanup_KeepsRunningTask(t *testing.T) {
 	prev := state.RedisClient
 	state.RedisClient = nil
@@ -26,14 +27,14 @@ func TestCleanup_KeepsRunningTask(t *testing.T) {
 	tm.Cleanup()
 
 	if _, ok := tm.Peek("cleanup-running"); !ok {
-		t.Error("task đang chạy bị thu hồi khỏi RAM — tiến trình tổng hợp sẽ ghi vào một bản không ai đọc")
+		t.Error("running task was evicted from RAM — the synthesis process would write to a copy nobody reads")
 	}
 }
 
-// TestCleanup_KeepsWatchedTask giữ task còn người xem SSE.
+// TestCleanup_KeepsWatchedTask keeps tasks that still have SSE watchers.
 //
-// Xoá khỏi map trong khi một luồng SSE đang mở khiến người xem tiếp theo đăng ký lên một đối
-// tượng khác, và hai bản cùng tồn tại cho một task.
+// Deleting from the map while an SSE stream is open causes the next viewer to subscribe to a
+// different object, and two copies coexist for the same task.
 func TestCleanup_KeepsWatchedTask(t *testing.T) {
 	prev := state.RedisClient
 	state.RedisClient = nil
@@ -50,12 +51,12 @@ func TestCleanup_KeepsWatchedTask(t *testing.T) {
 	tm.Cleanup()
 
 	if _, ok := tm.Peek("cleanup-watched"); !ok {
-		t.Error("task còn người xem SSE bị thu hồi")
+		t.Error("task with SSE watchers was evicted")
 	}
 }
 
-// TestCleanup_RemovesFinishedTask giữ chiều ngược lại: đã xong và không ai xem thì phải thu
-// hồi, nếu không map chỉ có lớn lên.
+// TestCleanup_RemovesFinishedTask holds the opposite: done and unwatched must be evicted,
+// otherwise the map only grows.
 func TestCleanup_RemovesFinishedTask(t *testing.T) {
 	prev := state.RedisClient
 	state.RedisClient = nil
@@ -69,14 +70,14 @@ func TestCleanup_RemovesFinishedTask(t *testing.T) {
 	tm.Cleanup()
 
 	if _, ok := tm.Peek("cleanup-finished"); ok {
-		t.Error("task đã xong và không ai xem lẽ ra phải được thu hồi")
+		t.Error("finished and unwatched task should have been evicted")
 	}
 }
 
-// TestCleanup_RemovesAbandonedTask là trần tuyệt đối.
+// TestCleanup_RemovesAbandonedTask is the absolute ceiling.
 //
-// Worker chết giữa chừng thì không ai đặt task về trạng thái cuối. Không có trần thì những
-// task đó ở lại vĩnh viễn — đúng chỗ rỉ bộ nhớ mà việc giữ task đang chạy có thể tạo ra.
+// When a worker dies mid-flight, nobody sets the task to a terminal state. Without a ceiling,
+// those tasks stay forever — exactly the memory leak that keeping running tasks can create.
 func TestCleanup_RemovesAbandonedTask(t *testing.T) {
 	prev := state.RedisClient
 	state.RedisClient = nil
@@ -90,6 +91,6 @@ func TestCleanup_RemovesAbandonedTask(t *testing.T) {
 	tm.Cleanup()
 
 	if _, ok := tm.Peek("cleanup-abandoned"); ok {
-		t.Error("task mắc kẹt quá trần tuổi lẽ ra phải được thu hồi")
+		t.Error("stuck task past the age ceiling should have been evicted")
 	}
 }

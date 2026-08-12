@@ -14,17 +14,17 @@ func TestRefreshToken_IsNotAnAccessToken(t *testing.T) {
 	}
 
 	if _, err := security.ValidateAccessToken(refresh, "test-secret"); err == nil {
-		t.Fatal("refresh token được chấp nhận như access token")
+		t.Fatal("refresh token accepted as access token")
 	}
 	claims, err := security.ValidateRefreshToken(refresh, "test-secret")
 	if err != nil {
-		t.Fatalf("refresh token hợp lệ bị từ chối: %v", err)
+		t.Fatalf("valid refresh token rejected: %v", err)
 	}
 	if claims.Username != "user-1" || claims.TokenUse != security.TokenUseRefresh {
-		t.Fatalf("claims refresh không đúng: %+v", claims)
+		t.Fatalf("refresh claims incorrect: %+v", claims)
 	}
 	if claims.JTI != "jti-1" {
-		t.Fatalf("claims thiếu jti: %+v", claims)
+		t.Fatalf("claims missing jti: %+v", claims)
 	}
 }
 
@@ -35,18 +35,18 @@ func TestAccessToken_IsNotARefreshToken(t *testing.T) {
 	}
 
 	if _, err := security.ValidateRefreshToken(access, "test-secret"); err == nil {
-		t.Fatal("access token được chấp nhận như refresh token")
+		t.Fatal("access token accepted as refresh token")
 	}
 	claims, err := security.ValidateAccessToken(access, "test-secret")
 	if err != nil {
-		t.Fatalf("access token hợp lệ bị từ chối: %v", err)
+		t.Fatalf("valid access token rejected: %v", err)
 	}
 	if claims.Username != "user-1" || claims.TokenUse != security.TokenUseAccess {
-		t.Fatalf("claims access không đúng: %+v", claims)
+		t.Fatalf("access claims incorrect: %+v", claims)
 	}
-	// Access token không bao giờ mang jti.
+	// Access tokens never carry a jti.
 	if claims.JTI != "" {
-		t.Fatalf("access token mang jti: %+v", claims)
+		t.Fatalf("access token carries jti: %+v", claims)
 	}
 }
 
@@ -56,14 +56,14 @@ func TestRefreshToken_Expires(t *testing.T) {
 		t.Fatalf("create refresh token: %v", err)
 	}
 	if _, err := security.ValidateRefreshToken(refresh, "wrong-secret"); err == nil {
-		t.Fatal("refresh token được chấp nhận bằng secret khác")
+		t.Fatal("refresh token accepted with wrong secret")
 	}
 }
 
-// TestRefreshToken_ExpMatchesSession đảm bảo exp của JWT khớp đúng mốc hết hạn phiên: rotation
-// dựa vào sự trùng khớp này (token mới ra đời với cùng exp, không kéo dài phiên).
+// TestRefreshToken_ExpMatchesSession ensures the JWT exp exactly matches the session expiry:
+// rotation relies on this match (new token is issued with the same exp, not extending the session).
 func TestRefreshToken_ExpMatchesSession(t *testing.T) {
-	expiresAt := time.Now().Add(90 * time.Minute).UTC().Truncate(time.Second) // JWT serialise theo giây
+	expiresAt := time.Now().Add(90 * time.Minute).UTC().Truncate(time.Second) // JWT serializes to seconds
 	refresh, err := security.CreateRefreshToken("user-1", "user", "jti-3", "test-secret", expiresAt)
 	if err != nil {
 		t.Fatalf("create refresh token: %v", err)
@@ -71,9 +71,9 @@ func TestRefreshToken_ExpMatchesSession(t *testing.T) {
 
 	claims, err := security.ValidateRefreshToken(refresh, "test-secret")
 	if err != nil {
-		t.Fatalf("refresh token hợp lệ bị từ chối: %v", err)
+		t.Fatalf("valid refresh token rejected: %v", err)
 	}
 	if !claims.ExpiresAt.Time.Equal(expiresAt) {
-		t.Fatalf("exp trong token=%v, muốn=%v", claims.ExpiresAt.Time, expiresAt)
+		t.Fatalf("exp in token=%v, want=%v", claims.ExpiresAt.Time, expiresAt)
 	}
 }

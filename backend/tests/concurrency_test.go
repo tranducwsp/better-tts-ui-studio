@@ -11,9 +11,10 @@ import (
 	"backend/middleware"
 )
 
-// TestConcurrencyLimit_CapsActive yêu cầu chốt chặn độ phình bộ nhớ của /extract-text:
-// N request đồng thời không được vượt quá max đang xử lý một lúc, bất kể có bao nhiêu
-// tới cùng lúc. Số active đo bằng atomic counter trong handler; đỉnh của nó phải ≤ max.
+// TestConcurrencyLimit_CapsActive enforces the memory-bloat guard for /extract-text:
+// N concurrent requests must not exceed max being processed at once, regardless of how many
+// arrive simultaneously. Active count is measured by an atomic counter in the handler; its
+// peak must be ≤ max.
 func TestConcurrencyLimit_CapsActive(t *testing.T) {
 	const (
 		max     = 8
@@ -30,8 +31,8 @@ func TestConcurrencyLimit_CapsActive(t *testing.T) {
 					break
 				}
 			}
-			// Giữ chỗ đủ lâu để các request còn lại kịp xếp hàng — nếu middleware không
-			// chặn, 50 request này cùng lúc sẽ nâng đỉnh lên 50.
+			// Hold the slot long enough for the remaining requests to queue up — if the middleware
+			// were not blocking, all 50 requests would run concurrently and push the peak to 50.
 			time.Sleep(2 * time.Millisecond)
 			active.Add(-1)
 			w.WriteHeader(http.StatusOK)
@@ -50,6 +51,6 @@ func TestConcurrencyLimit_CapsActive(t *testing.T) {
 	wg.Wait()
 
 	if got := peak.Load(); got > max {
-		t.Fatalf("đỉnh số request đang xử lý %d vượt hạn mức %d", got, max)
+		t.Fatalf("peak active request count %d exceeds limit %d", got, max)
 	}
 }

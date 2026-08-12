@@ -9,8 +9,9 @@ import (
 	"backend/types"
 )
 
-// Bộ ca dùng chung với frontend. Nếu thêm ca mới, sửa docs/capability-resolution-cases.json
-// và cả hai phía tự nhận — đó là điểm của việc để dữ liệu ngoài mã nguồn.
+// Test cases shared with the frontend. To add new cases, edit
+// docs/capability-resolution-cases.json and both sides pick it up — that is the point of
+// keeping the data outside the source code.
 const fixturePath = "../../docs/capability-resolution-cases.json"
 
 type parityFixture struct {
@@ -28,14 +29,14 @@ func loadFixture(t *testing.T) parityFixture {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Clean(fixturePath))
 	if err != nil {
-		t.Fatalf("không đọc được bộ ca dùng chung: %v", err)
+		t.Fatalf("cannot read shared test cases: %v", err)
 	}
 	var f parityFixture
 	if err := json.Unmarshal(raw, &f); err != nil {
-		t.Fatalf("bộ ca dùng chung không hợp lệ: %v", err)
+		t.Fatalf("shared test cases are invalid: %v", err)
 	}
 	if len(f.Cases) == 0 {
-		t.Fatal("bộ ca rỗng")
+		t.Fatal("test cases are empty")
 	}
 	return f
 }
@@ -53,9 +54,9 @@ func asMap(r types.ResolvedCapabilities) map[string]bool {
 	}
 }
 
-// TestResolverMatchesSharedCases kiểm tra resolver Go trên đúng bộ ca mà frontend dùng.
-// Hai resolver hiện thực cùng một quy tắc ở hai ngôn ngữ; không có ràng buộc nào của trình
-// biên dịch giữ chúng khớp nhau, nên bài test này là thứ duy nhất bắt được lệch.
+// TestResolverMatchesSharedCases tests the Go resolver against the exact same cases the
+// frontend uses. Two resolvers implement the same rules in two languages; no compiler
+// constraint keeps them in sync, so this test is the only thing that catches drift.
 func TestResolverMatchesSharedCases(t *testing.T) {
 	f := loadFixture(t)
 
@@ -63,27 +64,28 @@ func TestResolverMatchesSharedCases(t *testing.T) {
 		got := asMap(f.Manifest.ResolveCapabilities(c.Mode))
 		for key, want := range c.Expect {
 			if got[key] != want {
-				t.Errorf("mode %q (%s): %s = %v, mong đợi %v", c.Mode, c.Why, key, got[key], want)
+				t.Errorf("mode %q (%s): %s = %v, want %v", c.Mode, c.Why, key, got[key], want)
 			}
 		}
 	}
 }
 
-// TestPlatformDefaultsMatchFixture bắt trường hợp ai đó đổi hằng số mặc định ở một phía mà
-// quên phía kia — bộ ca là bản ghi chung của giá trị đã thống nhất.
+// TestPlatformDefaultsMatchFixture catches the case where someone changes the default
+// constants on one side but forgets the other — the fixture is the shared record of the
+// agreed-upon value.
 func TestPlatformDefaultsMatchFixture(t *testing.T) {
 	f := loadFixture(t)
 
 	got := asMap(types.PlatformDefaultCapabilities)
 	for key, want := range f.PlatformDefaults {
 		if got[key] != want {
-			t.Errorf("mặc định nền tảng %s = %v, bộ ca ghi %v", key, got[key], want)
+			t.Errorf("platform default %s = %v, fixture says %v", key, got[key], want)
 		}
 	}
 
 	var nilManifest *types.UniversalManifest
 	if nilManifest.ChunkSize() != f.DefaultMaxTextLength {
-		t.Errorf("ChunkSize() khi chưa có manifest = %d, bộ ca ghi %d",
+		t.Errorf("ChunkSize() with no manifest = %d, fixture says %d",
 			nilManifest.ChunkSize(), f.DefaultMaxTextLength)
 	}
 }

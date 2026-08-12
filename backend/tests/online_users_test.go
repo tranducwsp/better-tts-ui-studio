@@ -11,15 +11,16 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// TestOnlineUsers_OneRoundTrip khoá lại lý do OnlineUsers tồn tại.
+// TestOnlineUsers_OneRoundTrip locks in the reason OnlineUsers exists.
 //
-// Trang quản trị hỏi trạng thái online cho cả bảng người dùng. Trước đây nó gọi IsUserOnline
-// trong vòng lặp — một round-trip Redis cho mỗi hàng — nên độ trễ của trang tỉ lệ thuận với số
-// người dùng, và mỗi lượt lại không có hạn thời gian. Bài này đếm số lệnh Redis thật sự đi ra.
+// The admin page queries online status for the entire user table. Previously it called
+// IsUserOnline in a loop — one Redis round-trip per row — so page latency was proportional to
+// the number of users, and each call had no time bound. This test counts the actual Redis
+// commands sent.
 func TestOnlineUsers_OneRoundTrip(t *testing.T) {
 	addr := os.Getenv("TEST_REDIS_ADDR")
 	if addr == "" {
-		t.Skip("chưa đặt TEST_REDIS_ADDR — bỏ qua bài tích hợp")
+		t.Skip("TEST_REDIS_ADDR not set — skipping integration test")
 	}
 
 	var commands int
@@ -33,7 +34,7 @@ func TestOnlineUsers_OneRoundTrip(t *testing.T) {
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
-		t.Skipf("không nối được Redis: %v", err)
+		t.Skipf("cannot connect to Redis: %v", err)
 	}
 
 	prev := state.RedisClient
@@ -43,7 +44,7 @@ func TestOnlineUsers_OneRoundTrip(t *testing.T) {
 		_ = client.Close()
 	})
 
-	// Ba người online, hai người không.
+	// Three users online, two offline.
 	ids := []string{"u1", "u2", "u3", "u4", "u5"}
 	for _, id := range []string{"u1", "u3", "u5"} {
 		state.TouchUserOnline(ctx, id)
@@ -58,22 +59,22 @@ func TestOnlineUsers_OneRoundTrip(t *testing.T) {
 	online := state.OnlineUsers(ctx, ids)
 
 	if commands != 1 {
-		t.Errorf("OnlineUsers dùng %d lệnh Redis cho %d người — muốn 1", commands, len(ids))
+		t.Errorf("OnlineUsers used %d Redis commands for %d users — want 1", commands, len(ids))
 	}
 
 	for _, id := range []string{"u1", "u3", "u5"} {
 		if !online[id] {
-			t.Errorf("%s phải là online", id)
+			t.Errorf("%s should be online", id)
 		}
 	}
 	for _, id := range []string{"u2", "u4"} {
 		if online[id] {
-			t.Errorf("%s không được là online", id)
+			t.Errorf("%s should not be online", id)
 		}
 	}
 }
 
-// TestOnlineUsers_NoRedis trả về map rỗng thay vì panic khi chạy không có Redis.
+// TestOnlineUsers_NoRedis returns an empty map instead of panicking when running without Redis.
 func TestOnlineUsers_NoRedis(t *testing.T) {
 	prev := state.RedisClient
 	state.RedisClient = nil
@@ -81,20 +82,20 @@ func TestOnlineUsers_NoRedis(t *testing.T) {
 
 	online := state.OnlineUsers(context.Background(), []string{"a", "b"})
 	if len(online) != 0 {
-		t.Errorf("không có Redis thì không ai online, nhận %v", online)
+		t.Errorf("without Redis no one is online, got %v", online)
 	}
 }
 
-// TestOnlineUsers_EmptyInput không gọi Redis khi danh sách rỗng: MGET không nhận zero key và
-// sẽ trả lỗi, biến một trang không có người dùng nào thành một lỗi.
+// TestOnlineUsers_EmptyInput does not call Redis with an empty list: MGET does not accept
+// zero keys and would error, turning a page with no users into an error.
 func TestOnlineUsers_EmptyInput(t *testing.T) {
 	online := state.OnlineUsers(context.Background(), nil)
 	if len(online) != 0 {
-		t.Errorf("danh sách rỗng phải trả map rỗng, nhận %v", online)
+		t.Errorf("empty list must return an empty map, got %v", online)
 	}
 }
 
-// countingHook đếm số lệnh Redis đi ra, để phân biệt một lượt MGET với N lượt EXISTS.
+// countingHook counts Redis commands sent, to distinguish a single MGET from N EXISTS calls.
 type countingHook struct{ n *int }
 
 func (countingHook) DialHook(next redis.DialHook) redis.DialHook { return next }

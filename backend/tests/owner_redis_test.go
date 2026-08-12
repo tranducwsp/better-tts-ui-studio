@@ -12,16 +12,16 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// redisOrSkip nối thẳng tới Redis kèm mật khẩu, hoặc bỏ qua bài.
+// redisOrSkip connects directly to Redis with password, or skips the test.
 //
-// Không dùng withRedis: hàm đó đi qua InitRedis, vốn chỉ đọc cấu hình từ Config và không mang
-// theo mật khẩu của stack đang chạy.
+// Not using withRedis: that function goes through InitRedis, which only reads config from
+// Config and does not carry the running stack's password.
 func redisOrSkip(t *testing.T) {
 	t.Helper()
 
 	addr := os.Getenv("TEST_REDIS_ADDR")
 	if addr == "" {
-		t.Skip("chưa đặt TEST_REDIS_ADDR — bỏ qua bài tích hợp")
+		t.Skip("TEST_REDIS_ADDR not set — skipping integration test")
 	}
 
 	prev := state.RedisClient
@@ -34,7 +34,7 @@ func redisOrSkip(t *testing.T) {
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
-		t.Skipf("không nối được Redis tại %s: %v", addr, err)
+		t.Skipf("cannot connect to Redis at %s: %v", addr, err)
 	}
 
 	state.RedisClient = client
@@ -44,13 +44,13 @@ func redisOrSkip(t *testing.T) {
 	})
 }
 
-// TestOwnerSurvivesOnRedis khoá lại lý do trường OwnerID tồn tại.
+// TestOwnerSurvivesOnRedis locks in the reason the OwnerID field exists.
 //
-// Trường này có mặt để replica khác khỏi phải join DB mỗi lần hỏi tiến độ. Nhưng nó chỉ làm
-// được việc đó nếu thực sự tới được Redis: trước đây GetOrCreate ghi bản đầu TRƯỚC khi
-// SetOwner kịp chạy, và marshalState không có trường này, nên mọi lượt ghi tiến độ về sau
-// cũng không mang nó. Kết quả là owner_id không bao giờ xuất hiện trên Redis, và cái giá mà
-// trường này sinh ra để tránh thì vẫn phải trả — im lặng, ở mọi request.
+// This field exists so other replicas don't have to join the DB on every progress query. But
+// it only works if it actually reaches Redis: previously GetOrCreate wrote the initial copy
+// BEFORE SetOwner ran, and marshalState did not include this field, so every subsequent
+// progress write also did not carry it. The result was that owner_id never appeared on Redis,
+// and the cost this field was created to avoid was still paid — silently, on every request.
 func TestOwnerSurvivesOnRedis(t *testing.T) {
 	redisOrSkip(t)
 
@@ -60,7 +60,7 @@ func TestOwnerSurvivesOnRedis(t *testing.T) {
 	item := state.GlobalTaskManager.GetOrCreate(taskID)
 	item.SetOwner(owner)
 
-	// Một mốc tiến độ như worker vẫn phát giữa chừng.
+	// A progress update as the worker would emit mid-flight.
 	item.Notify(state.TaskUpdate{Status: "processing", Progress: 10})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -69,7 +69,7 @@ func TestOwnerSurvivesOnRedis(t *testing.T) {
 
 	val, err := state.RedisClient.Get(ctx, "task:"+taskID).Result()
 	if err != nil {
-		t.Fatalf("đọc trạng thái task từ Redis: %v", err)
+		t.Fatalf("read task state from Redis: %v", err)
 	}
 
 	var got struct {
@@ -77,22 +77,22 @@ func TestOwnerSurvivesOnRedis(t *testing.T) {
 		Status  string `json:"status"`
 	}
 	if err := sonic.Unmarshal([]byte(val), &got); err != nil {
-		t.Fatalf("giải mã trạng thái: %v", err)
+		t.Fatalf("decode state: %v", err)
 	}
 
 	if got.OwnerID != owner {
-		t.Errorf("owner_id trên Redis = %q, muốn %q — replica khác sẽ phải hỏi DB mỗi request (payload: %s)", got.OwnerID, owner, val)
+		t.Errorf("owner_id on Redis = %q, want %q — other replicas would have to query DB on every request (payload: %s)", got.OwnerID, owner, val)
 	}
 	if got.Status != "processing" {
-		t.Errorf("status = %q, muốn processing", got.Status)
+		t.Errorf("status = %q, want processing", got.Status)
 	}
 }
 
-// TestOwnerReadableFromAnotherProcess mô phỏng replica thứ hai đọc task.
+// TestOwnerReadableFromAnotherProcess simulates a second replica reading the task.
 //
-// Đây là đường đi thật mà ownsTask dựa vào: tiến trình web B chưa từng thấy task do tiến
-// trình A tạo, nên nó nạp từ Redis. Nếu owner không nằm trong đó, ownsTask rơi xuống nhánh
-// hỏi DB — vẫn đúng, nhưng đúng bằng cách trả cái giá mà trường OwnerID sinh ra để tránh.
+// This is the real path that ownsTask relies on: web process B has never seen the task created
+// by process A, so it loads it from Redis. If the owner is not in there, ownsTask falls back to
+// the DB query branch — still correct, but correct at the cost this field was created to avoid.
 func TestOwnerReadableFromAnotherProcess(t *testing.T) {
 	redisOrSkip(t)
 
@@ -104,15 +104,15 @@ func TestOwnerReadableFromAnotherProcess(t *testing.T) {
 	item.Notify(state.TaskUpdate{Status: "processing", Progress: 5})
 	t.Cleanup(func() { state.RedisClient.Del(context.Background(), "task:"+taskID) })
 
-	// Tiến trình thứ hai: TaskManager mới, RAM rỗng, cùng một Redis.
+	// Second process: fresh TaskManager, empty RAM, same Redis.
 	other := state.NewTaskManager()
 	fetched, ok := other.Get(taskID)
 	if !ok {
-		t.Fatal("replica thứ hai không nạp được task từ Redis")
+		t.Fatal("second replica could not load the task from Redis")
 	}
 
 	gotOwner, known := fetched.Owner()
 	if !known || gotOwner != owner {
-		t.Errorf("replica thứ hai thấy owner = %q (known=%v), muốn %q", gotOwner, known, owner)
+		t.Errorf("second replica sees owner = %q (known=%v), want %q", gotOwner, known, owner)
 	}
 }

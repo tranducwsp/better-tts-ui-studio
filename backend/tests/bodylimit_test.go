@@ -10,9 +10,9 @@ import (
 	"backend/middleware"
 )
 
-// bodyTestHandler là một handler đọc hết body rồi trả 200 — giống đúng các handler JSON
-// (auth, synthesize, history) vốn decode tới EOF. Ghép với middleware.BodyLimit để quan sát
-// cách body quá trần phản ảnh qua lỗi đọc.
+// bodyTestHandler is a handler that reads the body to completion and returns 200 — exactly
+// like the JSON handlers (auth, synthesize, history) that decode to EOF. Paired with
+// middleware.BodyLimit to observe how an oversized body surfaces through read errors.
 func bodyTestHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var dst strings.Builder
@@ -24,8 +24,8 @@ func bodyTestHandler() http.Handler {
 	})
 }
 
-// TestBodyLimit_BlocksOversizedJSON xác nhận body JSON quá 2 MiB bị phản ánh như lỗi đọc
-// (chứ không dựng hết vào RAM rồi xử lý như trước C3).
+// TestBodyLimit_BlocksOversizedJSON confirms a JSON body exceeding 2 MiB surfaces as a read
+// error (rather than being fully buffered in RAM and processed, as before C3).
 func TestBodyLimit_BlocksOversizedJSON(t *testing.T) {
 	h := middleware.BodyLimit(bodyTestHandler())
 
@@ -36,27 +36,27 @@ func TestBodyLimit_BlocksOversizedJSON(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("body quá trần phải phản ánh 413, got %d", rec.Code)
+		t.Errorf("oversized body must surface as 413, got %d", rec.Code)
 	}
 }
 
-// TestBodyLimit_allowsMultipart: upload giọng nói là multipart, qua middleware phải nguyên
-// vẹn — handler upload tự đặt trần MAX_UPLOAD_SIZE_MB riêng.
+// TestBodyLimit_allowsMultipart: voice uploads are multipart and must pass through the
+// middleware intact — the upload handler sets its own MAX_UPLOAD_SIZE_MB ceiling.
 func TestBodyLimit_allowsMultipart(t *testing.T) {
 	h := middleware.BodyLimit(bodyTestHandler())
 
-	big := strings.Repeat("b", 5<<20) // 5 MiB — vượt trần JSON nhưng multipart bị bỏ qua
+	big := strings.Repeat("b", 5<<20) // 5 MiB — exceeds JSON limit but multipart is exempted
 	req := httptest.NewRequest(http.MethodPost, "/api/clone/upload", strings.NewReader(big))
 	req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("multipart không được bị BodyLimit chặn, got %d", rec.Code)
+		t.Errorf("multipart must not be blocked by BodyLimit, got %d", rec.Code)
 	}
 }
 
-// TestBodyLimit_allowsNormalBody: body dưới trần đi qua không suy chuyển.
+// TestBodyLimit_allowsNormalBody: body under the limit passes through unchanged.
 func TestBodyLimit_allowsNormalBody(t *testing.T) {
 	h := middleware.BodyLimit(bodyTestHandler())
 
@@ -66,6 +66,6 @@ func TestBodyLimit_allowsNormalBody(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("body nhỏ phải đi qua, got %d", rec.Code)
+		t.Errorf("small body must pass through, got %d", rec.Code)
 	}
 }

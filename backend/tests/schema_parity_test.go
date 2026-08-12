@@ -10,16 +10,16 @@ import (
 
 const exampleSchemaPath = "../../core-tts-example/schemas.py"
 
-// TestExampleDeclaresVoiceModes kiểm VoiceInfo.modes là trường bắt buộc.
+// TestExampleDeclaresVoiceModes checks that VoiceInfo.modes is a required field.
 //
-// Nếu ai đó thêm lại `= Field(default_factory=list)` thì Pydantic nhận một giọng không khai
-// mode, và cách nền tảng lọc sẽ âm thầm trả về danh sách rỗng.
+// If someone adds back `= Field(default_factory=list)`, Pydantic accepts a voice with no
+// declared modes, and the platform's filtering will silently return an empty list.
 func TestExampleDeclaresVoiceModes(t *testing.T) {
 	src := readSchema(t, exampleSchemaPath)
 
 	block, ok := classBlock(src, "VoiceInfo")
 	if !ok {
-		t.Fatalf("%s: không tìm thấy class VoiceInfo", exampleSchemaPath)
+		t.Fatalf("%s: class VoiceInfo not found", exampleSchemaPath)
 	}
 
 	line := ""
@@ -30,41 +30,41 @@ func TestExampleDeclaresVoiceModes(t *testing.T) {
 		}
 	}
 	if line == "" {
-		t.Errorf("%s: VoiceInfo phải khai `modes`", filepath.Base(exampleSchemaPath))
+		t.Errorf("%s: VoiceInfo must declare `modes`", filepath.Base(exampleSchemaPath))
 		return
 	}
 	if strings.Contains(line, "=") {
-		t.Errorf("%s: `modes` phải là trường bắt buộc, không có mặc định — đang là %q",
+		t.Errorf("%s: `modes` must be a required field, no default — currently %q",
 			filepath.Base(exampleSchemaPath), line)
 	}
 }
 
-// TestExampleSchemaParses kiểm example engine schemas.py có thể đọc được.
+// TestExampleSchemaParses checks that the example engine's schemas.py is readable.
 //
-// Engine thật không còn nằm trong repo — AI engineer tự thay bằng engine của họ.
-// Example engine là bản tham khảo contract nên phải hợp lệ.
+// The real engine is no longer in the repo — AI engineers replace it with their own.
+// The example engine is the contract reference and must be valid.
 func TestExampleSchemaParses(t *testing.T) {
 	classes := parsePydanticClasses(t, exampleSchemaPath)
 	if len(classes) == 0 {
-		t.Fatalf("không đọc được class nào từ %s", exampleSchemaPath)
+		t.Fatalf("no classes read from %s", exampleSchemaPath)
 	}
 
-	// Các class bắt buộc phải có trong example engine
+	// Classes that are required in the example engine
 	required := []string{"SynthesizeRequest", "VoiceInfo", "UniversalManifest"}
 	for _, name := range required {
 		if _, ok := classes[name]; !ok {
-			t.Errorf("example thiếu class %s", name)
+			t.Errorf("example is missing class %s", name)
 		}
 	}
 
-	// SynthesizeRequest phải có các trường nền tảng gửi
+	// SynthesizeRequest must have the fields the platform sends
 	srFields, ok := classes["SynthesizeRequest"]
 	if !ok {
 		return
 	}
 	for _, f := range []string{"text", "voice_id", "speed", "engine"} {
 		if _, ok := srFields[f]; !ok {
-			t.Errorf("SynthesizeRequest thiếu trường %q", f)
+			t.Errorf("SynthesizeRequest missing field %q", f)
 		}
 	}
 }
@@ -78,7 +78,7 @@ func readSchema(t *testing.T, path string) string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
-		t.Fatalf("đọc %s: %v", path, err)
+		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(raw)
 }

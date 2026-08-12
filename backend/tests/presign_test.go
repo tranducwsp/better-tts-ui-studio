@@ -17,31 +17,31 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// TestLocalStore_IsNotPresigner là bất biến mà đường phục vụ âm thanh dựa vào.
+// TestLocalStore_IsNotPresigner is an invariant that the audio serving path relies on.
 //
-// Handler quyết định chuyển hướng hay ghi bytes bằng một type assertion sang Presigner, chứ
-// không so sánh STORAGE_BACKEND với chuỗi "s3". Nếu LocalStore bỗng thoả interface này thì
-// deployment dùng đĩa cục bộ sẽ phát ra URL mà không gì phục vụ được.
+// The handler decides between redirecting and writing bytes via a type assertion to Presigner,
+// not by comparing STORAGE_BACKEND to the string "s3". If LocalStore were to satisfy this
+// interface, local-disk deployments would emit URLs that nothing can serve.
 func TestLocalStore_IsNotPresigner(t *testing.T) {
 	s, err := storage.NewLocalStore(t.TempDir())
 	if err != nil {
-		t.Fatalf("không dựng được kho: %v", err)
+		t.Fatalf("failed to create store: %v", err)
 	}
 	if _, ok := any(s).(storage.Presigner); ok {
-		t.Error("LocalStore không được thoả Presigner")
+		t.Error("LocalStore must not satisfy Presigner")
 	}
 }
 
-// TestS3Store_IsPresigner giữ chiều ngược lại: nếu chữ ký PresignGet lệch khỏi interface,
-// assertion trong handler lặng lẽ trả false và mọi lượt tải quay về đi qua backend — chậm hơn
-// nhưng vẫn đúng, nên không có gì hỏng để mà phát hiện.
+// TestS3Store_IsPresigner holds the opposite direction: if PresignGet's signature drifts from
+// the interface, the handler's assertion silently returns false and every download falls back to
+// passing through the backend — slower but still correct, so nothing visibly breaks to detect it.
 func TestS3Store_IsPresigner(t *testing.T) {
 	if _, ok := any(&storage.S3Store{}).(storage.Presigner); !ok {
-		t.Error("S3Store phải thoả Presigner")
+		t.Error("S3Store must satisfy Presigner")
 	}
 }
 
-// fakePresigner là một Store phát URL, để kiểm nhánh chuyển hướng mà không cần S3 thật.
+// fakePresigner is a Store that emits URLs, so the redirect branch can be tested without a real S3.
 type fakePresigner struct {
 	storage.Store
 	url    string
@@ -53,24 +53,24 @@ func (f *fakePresigner) PresignGet(_ context.Context, key string, ttl time.Durat
 	return f.url + "?key=" + key, nil
 }
 
-// TestGetTaskAudio_RedirectsWhenStoreCanPresign khoá lại lý do tồn tại của thay đổi này.
+// TestGetTaskAudio_RedirectsWhenStoreCanPresign locks in the reason this change exists.
 //
-// Đo trước khi có nó: một tệp 563 KB đi qua backend 1180 KB — vào một lần rồi ra một lần — và
-// nằm trọn trong RAM suốt lượt tải. Sau khi có, cùng đường đi đó chỉ còn một phản hồi 302.
+// Before: a 563 KB file passing through the backend became 1180 KB — in once and out once —
+// and sat entirely in RAM for the duration of the download. After, the same path is just a 302 response.
 func TestGetTaskAudio_RedirectsWhenStoreCanPresign(t *testing.T) {
 	prev := storage.Global
 	defer func() { storage.Global = prev }()
 
 	base, err := storage.NewLocalStore(t.TempDir())
 	if err != nil {
-		t.Fatalf("không dựng được kho: %v", err)
+		t.Fatalf("failed to create store: %v", err)
 	}
 	fake := &fakePresigner{Store: base, url: "https://example.invalid/obj"}
 	storage.Global = fake
 
 	const taskID = "presign-task-1"
 	if err := base.Put(context.Background(), storage.AudioKey(taskID, "wav"), bytes.NewReader([]byte("RIFF....WAVE"))); err != nil {
-		t.Fatalf("ghi đối tượng: %v", err)
+		t.Fatalf("write object: %v", err)
 	}
 
 	task := state.GlobalTaskManager.GetOrCreate(taskID)
@@ -88,45 +88,45 @@ func TestGetTaskAudio_RedirectsWhenStoreCanPresign(t *testing.T) {
 	r.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusFound {
-		t.Fatalf("kho phát được URL thì phải trả 302, got %d", rec.Code)
+		t.Fatalf("store that can emit URLs must return 302, got %d", rec.Code)
 	}
 	loc := rec.Header().Get("Location")
 	if !strings.HasPrefix(loc, "https://example.invalid/obj") {
-		t.Errorf("Location không trỏ tới kho: %q", loc)
+		t.Errorf("Location does not point to the store: %q", loc)
 	}
-	// http.Redirect tự ghi một trang HTML ngắn kèm liên kết — hành vi chuẩn của net/http, và
-	// client theo redirect không bao giờ đọc tới nó. Điều cần khẳng định là phản hồi KHÔNG
-	// mang âm thanh, nên kiểm theo trần kích thước thay vì đòi body rỗng.
+	// http.Redirect writes a short HTML page with a link — standard net/http behavior, and
+	// redirect-following clients never read it. What matters is that the response does NOT
+	// carry audio, so we check against a size ceiling rather than demanding an empty body.
 	if rec.Body.Len() > 512 {
-		t.Errorf("phản hồi chuyển hướng mang %d byte — có vẻ vẫn kèm âm thanh", rec.Body.Len())
+		t.Errorf("redirect response carries %d bytes — appears to still include audio", rec.Body.Len())
 	}
 	if strings.Contains(rec.Body.String(), "RIFF") {
-		t.Error("phản hồi chuyển hướng không được mang bytes âm thanh")
+		t.Error("redirect response must not carry audio bytes")
 	}
 	if len(fake.signed) == 0 {
-		t.Error("PresignGet lẽ ra phải được gọi")
+		t.Error("PresignGet should have been called")
 	}
 }
 
-// TestGetTaskAudio_ChecksOwnershipBeforeSigning là nửa bảo mật của cùng thay đổi.
+// TestGetTaskAudio_ChecksOwnershipBeforeSigning is the security half of the same change.
 //
-// URL đã ký không đi qua ownsTask ở lần dùng lại, nên phép kiểm quyền phải xảy ra TRƯỚC khi
-// ký. Nếu thứ tự bị đảo, người không sở hữu task vẫn nhận được một URL dùng được — và 403 sau
-// đó chẳng còn ý nghĩa gì.
+// A signed URL does not go through ownsTask on reuse, so the ownership check must happen BEFORE
+// signing. If the order were reversed, a non-owner would still receive a usable URL — and a
+// subsequent 403 would be meaningless.
 func TestGetTaskAudio_ChecksOwnershipBeforeSigning(t *testing.T) {
 	prev := storage.Global
 	defer func() { storage.Global = prev }()
 
 	base, err := storage.NewLocalStore(t.TempDir())
 	if err != nil {
-		t.Fatalf("không dựng được kho: %v", err)
+		t.Fatalf("failed to create store: %v", err)
 	}
 	fake := &fakePresigner{Store: base, url: "https://example.invalid/obj"}
 	storage.Global = fake
 
 	const taskID = "presign-task-2"
 	if err := base.Put(context.Background(), storage.AudioKey(taskID, "wav"), bytes.NewReader([]byte("RIFF....WAVE"))); err != nil {
-		t.Fatalf("ghi đối tượng: %v", err)
+		t.Fatalf("write object: %v", err)
 	}
 
 	task := state.GlobalTaskManager.GetOrCreate(taskID)
@@ -144,9 +144,9 @@ func TestGetTaskAudio_ChecksOwnershipBeforeSigning(t *testing.T) {
 	r.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {
-		t.Errorf("người không sở hữu phải nhận 403, got %d", rec.Code)
+		t.Errorf("non-owner must receive 403, got %d", rec.Code)
 	}
 	if len(fake.signed) != 0 {
-		t.Errorf("không được ký URL cho người không sở hữu, đã ký %v", fake.signed)
+		t.Errorf("must not sign URL for non-owner, signed %v", fake.signed)
 	}
 }

@@ -11,10 +11,12 @@ import (
 	"backend/middleware"
 )
 
-// TestRateLimit_BlocksBurst xác nhận lượt thứ (limit+1) trong cùng cửa sổ bị chặn.
+// TestRateLimit_BlocksBurst confirms the (limit+1)-th request within the same window is
+// blocked.
 //
-// Đây là lớp duy nhất ngăn dò mật khẩu trên /login, nên nó đáng có một bài test: một
-// off-by-one ở đây là im lặng, và chỉ thấy được khi có người đã dò xong.
+// This is the only layer preventing password guessing on /login, so it deserves a test: an
+// off-by-one here is silent and would only be noticed after someone has already finished
+// guessing.
 func TestRateLimit_BlocksBurst(t *testing.T) {
 	const limit = 3
 	handler := middleware.RateLimit("test", limit, time.Minute)(
@@ -30,7 +32,7 @@ func TestRateLimit_BlocksBurst(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Fatalf("Lượt %d trong hạn mức phải đi qua, got %d", i, rec.Code)
+			t.Fatalf("Request %d within limit must pass, got %d", i, rec.Code)
 		}
 	}
 
@@ -40,15 +42,15 @@ func TestRateLimit_BlocksBurst(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusTooManyRequests {
-		t.Errorf("Lượt vượt hạn mức phải bị chặn với 429, got %d", rec.Code)
+		t.Errorf("Request exceeding limit must be blocked with 429, got %d", rec.Code)
 	}
 	if rec.Header().Get("Retry-After") == "" {
-		t.Errorf("Phản hồi 429 nên nói khi nào thử lại được")
+		t.Errorf("429 response should indicate when to retry")
 	}
 }
 
-// TestRateLimit_PerIP xác nhận hạn mức tính riêng từng IP, để một người dùng dồn hết lượt
-// không khoá cửa đăng nhập của mọi người khác.
+// TestRateLimit_PerIP confirms the limit is per-IP, so one user exhausting their quota
+// does not lock the login door for everyone else.
 func TestRateLimit_PerIP(t *testing.T) {
 	const limit = 2
 	handler := middleware.RateLimit("test", limit, time.Minute)(
@@ -69,13 +71,13 @@ func TestRateLimit_PerIP(t *testing.T) {
 	handler.ServeHTTP(rec, other)
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("IP khác phải còn nguyên hạn mức, got %d", rec.Code)
+		t.Errorf("Different IP must still have its full quota, got %d", rec.Code)
 	}
 }
 
-// TestRateLimitUser_PerUser xác nhận hạn mức cho /extract-text khoá theo user đã xác thực,
-// không theo IP: hai user dưới cùng NAT (cùng RemoteAddr) có budget riêng, nên một người
-// giữ chu kỳ gọi không cắt hạn mức của người ngồi cạnh.
+// TestRateLimitUser_PerUser confirms the limit for /extract-text is keyed by authenticated
+// user, not by IP: two users behind the same NAT (same RemoteAddr) have separate budgets, so
+// one user hammering the endpoint does not consume the other's quota.
 func TestRateLimitUser_PerUser(t *testing.T) {
 	const limit = 2
 	handler := middleware.RateLimitUser("extract-test", limit, time.Minute)(
@@ -93,26 +95,26 @@ func TestRateLimitUser_PerUser(t *testing.T) {
 		return rec.Code
 	}
 
-	// user-a rút sạch budget của chính mình (limit lượt), rồi lượt thứ limit+1 bị chặn.
+	// // user-a exhausts their own budget (limit requests), then the (limit+1)-th is blocked.
 	for i := 0; i < limit; i++ {
 		if got := serve("user-a", "203.0.113.7:5555"); got != http.StatusOK {
-			t.Fatalf("user-a lượt %d phải đi qua, got %d", i, got)
+			t.Fatalf("user-a request %d must pass, got %d", i, got)
 		}
 	}
 	if got := serve("user-a", "203.0.113.7:5555"); got != http.StatusTooManyRequests {
-		t.Errorf("user-a vượt hạn mức phải bị chặn 429, got %d", got)
+		t.Errorf("user-a exceeding limit must be blocked with 429, got %d", got)
 	}
 
-	// user-b chưa gọi gì, cùng IP — budget riêng nên vẫn đi qua đủ lượt.
+	// // user-b has not made any calls, same IP — separate budget so still passes all requests.
 	for i := 0; i < limit; i++ {
 		if got := serve("user-b", "203.0.113.7:5555"); got != http.StatusOK {
-			t.Fatalf("user-b lượt %d phải có budget riêng, got %d", i, got)
+			t.Fatalf("user-b request %d must have its own budget, got %d", i, got)
 		}
 	}
 }
 
-// TestRateLimitUser_FallsBackToIP khi chưa xác thực: không có user trong context thì khoá
-// theo IP, để budget không vô hạn cho request nặc danh.
+// TestRateLimitUser_FallsBackToIP when unauthenticated: no user in context means fall back
+// to IP-based limiting, so anonymous requests do not have an unlimited budget.
 func TestRateLimitUser_FallsBackToIP(t *testing.T) {
 	const limit = 2
 	handler := middleware.RateLimitUser("extract-test", limit, time.Minute)(
@@ -133,6 +135,6 @@ func TestRateLimitUser_FallsBackToIP(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusTooManyRequests {
-		t.Errorf("user nặc danh vượt hạn mức phải bị chặn 429, got %d", rec.Code)
+		t.Errorf("anonymous user exceeding limit must be blocked with 429, got %d", rec.Code)
 	}
 }

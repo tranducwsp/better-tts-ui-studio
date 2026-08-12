@@ -14,16 +14,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// dbOrSkip nối tới PostgreSQL thật, hoặc bỏ qua bài.
+// dbOrSkip connects to a real PostgreSQL, or skips the test.
 //
-// Ownership của job nằm ở tầng SQL (ON CONFLICT ... RETURNING user_id), nên không có cách kiểm
-// nào trung thực mà không có cơ sở dữ liệu: một bản giả sẽ chỉ kiểm lại chính giả định của nó.
+// Job ownership lives at the SQL layer (ON CONFLICT ... RETURNING user_id), so there is no
+// honest way to test it without a database: a mock would only test its own assumptions.
 func dbOrSkip(t *testing.T) {
 	t.Helper()
 
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
-		t.Skip("chưa đặt TEST_DATABASE_URL — bỏ qua bài tích hợp")
+		t.Skip("TEST_DATABASE_URL not set — skipping integration test")
 	}
 
 	if db.Queries != nil {
@@ -35,18 +35,18 @@ func dbOrSkip(t *testing.T) {
 
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
-		t.Skipf("không dựng được pool: %v", err)
+		t.Skipf("failed to create pool: %v", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		t.Skipf("không nối được PostgreSQL: %v", err)
+		t.Skipf("cannot connect to PostgreSQL: %v", err)
 	}
 
 	db.Pool = pool
 	db.Queries = sqlc.New(pool)
 }
 
-// makeUser tạo một người dùng dùng một lần cho bài kiểm thử.
+// makeUser creates a one-shot user for the test.
 func makeUser(t *testing.T, ctx context.Context) string {
 	t.Helper()
 
@@ -59,7 +59,7 @@ func makeUser(t *testing.T, ctx context.Context) string {
 		IsApproved:   true,
 	})
 	if err != nil {
-		t.Fatalf("tạo người dùng: %v", err)
+		t.Fatalf("create user: %v", err)
 	}
 	t.Cleanup(func() {
 		_, _ = db.Pool.Exec(context.Background(), "DELETE FROM users WHERE id = $1", id)
@@ -67,12 +67,14 @@ func makeUser(t *testing.T, ctx context.Context) string {
 	return id
 }
 
-// TestRegisterJobAndChunk_RejectsOtherUsersJob là nửa quan trọng nhất của phép kiểm quyền.
+// TestRegisterJobAndChunk_RejectsOtherUsersJob is the most critical half of the ownership
+// check.
 //
-// job_id do client gửi lên và không có gì buộc nó là của người gọi. EnsureTTSJob là upsert, nên
-// khi trùng khoá thì job của người khác vẫn nguyên — rồi chunk của người gọi được chèn vào dưới
-// job đó. Hậu quả đo được: text của người gọi hiện ra trong lịch sử của người bị nhắm, và vì
-// GetTaskOwner join qua tts_jobs.user_id nên chunk vừa chèn lại đọc thành của người kia.
+// The job_id is sent by the client and nothing forces it to belong to the caller. EnsureTTSJob
+// is an upsert, so when the key collides the other user's job remains intact — then the
+// caller's chunk gets inserted under that job. The measurable consequence: the caller's text
+// appears in the victim's history, and because GetTaskOwner joins via tts_jobs.user_id, the
+// newly inserted chunk reads as belonging to the victim.
 func TestRegisterJobAndChunk_RejectsOtherUsersJob(t *testing.T) {
 	dbOrSkip(t)
 
@@ -90,37 +92,37 @@ func TestRegisterJobAndChunk_RejectsOtherUsersJob(t *testing.T) {
 
 	audio := db.JobAudioParams{Speed: 1.0}
 
-	// Người bị nhắm tạo job của mình một cách bình thường.
-	if err := db.RegisterJobAndChunk(ctx, victim, jobID, "standard", "v", audio, 1, victimTask, 0, "văn bản của tôi"); err != nil {
-		t.Fatalf("người bị nhắm không tạo được job của chính mình: %v", err)
+	// The victim creates their own job normally.
+	if err := db.RegisterJobAndChunk(ctx, victim, jobID, "standard", "v", audio, 1, victimTask, 0, "my text"); err != nil {
+		t.Fatalf("victim could not create their own job: %v", err)
 	}
 
-	// Người tấn công gửi đúng job_id đó kèm text của mình.
-	err := db.RegisterJobAndChunk(ctx, attacker, jobID, "standard", "v", audio, 1, attackerTask, 1, "văn bản chèn vào")
+	// The attacker sends the same job_id with their own text.
+	err := db.RegisterJobAndChunk(ctx, attacker, jobID, "standard", "v", audio, 1, attackerTask, 1, "injected text")
 	if !errors.Is(err, db.ErrJobNotOwned) {
-		t.Fatalf("chèn chunk vào job của người khác phải bị từ chối, nhận được %v", err)
+		t.Fatalf("inserting chunk into another user's job must be rejected, got %v", err)
 	}
 
-	// Và không được để lại dấu vết nào trong job của người bị nhắm.
+	// And must leave no trace in the victim's job.
 	chunks, err := db.Queries.ListTTSChunksByJobID(ctx, jobID)
 	if err != nil {
-		t.Fatalf("đọc chunk: %v", err)
+		t.Fatalf("read chunks: %v", err)
 	}
 	for _, c := range chunks {
 		if c.ID == attackerTask {
-			t.Error("chunk của người tấn công vẫn nằm trong job của người bị nhắm")
+			t.Error("attacker's chunk still in victim's job")
 		}
-		if c.Text == "văn bản chèn vào" {
-			t.Error("text của người tấn công hiện ra trong lịch sử của người bị nhắm")
+		if c.Text == "injected text" {
+			t.Error("attacker's text appears in victim's history")
 		}
 	}
 	if len(chunks) != 1 {
-		t.Errorf("job của người bị nhắm có %d chunk, muốn 1", len(chunks))
+		t.Errorf("victim's job has %d chunks, want 1", len(chunks))
 	}
 }
 
-// TestRegisterJobAndChunk_AllowsOwnJob giữ chiều ngược lại: nhiều chunk của cùng một người vào
-// cùng một job là đường đi bình thường của mọi lượt tổng hợp văn bản dài.
+// TestRegisterJobAndChunk_AllowsOwnJob holds the opposite direction: multiple chunks from the
+// same user into the same job is the normal path for every long-text synthesis.
 func TestRegisterJobAndChunk_AllowsOwnJob(t *testing.T) {
 	dbOrSkip(t)
 
@@ -135,16 +137,16 @@ func TestRegisterJobAndChunk_AllowsOwnJob(t *testing.T) {
 
 	audio := db.JobAudioParams{Speed: 1.0}
 	for i := range 3 {
-		if err := db.RegisterJobAndChunk(ctx, user, jobID, "standard", "v", audio, 3, uuid.NewString(), i, "đoạn"); err != nil {
-			t.Fatalf("chunk %d của chính chủ bị từ chối: %v", i, err)
+		if err := db.RegisterJobAndChunk(ctx, user, jobID, "standard", "v", audio, 3, uuid.NewString(), i, "segment"); err != nil {
+			t.Fatalf("own chunk %d rejected: %v", i, err)
 		}
 	}
 
 	chunks, err := db.Queries.ListTTSChunksByJobID(ctx, jobID)
 	if err != nil {
-		t.Fatalf("đọc chunk: %v", err)
+		t.Fatalf("read chunks: %v", err)
 	}
 	if len(chunks) != 3 {
-		t.Errorf("có %d chunk, muốn 3", len(chunks))
+		t.Errorf("got %d chunks, want 3", len(chunks))
 	}
 }

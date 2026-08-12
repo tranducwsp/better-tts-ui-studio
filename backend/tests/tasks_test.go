@@ -15,18 +15,18 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// taskOwner là user mà các task trong tệp này thuộc về.
+// taskOwner is the user that all tasks in this file belong to.
 //
-// Handler task giờ đòi cả danh tính và quyền sở hữu, nên mỗi request trong test phải mang
-// theo user context — nếu không mọi thứ dừng ở 401 và ta chỉ đang kiểm lớp xác thực.
+// The task handler now requires both identity and ownership, so every test request must carry
+// a user context — otherwise everything stops at 401 and we are only testing the auth layer.
 var taskOwner = &sqlc.User{ID: "task-owner-1", Username: "owner", IsApproved: true}
 
-// asUser gắn user vào request giống như AuthMiddleware làm trong lúc chạy thật.
+// asUser attaches a user to the request just like AuthMiddleware does at runtime.
 func asUser(req *http.Request, user *sqlc.User) *http.Request {
 	return req.WithContext(context.WithValue(req.Context(), middleware.UserContextKey, user))
 }
 
-// ownedTask dựng một task đã ghi nhận chủ, để ownsTask không phải hỏi DB (test không có DB).
+// ownedTask creates a task with an owner recorded, so ownsTask does not need to query the DB (tests have no DB).
 func ownedTask(taskID string) *state.TaskItem {
 	task := state.GlobalTaskManager.GetOrCreate(taskID)
 	task.SetOwner(taskOwner.ID)
@@ -48,8 +48,8 @@ func TestGetTaskStatus_Unauthenticated(t *testing.T) {
 	}
 }
 
-// TestGetTaskStatus_OtherUsersTask khoá lại chính lỗ hổng đã vá: một task có chủ không được
-// trả về cho người khác, dù người đó biết đúng task_id.
+// TestGetTaskStatus_OtherUsersTask locks in the very vulnerability that was patched: a task
+// with an owner must not be returned to someone else, even if they know the task_id.
 func TestGetTaskStatus_OtherUsersTask(t *testing.T) {
 	h := handlers.NewTasksHandler()
 	ownedTask("someone-elses-task")
@@ -68,8 +68,8 @@ func TestGetTaskStatus_OtherUsersTask(t *testing.T) {
 	}
 }
 
-// TestCancelTask_OtherUsersTask xác nhận người ngoài không huỷ được job đang chạy của người
-// khác — một lượt ghi, nên đây là hậu quả nặng hơn việc chỉ đọc trạng thái.
+// TestCancelTask_OtherUsersTask confirms an outsider cannot cancel another user's running
+// job — a write, so this has heavier consequences than merely reading status.
 func TestCancelTask_OtherUsersTask(t *testing.T) {
 	h := handlers.NewTasksHandler()
 	task := ownedTask("victim-task")
@@ -91,7 +91,7 @@ func TestCancelTask_OtherUsersTask(t *testing.T) {
 	}
 }
 
-// TestGetTaskAudio_OtherUsersTask xác nhận âm thanh không rò sang người khác.
+// TestGetTaskAudio_OtherUsersTask confirms audio does not leak to other users.
 func TestGetTaskAudio_OtherUsersTask(t *testing.T) {
 	h := handlers.NewTasksHandler()
 	task := ownedTask("private-audio-task")
@@ -166,8 +166,8 @@ func TestGetTaskAudio_SuccessWAV(t *testing.T) {
 	}
 }
 
-// TestGetTaskAudio_RejectsTraversalFormat giữ lại lớp chặn ở query string: format đi vào tên
-// tệp, nên nó phải bị từ chối trước khi có ai đọc đĩa.
+// TestGetTaskAudio_RejectsTraversalTaskID keeps the guard on the URL path: the task ID goes
+// into a filename, so it must be rejected before anyone reads from disk.
 func TestGetTaskAudio_RejectsTraversalTaskID(t *testing.T) {
 	h := handlers.NewTasksHandler()
 
@@ -234,8 +234,8 @@ func TestStreamTaskProgress(t *testing.T) {
 	}
 }
 
-// TestTaskOwner_NotStolenBySecondCaller: task_id do client gửi, nên lượt gọi thứ hai với
-// cùng task_id không được chiếm quyền sở hữu của lượt đầu.
+// TestTaskOwner_NotStolenBySecondCaller: task_id is sent by the client, so a second call
+// with the same task_id must not steal the first caller's ownership.
 func TestTaskOwner_NotStolenBySecondCaller(t *testing.T) {
 	task := ownedTask("ownership-fixed")
 	task.SetOwner("intruder-9")
