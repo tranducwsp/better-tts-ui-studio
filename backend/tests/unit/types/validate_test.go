@@ -185,6 +185,16 @@ func TestValidateWarnsOnResolvableContradictions(t *testing.T) {
 			},
 			expect: "speed_range",
 		},
+		{
+			name: "find_mode is not expert or express",
+			manifest: &types.UniversalManifest{
+				SupportedModes: []types.EngineModeSpec{{ID: "standard"}},
+				UISchema: &types.UISchemaSpec{
+					InputPanel: types.InputPanelSpec{FindMode: "advanced"},
+				},
+			},
+			expect: "find_mode",
+		},
 	}
 
 	for _, tc := range cases {

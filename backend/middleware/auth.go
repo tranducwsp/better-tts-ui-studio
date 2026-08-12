@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"time"
 
 	"backend/config"
 	"backend/db"
@@ -68,8 +67,7 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 
 // lookupUser fetches the user record, preferring a short-lived cache before querying PostgreSQL.
 func lookupUser(r *http.Request, username string) (sqlc.User, bool) {
-	now := time.Now()
-	if cached, ok := globalUserCache.get(username, now); ok {
+	if cached, ok := globalUserCache.get(username); ok {
 		return cached, true
 	}
 
@@ -77,7 +75,7 @@ func lookupUser(r *http.Request, username string) (sqlc.User, bool) {
 	if err != nil {
 		return sqlc.User{}, false
 	}
-	globalUserCache.put(username, user, now)
+	globalUserCache.put(username, user)
 	return user, true
 }
 

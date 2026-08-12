@@ -27,7 +27,6 @@ export const PLATFORM_DEFAULTS: ResolvedCapabilities = {
   supports_speed: true,
   supports_pitch: false,
   supports_emotion: false,
-  supports_ssml: false,
 };
 
 function pick(
@@ -95,11 +94,6 @@ export function resolveCapabilities(
       modeCaps.supports_emotion,
       engine.supports_emotion,
       PLATFORM_DEFAULTS.supports_emotion
-    ),
-    supports_ssml: pick(
-      modeCaps.supports_ssml,
-      engine.supports_ssml,
-      PLATFORM_DEFAULTS.supports_ssml
     ),
   };
 }

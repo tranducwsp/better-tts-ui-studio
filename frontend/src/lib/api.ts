@@ -129,19 +129,11 @@ export function parseVoiceItem(v: Record<string, unknown> | string): VoiceOption
     const sampleUrl = typeof v.sampleUrl === 'string' ? v.sampleUrl : (typeof v.sample_url === 'string' ? v.sample_url : undefined);
     const metadata = typeof v.metadata === 'object' && v.metadata !== null ? (v.metadata as Record<string, string>) : undefined;
 
-    let descriptions: string[] = [];
-    if (Array.isArray(v.descriptions)) {
-      descriptions = v.descriptions.filter((d: unknown): d is string => typeof d === 'string' && d.trim() !== '');
-    } else if (metadata) {
-      descriptions = Object.values(metadata).filter((d: unknown): d is string => typeof d === 'string' && d.trim() !== '');
-    }
-
     const deletable = typeof v.deletable === 'boolean' ? v.deletable : undefined;
     return {
       id: idStr,
       name: nameStr,
       metadata,
-      descriptions,
       sampleUrl,
       deletable
     };
@@ -151,7 +143,6 @@ export function parseVoiceItem(v: Record<string, unknown> | string): VoiceOption
   return {
     id: str,
     name: str,
-    descriptions: []
   };
 }
 
@@ -183,7 +174,6 @@ export async function fetchPresets(modelId?: string): Promise<Preset[]> {
       return data.map((v: Record<string, unknown>) => ({
         id: String(v.id || v.name || ''),
         name: String(v.name || ''),
-        speaker: String(v.name || ''),
         speed: 1.0,
         metadata: typeof v.metadata === 'object' && v.metadata !== null
           ? (v.metadata as Record<string, string>)

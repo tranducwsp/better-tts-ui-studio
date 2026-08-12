@@ -20,21 +20,15 @@ import (
 // continuously by the browser while a job runs. At a few hundred requests per second, most of
 // the connection pool (default 25) is spent querying the same row.
 //
-// The cache lives on Redis when available, in-process RAM otherwise. The difference is not
-// just storage location: InvalidateUser previously only cleared the copy in the CURRENT
-// process, so with multiple replicas, an admin approving an account on replica A would still
-// be rejected by replica B until the TTL expired — and the user clicking retry would
-// sometimes succeed, sometimes not, depending on the load balancer. Deleting on Redis deletes
-// for all replicas at once.
+// The cache lives on Redis exclusively. When Redis is unavailable the cache degrades to a
+// pass-through: every request queries PostgreSQL directly. There is no in-process RAM fallback
+// because it would need dual-write and dual-delete logic that is easy to get wrong, and the
+// benefit (a few seconds of tolerance during a Redis flicker) does not justify the complexity.
+// With multiple replicas, an in-process copy also means invalidating a user on one replica
+// would leave stale data on the others until the TTL expires.
 type userCache struct {
-	mu      sync.RWMutex
-	ttl     time.Duration
-	entries map[string]userCacheEntry
-}
-
-type userCacheEntry struct {
-	user      sqlc.User
-	expiresAt time.Time
+	mu  sync.RWMutex
+	ttl time.Duration
 }
 
 // cachedUser is the shape written to Redis.
@@ -69,7 +63,7 @@ func fromUser(u sqlc.User) cachedUser {
 }
 
 // globalUserCache is configured once at startup via ConfigureUserCache.
-var globalUserCache = &userCache{entries: make(map[string]userCacheEntry)}
+var globalUserCache = &userCache{}
 
 // userCacheKey adds a prefix so this cache's keys don't collide with other keys on the same Redis.
 func userCacheKey(username string) string { return "auth:user:" + username }
@@ -78,7 +72,6 @@ func userCacheKey(username string) string { return "auth:user:" + username }
 func ConfigureUserCache(ttl time.Duration) {
 	globalUserCache.mu.Lock()
 	globalUserCache.ttl = ttl
-	globalUserCache.entries = make(map[string]userCacheEntry)
 	globalUserCache.mu.Unlock()
 }
 
@@ -86,15 +79,7 @@ func ConfigureUserCache(ttl time.Duration) {
 //
 // Call everywhere that changes role or approval status: otherwise, a newly approved account
 // would still be rejected until the TTL expires, and the user would not understand why.
-//
-// Delete from both places, not just whichever is in use: a process may have written to RAM
-// before Redis became available, and missing that copy means the stale record lives for
-// another full TTL.
 func InvalidateUser(username string) {
-	globalUserCache.mu.Lock()
-	delete(globalUserCache.entries, username)
-	globalUserCache.mu.Unlock()
-
 	if rdb := state.RedisClient; rdb != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), cacheOpTimeout)
 		defer cancel()
@@ -115,7 +100,7 @@ func InvalidateUser(username string) {
 const cacheOpTimeout = 100 * time.Millisecond
 
 // get returns a valid cached record, or ok=false if missing/expired/cache is disabled.
-func (c *userCache) get(username string, now time.Time) (sqlc.User, bool) {
+func (c *userCache) get(username string) (sqlc.User, bool) {
 	c.mu.RLock()
 	ttl := c.ttl
 	c.mu.RUnlock()
@@ -140,23 +125,11 @@ func (c *userCache) get(username string, now time.Time) (sqlc.User, bool) {
 		return cu.toUser(), true
 	}
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	entry, ok := c.entries[username]
-	if !ok || now.After(entry.expiresAt) {
-		return sqlc.User{}, false
-	}
-	return entry.user, true
+	return sqlc.User{}, false
 }
 
-// put remembers a record.
-//
-// On Redis, the key's own TTL handles expiry. The RAM branch must clean up on its own, and
-// that is done inline during writes rather than via a scheduled goroutine: the number of keys
-// is bounded by the number of active users within a TTL of a few seconds, so the map will not
-// grow large enough to need a dedicated sweeper.
-func (c *userCache) put(username string, user sqlc.User, now time.Time) {
+// put remembers a record in Redis.
+func (c *userCache) put(username string, user sqlc.User) {
 	c.mu.RLock()
 	ttl := c.ttl
 	c.mu.RUnlock()
@@ -175,18 +148,7 @@ func (c *userCache) put(username string, user sqlc.User, now time.Time) {
 		// A failed write only loses one cache speedup, never yields wrong results — the next
 		// request re-reads from PostgreSQL.
 		_ = rdb.Set(ctx, userCacheKey(username), raw, ttl).Err()
-		return
 	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for key, entry := range c.entries {
-		if now.After(entry.expiresAt) {
-			delete(c.entries, key)
-		}
-	}
-	c.entries[username] = userCacheEntry{user: user, expiresAt: now.Add(ttl)}
 }
 
 // The two functions below allow cache inspection without standing up PostgreSQL — the real
@@ -194,10 +156,10 @@ func (c *userCache) put(username string, user sqlc.User, now time.Time) {
 
 // PutUserForTest writes a record into the cache. For test use only.
 func PutUserForTest(username string, user sqlc.User) {
-	globalUserCache.put(username, user, time.Now())
+	globalUserCache.put(username, user)
 }
 
 // GetUserForTest reads a record from the cache. For test use only.
 func GetUserForTest(username string) (sqlc.User, bool) {
-	return globalUserCache.get(username, time.Now())
+	return globalUserCache.get(username)
 }

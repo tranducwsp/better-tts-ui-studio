@@ -17,7 +17,6 @@ type EngineCapabilities struct {
 	SupportsSpeed        *bool `json:"supports_speed,omitempty"`
 	SupportsPitch        *bool `json:"supports_pitch,omitempty"`
 	SupportsEmotion      *bool `json:"supports_emotion,omitempty"`
-	SupportsSsml         *bool `json:"supports_ssml,omitempty"`
 }
 
 // ResolvedCapabilities is the result after resolving the two layers — no more nil, ready to use.
@@ -29,8 +28,7 @@ type ResolvedCapabilities struct {
 	SupportsSpeed        bool `json:"supports_speed"`
 	SupportsPitch        bool `json:"supports_pitch"`
 	SupportsEmotion      bool `json:"supports_emotion"`
-	SupportsSsml         bool `json:"supports_ssml"`
-}
+	}
 
 // EngineModeSpec describes a processing mode of the AI Engine (e.g. standard, fast, clone).
 type EngineModeSpec struct {
@@ -204,7 +202,6 @@ var PlatformDefaultCapabilities = ResolvedCapabilities{
 	SupportsSpeed:        true,
 	SupportsPitch:        false,
 	SupportsEmotion:      false,
-	SupportsSsml:         false,
 }
 
 // DefaultMaxTextLength is used when the Manifest has not been loaded. Must match DEFAULT_TEXT_LIMIT
@@ -251,7 +248,6 @@ func (m *UniversalManifest) ResolveCapabilities(modeID string) ResolvedCapabilit
 		SupportsSpeed:        pick(mode.SupportsSpeed, e.SupportsSpeed, d.SupportsSpeed),
 		SupportsPitch:        pick(mode.SupportsPitch, e.SupportsPitch, d.SupportsPitch),
 		SupportsEmotion:      pick(mode.SupportsEmotion, e.SupportsEmotion, d.SupportsEmotion),
-		SupportsSsml:         pick(mode.SupportsSsml, e.SupportsSsml, d.SupportsSsml),
 	}
 }
 

@@ -136,6 +136,13 @@ func (m *UniversalManifest) validateUISchema(modes map[string]struct{}) []string
 		}
 	}
 
+	if m.UISchema.InputPanel.FindMode != "" &&
+		m.UISchema.InputPanel.FindMode != "expert" &&
+		m.UISchema.InputPanel.FindMode != "express" {
+		out = append(out, fmt.Sprintf(
+			"ui_schema.input_panel.find_mode is %q; expected \"expert\" or \"express\"", m.UISchema.InputPanel.FindMode))
+	}
+
 	for id, panel := range m.UISchema.OptionPanel {
 		if _, ok := modes[id]; !ok {
 			out = append(out, fmt.Sprintf("ui_schema.option_panel has an entry for mode %q which is not in supported_modes", id))

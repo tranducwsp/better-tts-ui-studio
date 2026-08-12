@@ -68,7 +68,6 @@
       id: pv.id,
       name: pv.name,
       metadata: pv.metadata,
-      descriptions: pv.descriptions || (pv.metadata ? Object.values(pv.metadata).filter((d): d is string => typeof d === 'string' && d.trim() !== '') : []),
       sampleUrl: pv.sample_url,
     }));
 
@@ -157,7 +156,6 @@
             name: p.name,
             deletable: true,
             metadata: p.metadata,
-            descriptions: p.metadata ? Object.values(p.metadata).filter((d): d is string => typeof d === 'string' && d.trim() !== '') : []
           }));
           combined = [...userVoices, ...combined];
         }

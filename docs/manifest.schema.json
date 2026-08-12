@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/amoratran/better-tts-ui-studio/docs/manifest.schema.json",
+  "title": "UniversalManifest",
+  "description": "Blueprint for an AI Voice Engine. The Engine publishes this JSON at /manifest for the Go gateway to consume. See GATEWAY.md for the resolution rules.",
+  "type": "object",
+  "required": ["engine_id", "engine_name", "version", "provider", "supported_modes", "capabilities", "constraints", "audio_spec"],
+  "properties": {
+    "engine_id": {
+      "type": "string",
+      "description": "Unique identifier for the engine, e.g. 'core-tts-example-v1'"
+    },
+    "engine_name": {
+      "type": "string",
+      "description": "Human-readable engine name, e.g. 'Example TTS Engine'"
+    },
+    "version": {
+      "type": "string",
+      "description": "Engine version string, e.g. '1.0.0'"
+    },
+    "provider": {
+      "type": "string",
+      "description": "Provider name, e.g. 'Example Provider'"
+    },
+    "supported_modes": {
+      "type": "array",
+      "description": "List of processing modes this engine supports (e.g. fast, standard, clone).",
+      "items": {
+        "$ref": "#/$defs/EngineModeSpec"
+      },
+      "minItems": 1
+    },
+    "capabilities": {
+      "$ref": "#/$defs/EngineCapabilities",
+      "description": "Engine-wide capability defaults. Modes that state nothing inherit these."
+    },
+    "constraints": {
+      "$ref": "#/$defs/EngineConstraints"
+    },
+    "audio_spec": {
+      "$ref": "#/$defs/AudioSpec",
+      "description": "Engine-wide audio output defaults. Modes may override individual fields."
+    },
+    "ui_schema": {
+      "$ref": "#/$defs/UISchemaSpec",
+      "description": "UI layout configuration. Optional — the platform uses defaults when absent."
+    }
+  },
+  "$defs": {
+    "EngineCapabilities": {
+      "type": "object",
+      "description": "What an engine (or mode) can do. nil = inherit, false = explicitly off, true = on.",
+      "properties": {
+        "supports_preset_voices":  { "type": "boolean", "description": "Engine ships with preset voice options" },
+        "supports_cloning":        { "type": "boolean", "description": "Voice cloning from reference audio" },
+        "supports_voice_saving":   { "type": "boolean", "description": "Save cloned voices to user account" },
+        "supports_streaming":      { "type": "boolean", "description": "Stream audio chunks as they are generated" },
+        "supports_speed":          { "type": "boolean", "description": "Speed control slider" },
+        "supports_pitch":          { "type": "boolean", "description": "Pitch control slider" },
+        "supports_emotion":        { "type": "boolean", "description": "Emotion/label selector" }
+      }
+    },
+    "EngineModeSpec": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id":          { "type": "string", "description": "Mode identifier, e.g. 'fast', 'standard', 'clone'" },
+        "name":        { "type": "string", "description": "Display name, e.g. 'Fast Streaming'" },
+        "description": { "type": "string", "description": "Short description of this mode" },
+        "capabilities": { "$ref": "#/$defs/EngineCapabilities", "description": "Per-mode capability overrides. Only state fields that differ from the engine-wide default." },
+        "audio_spec":   { "$ref": "#/$defs/AudioSpec", "description": "Per-mode audio spec overrides. Only state fields that differ." }
+      }
+    },
+    "AudioSpec": {
+      "type": "object",
+      "description": "Audio output format and reference-audio constraints. At the engine level, all fields should be filled; at the mode level, only overrides.",
+      "properties": {
+        "supported_formats":       { "type": "array", "items": { "type": "string" }, "description": "Output formats the engine can produce, e.g. ['wav', 'mp3']" },
+        "supported_sample_rates":  { "type": "array", "items": { "type": "integer" }, "description": "Sample rates the engine supports, e.g. [24000, 44100]" },
+        "default_format":          { "type": "string", "description": "Default output format, must be in supported_formats" },
+        "default_sample_rate":     { "type": "integer", "description": "Default sample rate, must be in supported_sample_rates" },
+        "reference_audio_formats": { "type": "array", "items": { "type": "string" }, "description": "Input formats the engine accepts for reference/cloning audio — distinct from output formats" },
+        "reference_audio_seconds": { "type": "number", "description": "How many seconds of reference audio the engine expects for cloning" },
+        "max_upload_bytes":        { "type": "integer", "description": "Maximum raw file size the user may upload (before trimming), in bytes" },
+        "max_reference_bytes":     { "type": "integer", "description": "Maximum clip size after trimming, in bytes" }
+      }
+    },
+    "EngineConstraints": {
+      "type": "object",
+      "required": ["max_text_length", "speed_range", "pitch_range", "supported_emotions", "chunking"],
+      "properties": {
+        "max_text_length":     { "type": "integer", "description": "Maximum characters per synthesis request, default 3000" },
+        "speed_range":         { "$ref": "#/$defs/RangeConstraint" },
+        "pitch_range":         { "$ref": "#/$defs/RangeConstraint" },
+        "supported_emotions":  { "type": "array", "items": { "type": "string" }, "description": "Available emotion labels, e.g. ['neutral', 'happy', 'sad']" },
+        "chunking":            { "$ref": "#/$defs/ChunkingSpec" }
+      }
+    },
+    "RangeConstraint": {
+      "type": "object",
+      "required": ["min", "max", "default", "step"],
+      "properties": {
+        "min":     { "type": "number" },
+        "max":     { "type": "number" },
+        "default": { "type": "number" },
+        "step":    { "type": "number" }
+      }
+    },
+    "ChunkingSpec": {
+      "type": "object",
+      "properties": {
+        "max_chunk_size": { "type": "integer", "description": "Preferred chunk size. The platform will chunk text into fragments at most this size." },
+        "delimiters":     { "type": "array", "items": { "type": "string" }, "description": "Ordered list of regex split patterns, most preferred first. The platform tries each then hard-cuts." }
+      }
+    },
+    "UISchemaSpec": {
+      "type": "object",
+      "description": "UI layout configuration. Optional — the platform uses defaults when absent.",
+      "properties": {
+        "ui_mode":      { "type": "string", "enum": ["beauty", "fast"], "description": "UI mode: 'beauty' for full visuals, 'fast' for minimal mode" },
+        "input_panel":  { "$ref": "#/$defs/InputPanelSpec" },
+        "model_sort":   { "type": "array", "items": { "type": "string" }, "description": "Ordered list of mode IDs controlling tab display order" },
+        "option_panel": { "type": "object", "additionalProperties": { "$ref": "#/$defs/ModelOptionSpec" }, "description": "Per-mode option panel configuration, keyed by mode ID" }
+      }
+    },
+    "InputPanelSpec": {
+      "type": "object",
+      "properties": {
+        "file_serve":      { "type": "boolean", "description": "Enable file serving (upload reference audio)" },
+        "closeable":       { "type": "boolean", "description": "Allow closing the input panel" },
+        "find_mode":       { "type": "string", "enum": ["expert", "express"], "description": "Input panel variant: 'expert' (full controls) or 'express' (simplified)" },
+        "replace_tool":    { "type": "boolean", "description": "Enable find/replace text tool" },
+        "enable_chunk_box": { "type": "boolean", "description": "Enable chunk size display/control" },
+        "auto_format":     { "type": "array", "items": { "$ref": "#/$defs/AutoFormatRule" }, "description": "Automatic text replacement rules applied before synthesis" }
+      }
+    },
+    "AutoFormatRule": {
+      "type": "object",
+      "required": ["find", "replace"],
+      "properties": {
+        "find":    { "type": "string", "description": "Regex pattern to find" },
+        "replace": { "type": "string", "description": "Replacement string" }
+      }
+    },
+    "ModelOptionSpec": {
+      "type": "object",
+      "description": "Presentation-only: how controls are drawn, not whether they exist.",
+      "properties": {
+        "notice_banner":         { "$ref": "#/$defs/NoticeBannerSpec" },
+        "voice_type":            { "type": "string", "enum": ["select", "radio"], "description": "Voice selector widget type" },
+        "speed_type":            { "type": "string", "enum": ["slider", "number"], "description": "Speed control widget type" },
+        "pitch_type":            { "type": "string", "enum": ["slider", "number"], "description": "Pitch control widget type" },
+        "emotion_type":          { "type": "string", "enum": ["select", "radio"], "description": "Emotion selector widget type" },
+        "preset_voices":         { "type": "array", "items": { "$ref": "#/$defs/PresetVoiceSpec" } },
+        "voice_metadata_schema": { "type": "array", "items": { "$ref": "#/$defs/VoiceMetadataFieldSpec" }, "description": "Schema for user-created voice metadata fields" }
+      }
+    },
+    "PresetVoiceSpec": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id":         { "type": "string" },
+        "name":       { "type": "string" },
+        "metadata":   { "type": "object", "additionalProperties": { "type": "string" }, "description": "Arbitrary key-value metadata (gender, region, style, etc.)" },
+        "sample_url": { "type": "string", "format": "uri", "description": "URL to a sample audio clip" }
+      }
+    },
+    "VoiceMetadataFieldSpec": {
+      "type": "object",
+      "required": ["key", "label"],
+      "properties": {
+        "key":         { "type": "string" },
+        "label":       { "type": "string" },
+        "type":        { "type": "string", "enum": ["text", "select"], "description": "Field type: 'text' for text input, 'select' for dropdown" },
+        "required":    { "type": "boolean" },
+        "placeholder": { "type": "string" },
+        "options":     { "type": "array", "items": { "type": "string" }, "description": "Dropdown options when type is 'select'" }
+      }
+    },
+    "NoticeBannerSpec": {
+      "type": "object",
+      "required": ["message"],
+      "properties": {
+        "level":   { "type": "string", "enum": ["info", "warning", "danger", "success"], "description": "Banner severity level" },
+        "message": { "type": "string", "description": "Banner content" }
+      }
+    }
+  }
+}
