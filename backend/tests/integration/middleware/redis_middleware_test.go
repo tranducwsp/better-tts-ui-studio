@@ -17,10 +17,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Địa chỉ Redis dùng cho các bài kiểm thử tích hợp dưới đây.
+// Redis address used for the integration tests below.
 //
-// Không có Redis thì bỏ qua thay vì hỏng: bộ kiểm thử phải chạy được trên một máy trống, và
-// nhánh RAM đã có bài riêng. Đặt TEST_REDIS_ADDR để trỏ sang chỗ khác.
+// Without Redis, skip instead of failing: the test suite must run on a bare machine, and the
+// in-memory branch has its own tests. Set TEST_REDIS_ADDR to point elsewhere.
 func testRedisAddr() string {
 	if v := strings.TrimSpace(os.Getenv("TEST_REDIS_ADDR")); v != "" {
 		return v
@@ -28,7 +28,7 @@ func testRedisAddr() string {
 	return "127.0.0.1:56379"
 }
 
-// withRedis nối tới Redis và dọn sạch DB, hoặc bỏ qua bài kiểm thử.
+// withRedis connects to Redis and flushes the DB, or skips the test.
 func withRedis(t *testing.T) {
 	t.Helper()
 
@@ -36,22 +36,23 @@ func withRedis(t *testing.T) {
 	state.InitRedis(&config.Config{RedisURL: testRedisAddr()})
 	if state.RedisClient == nil || state.RedisClient == prev {
 		state.RedisClient = prev
-		t.Skipf("không có Redis tại %s — bỏ qua bài tích hợp", testRedisAddr())
+		t.Skipf("no Redis at %s — skipping integration test", testRedisAddr())
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := state.RedisClient.FlushDB(ctx).Err(); err != nil {
-		t.Fatalf("không dọn được Redis: %v", err)
+		t.Fatalf("failed to flush Redis: %v", err)
 	}
 
 	t.Cleanup(func() { state.RedisClient = prev })
 }
 
-// withDeadRedis trỏ client vào một cổng không ai nghe, để mô phỏng Redis sập giữa lúc chạy.
+// withDeadRedis points the client at a port nobody is listening on, to simulate Redis going
+// down mid-run.
 //
-// Không dùng InitRedis: hàm đó ping trước và giữ nguyên client cũ khi thất bại, nên nó không
-// dựng được trạng thái cần kiểm ở đây.
+// Not using InitRedis: that function pings first and keeps the old client on failure, so it
+// cannot construct the state this test needs.
 func withDeadRedis(t *testing.T) {
 	t.Helper()
 	prev := state.RedisClient
@@ -72,7 +73,13 @@ func okHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 }
 
-// TestRedisRateLimit_SharedAcrossReplicas kiểm tra rate limit dùng chung qua Redis.
+// TestRedisRateLimit_SharedAcrossReplicas is the reason this layer moved to Redis.
+//
+// Each RateLimit call builds a separate limiter, just as each replica has its own counters.
+// With in-memory counters, a password guesser only needs the load balancer to spread them
+// evenly to multiply the limit by that many times — and that is the default state of a
+// multi-node deployment.
+
 func TestRedisRateLimit_SharedAcrossReplicas(t *testing.T) {
 	withRedis(t)
 
@@ -82,17 +89,17 @@ func TestRedisRateLimit_SharedAcrossReplicas(t *testing.T) {
 	for i := 1; i <= limit; i++ {
 		replica := middleware.RateLimit("test", limit, time.Minute)(okHandler())
 		if code := loginOnce(t, replica, ip); code != http.StatusOK {
-			t.Fatalf("lượt %d trong hạn mức phải đi qua, got %d", i, code)
+			t.Fatalf("request %d within limit must pass, got %d", i, code)
 		}
 	}
 
 	other := middleware.RateLimit("test", limit, time.Minute)(okHandler())
 	if code := loginOnce(t, other, ip); code != http.StatusTooManyRequests {
-		t.Errorf("lượt vượt hạn mức phải bị chặn kể cả khi đi qua replica khác, got %d", code)
+		t.Errorf("request exceeding limit must be blocked even from a different replica, got %d", code)
 	}
 }
 
-// TestRedisRateLimit_WindowSlides xác nhận cửa sổ thật sự trượt, không phải cửa sổ cố định.
+// TestRedisRateLimit_WindowSlides confirms the window truly slides, not a fixed window.
 func TestRedisRateLimit_WindowSlides(t *testing.T) {
 	withRedis(t)
 
@@ -100,20 +107,20 @@ func TestRedisRateLimit_WindowSlides(t *testing.T) {
 	h := middleware.RateLimit("test", 2, 2*time.Second)(okHandler())
 
 	if c1, c2 := loginOnce(t, h, ip), loginOnce(t, h, ip); c1 != http.StatusOK || c2 != http.StatusOK {
-		t.Fatalf("hai lượt đầu phải qua, got %d %d", c1, c2)
+		t.Fatalf("first two requests must pass, got %d %d", c1, c2)
 	}
 	if code := loginOnce(t, h, ip); code != http.StatusTooManyRequests {
-		t.Fatalf("lượt thứ ba phải bị chặn, got %d", code)
+		t.Fatalf("third request must be blocked, got %d", code)
 	}
 
 	time.Sleep(2100 * time.Millisecond)
 
 	if code := loginOnce(t, h, ip); code != http.StatusOK {
-		t.Errorf("sau khi lượt cũ rơi khỏi cửa sổ thì phải đi được, got %d", code)
+		t.Errorf("after old requests fall out of the window, must pass, got %d", code)
 	}
 }
 
-// TestRedisRateLimit_DownFallsBackNotOpen: sự cố Redis không được biến thành cửa mở.
+// TestRedisRateLimit_DownFallsBackNotOpen: a Redis outage must not become an open door.
 func TestRedisRateLimit_DownFallsBackNotOpen(t *testing.T) {
 	withDeadRedis(t)
 
@@ -121,14 +128,21 @@ func TestRedisRateLimit_DownFallsBackNotOpen(t *testing.T) {
 	h := middleware.RateLimit("test", 2, time.Minute)(okHandler())
 
 	if c1, c2 := loginOnce(t, h, ip), loginOnce(t, h, ip); c1 != http.StatusOK || c2 != http.StatusOK {
-		t.Fatalf("hai lượt đầu phải qua, got %d %d", c1, c2)
+		t.Fatalf("first two requests must pass, got %d %d", c1, c2)
 	}
 	if code := loginOnce(t, h, ip); code != http.StatusTooManyRequests {
-		t.Errorf("Redis hỏng vẫn phải chặn bằng bộ đếm RAM, got %d", code)
+		t.Errorf("Redis down must still block via in-memory counter, got %d", code)
 	}
 }
 
-// TestRedisUserCache_SharedAndInvalidated kiểm tra cache dùng chung và xoá đồng bộ qua Redis.
+// TestRedisUserCache_SharedAndInvalidated locks in both halves of the move to Redis:
+// replicas read the same record, and Invalidate removes it for all at once.
+//
+// The second half is where it was previously outright wrong, not just inefficient: admin
+// approving an account on replica A only cleared A's cache, so replica B still rejected that
+// user until the TTL expired — the user would retry a few times and get randomly accepted or
+// rejected, depending on the load balancer.
+
 func TestRedisUserCache_SharedAndInvalidated(t *testing.T) {
 	withRedis(t)
 
@@ -141,23 +155,23 @@ func TestRedisUserCache_SharedAndInvalidated(t *testing.T) {
 
 	got, ok := middleware.GetUserForTest("dave")
 	if !ok {
-		t.Fatal("phải đọc lại được bản ghi từ Redis")
+		t.Fatal("must be able to read back the record from Redis")
 	}
 	if got.ID != "u9" || got.Role != "admin" || !got.IsApproved {
-		t.Errorf("bản ghi đọc về không khớp: %+v", got)
+		t.Errorf("record read back does not match: %+v", got)
 	}
 
 	middleware.InvalidateUser("dave")
 	if _, ok := middleware.GetUserForTest("dave"); ok {
-		t.Error("InvalidateUser phải xoá khoá trên Redis, không chỉ trong RAM của một tiến trình")
+		t.Error("InvalidateUser must delete the key on Redis, not just in one process's RAM")
 	}
 }
 
-// TestRedisUserCache_NeverStoresPasswordHash giữ bcrypt hash nằm lại trong PostgreSQL.
+// TestRedisUserCache_NeverStoresPasswordHash keeps the bcrypt hash in PostgreSQL.
 //
-// Redis ở đây không mã hoá và thường dùng chung cho nhiều thứ, nên đẩy hash lên đó là thêm
-// một bản sao của thứ nhạy cảm nhất trong bảng users mà không đổi lại lợi ích nào — cache
-// chỉ cần role và trạng thái duyệt.
+// Redis here is not encrypted and is often shared for many purposes, so pushing the hash there
+// adds a copy of the most sensitive column in the users table for zero benefit — the cache only
+// needs role and approval status.
 func TestRedisUserCache_NeverStoresPasswordHash(t *testing.T) {
 	withRedis(t)
 
@@ -170,21 +184,21 @@ func TestRedisUserCache_NeverStoresPasswordHash(t *testing.T) {
 	})
 
 	if got, _ := middleware.GetUserForTest("frank"); got.PasswordHash != "" {
-		t.Errorf("bản ghi đọc từ cache không được mang PasswordHash, got %q", got.PasswordHash)
+		t.Errorf("record read from cache must not carry PasswordHash, got %q", got.PasswordHash)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	raw, err := state.RedisClient.Get(ctx, "auth:user:frank").Result()
 	if err != nil {
-		t.Fatalf("không đọc được khoá cache trên Redis: %v", err)
+		t.Fatalf("cannot read cache key from Redis: %v", err)
 	}
 	if strings.Contains(raw, marker) {
-		t.Errorf("payload trên Redis chứa password hash: %s", raw)
+		t.Errorf("payload on Redis contains password hash: %s", raw)
 	}
 }
 
-// TestRedisUserCache_DownIsMiss: Redis hỏng phải báo trượt cache, không trả dữ liệu sai.
+// TestRedisUserCache_DownIsMiss: Redis down must report a cache miss, not return bad data.
 func TestRedisUserCache_DownIsMiss(t *testing.T) {
 	withDeadRedis(t)
 
@@ -193,6 +207,6 @@ func TestRedisUserCache_DownIsMiss(t *testing.T) {
 
 	middleware.PutUserForTest("erin", sqlc.User{ID: "u11", Username: "erin"})
 	if _, ok := middleware.GetUserForTest("erin"); ok {
-		t.Error("Redis hỏng phải báo trượt để người gọi hỏi thẳng PostgreSQL")
+		t.Error("Redis down must report a miss so the caller queries PostgreSQL directly")
 	}
 }

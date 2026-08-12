@@ -72,7 +72,7 @@ func TestEngineManifestState_Validation(t *testing.T) {
 		},
 	}
 	if err := s.Set(manifest); err != nil {
-		t.Fatalf("manifest hợp lệ mà bị từ chối: %v", err)
+		t.Fatalf("valid manifest was rejected: %v", err)
 	}
 
 	// Test max text length error
@@ -106,49 +106,55 @@ func TestEngineManifestState_Validation(t *testing.T) {
 	}
 }
 
-// TestValidate_FailsClosedWithoutManifest kiểm tra validate từ chối khi chưa có Manifest.
+// TestValidate_FailsClosedWithoutManifest locks in the default direction of the validator.
+//
+// Previously all three validate functions returned nil when no Manifest was loaded, so while
+// waiting for the Engine — or forever if the Engine never came up — every limit on text length,
+// speed, pitch, emotion, and mode list had no effect. The UI enforces its own limits so nothing
+// is visible through the UI; only direct API callers could bypass them.
+
 func TestValidate_FailsClosedWithoutManifest(t *testing.T) {
 	s := &state.EngineManifestState{}
 
-	if err := s.ValidateRequest("bất kỳ văn bản nào", 1.0, "standard"); err == nil {
-		t.Error("ValidateRequest phải từ chối khi chưa có manifest")
+	if err := s.ValidateRequest("any text at all", 1.0, "standard"); err == nil {
+		t.Error("ValidateRequest must reject when no manifest is loaded")
 	}
 
 	pitch := 2.0
 	if err := s.ValidatePitch(&pitch, "standard"); err == nil {
-		t.Error("ValidatePitch phải từ chối khi chưa có manifest")
+		t.Error("ValidatePitch must reject when no manifest is loaded")
 	}
 
 	emotion := "happy"
 	if err := s.ValidateEmotion(&emotion, "standard"); err == nil {
-		t.Error("ValidateEmotion phải từ chối khi chưa có manifest")
+		t.Error("ValidateEmotion must reject when no manifest is loaded")
 	}
 
-	// Không gửi pitch/emotion vẫn là hợp lệ: đó là "để Engine tự quyết", không phải một giá
-	// trị cần đối chiếu.
+	// Not sending pitch/emotion is still valid: that means "let the Engine decide", not a value
+	// that needs validation.
 	if err := s.ValidatePitch(nil, "standard"); err != nil {
-		t.Errorf("Pitch nil không nên bị từ chối: %v", err)
+		t.Errorf("Nil pitch should not be rejected: %v", err)
 	}
 }
 
-// TestValidate_TextLimitAppliesWhenEngineDeclaresZero: max_text_length = 0 chỉ là cảnh báo
-// lúc nạp manifest, nên nếu bộ kiểm tra bỏ qua khi nó bằng 0 thì trần biến mất trong im lặng.
+// TestValidate_TextLimitAppliesWhenEngineDeclaresZero: max_text_length = 0 is only a warning
+// at manifest load time, so if the validator skips it when zero, the ceiling silently vanishes.
 func TestValidate_TextLimitAppliesWhenEngineDeclaresZero(t *testing.T) {
 	s := &state.EngineManifestState{}
 	if err := s.Set(&types.UniversalManifest{
 		SupportedModes: []types.EngineModeSpec{{ID: "standard"}},
 	}); err != nil {
-		t.Fatalf("manifest hợp lệ mà bị từ chối: %v", err)
+		t.Fatalf("valid manifest was rejected: %v", err)
 	}
 
 	long := strings.Repeat("a", types.DefaultMaxTextLength+1)
 	if err := s.ValidateRequest(long, 1.0, "standard"); err == nil {
-		t.Errorf("văn bản vượt mặc định %d ký tự phải bị từ chối khi engine khai 0",
+		t.Errorf("text exceeding default %d characters must be rejected when engine declares 0",
 			types.DefaultMaxTextLength)
 	}
 
 	ok := strings.Repeat("a", types.DefaultMaxTextLength)
 	if err := s.ValidateRequest(ok, 1.0, "standard"); err != nil {
-		t.Errorf("văn bản đúng bằng trần mặc định phải được nhận: %v", err)
+		t.Errorf("text exactly at the default ceiling must be accepted: %v", err)
 	}
 }

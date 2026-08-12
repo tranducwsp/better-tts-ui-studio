@@ -10,14 +10,14 @@ import (
 
 func boolPtr(b bool) *bool { return &b }
 
-// Manifest không có mode nào thì mọi lời gọi resolver sau đó chỉ là phỏng đoán, nên đây là
-// lỗi chí tử chứ không phải cảnh báo.
+// A Manifest with no modes makes every subsequent resolver call guesswork, so this is a
+// fatal error, not a warning.
 func TestValidateRejectsManifestWithoutModes(t *testing.T) {
 	m := &types.UniversalManifest{EngineID: "e", EngineName: "E"}
 
 	errs, _ := m.Validate()
 	if len(errs) == 0 {
-		t.Fatal("manifest không có mode nào lẽ ra phải bị từ chối")
+		t.Fatal("manifest with no modes should have been rejected")
 	}
 }
 
@@ -27,17 +27,17 @@ func TestValidateRejectsDuplicateAndEmptyModeIDs(t *testing.T) {
 		modes []types.EngineModeSpec
 	}{
 		{
-			// Resolver dừng ở mode khớp đầu tiên, nên bản thứ hai vừa vô hình vừa cho thấy
-			// người khai tưởng mình đang cấu hình một thứ khác.
-			name: "trùng id",
+			// The resolver stops at the first matching mode, so the second one is both invisible and
+			// shows the author thought they were configuring something else.
+			name: "duplicate id",
 			modes: []types.EngineModeSpec{
 				{ID: "standard", Name: "A"},
 				{ID: "standard", Name: "B"},
 			},
 		},
 		{
-			name:  "id rỗng",
-			modes: []types.EngineModeSpec{{ID: "", Name: "Không tên"}},
+			name:  "empty id",
+			modes: []types.EngineModeSpec{{ID: "", Name: "Nameless"}},
 		},
 	}
 
@@ -45,14 +45,14 @@ func TestValidateRejectsDuplicateAndEmptyModeIDs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &types.UniversalManifest{SupportedModes: tc.modes}
 			if errs, _ := m.Validate(); len(errs) == 0 {
-				t.Error("lẽ ra phải bị từ chối")
+				t.Error("should have been rejected")
 			}
 		})
 	}
 }
 
-// Manifest lành mạnh phải đi qua sạch, không lỗi và không cảnh báo — nếu không, cảnh báo sẽ
-// thành tiếng ồn mà người vận hành học cách bỏ qua.
+// A healthy manifest must pass cleanly, with no errors and no warnings — otherwise warnings
+// become noise that operators learn to ignore.
 func TestValidateAcceptsCoherentManifest(t *testing.T) {
 	m := &types.UniversalManifest{
 		SupportedModes: []types.EngineModeSpec{
@@ -79,15 +79,15 @@ func TestValidateAcceptsCoherentManifest(t *testing.T) {
 
 	errs, warnings := m.Validate()
 	if len(errs) > 0 {
-		t.Errorf("manifest lành mạnh mà có lỗi: %v", errs)
+		t.Errorf("healthy manifest has errors: %v", errs)
 	}
 	if len(warnings) > 0 {
-		t.Errorf("manifest lành mạnh mà có cảnh báo: %v", warnings)
+		t.Errorf("healthy manifest has warnings: %v", warnings)
 	}
 }
 
-// Các mâu thuẫn dưới đây resolve được, nên chỉ cảnh báo — nhưng phải cảnh báo, vì mỗi cái
-// đều dẫn tới một hành vi sai mà người khai không thấy ở chỗ mình khai.
+// The contradictions below are resolvable, so they are only warnings — but they must warn,
+// because each leads to a wrong behavior that the author cannot see at their declaration site.
 func TestValidateWarnsOnResolvableContradictions(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -95,7 +95,7 @@ func TestValidateWarnsOnResolvableContradictions(t *testing.T) {
 		expect   string
 	}{
 		{
-			name: "default_format ngoài supported_formats",
+			name: "default_format outside supported_formats",
 			manifest: &types.UniversalManifest{
 				SupportedModes: []types.EngineModeSpec{{ID: "standard"}},
 				AudioSpec: types.AudioSpec{
@@ -106,7 +106,7 @@ func TestValidateWarnsOnResolvableContradictions(t *testing.T) {
 			expect: "default_format",
 		},
 		{
-			name: "default_sample_rate ngoài supported_sample_rates",
+			name: "default_sample_rate outside supported_sample_rates",
 			manifest: &types.UniversalManifest{
 				SupportedModes: []types.EngineModeSpec{{ID: "standard"}},
 				AudioSpec: types.AudioSpec{
@@ -117,8 +117,8 @@ func TestValidateWarnsOnResolvableContradictions(t *testing.T) {
 			expect: "default_sample_rate",
 		},
 		{
-			// Trần sau khi cắt lớn hơn trần tệp gốc làm bước cắt trở nên vô nghĩa.
-			name: "max_reference_bytes vượt max_upload_bytes",
+			// The post-trim ceiling exceeding the original file ceiling makes the trim step meaningless.
+			name: "max_reference_bytes exceeds max_upload_bytes",
 			manifest: &types.UniversalManifest{
 				SupportedModes: []types.EngineModeSpec{{ID: "standard"}},
 				AudioSpec: types.AudioSpec{
@@ -129,26 +129,26 @@ func TestValidateWarnsOnResolvableContradictions(t *testing.T) {
 			expect: "max_reference_bytes",
 		},
 		{
-			name: "model_sort trỏ mode không tồn tại",
+			name: "model_sort points to nonexistent mode",
 			manifest: &types.UniversalManifest{
 				SupportedModes: []types.EngineModeSpec{{ID: "standard"}},
-				UISchema:       &types.UISchemaSpec{ModelSort: []string{"standard", "khong_ton_tai"}},
+				UISchema:       &types.UISchemaSpec{ModelSort: []string{"standard", "nonexistent"}},
 			},
 			expect: "model_sort",
 		},
 		{
-			name: "option_panel trỏ mode không tồn tại",
+			name: "option_panel points to nonexistent mode",
 			manifest: &types.UniversalManifest{
 				SupportedModes: []types.EngineModeSpec{{ID: "standard"}},
 				UISchema: &types.UISchemaSpec{
-					OptionPanel: map[string]types.ModelOptionSpec{"khong_ton_tai": {}},
+					OptionPanel: map[string]types.ModelOptionSpec{"nonexistent": {}},
 				},
 			},
 			expect: "option_panel",
 		},
 		{
-			// Danh sách khai ra nhưng sẽ không bao giờ hiện, nên người khai tưởng đã xong.
-			name: "preset_voices ở mode đã tắt preset voices",
+			// The list is declared but will never appear, so the author thinks it is done.
+			name: "preset_voices on mode with preset voices disabled",
 			manifest: &types.UniversalManifest{
 				SupportedModes: []types.EngineModeSpec{{
 					ID:           "clone",
@@ -163,20 +163,20 @@ func TestValidateWarnsOnResolvableContradictions(t *testing.T) {
 			expect: "preset_voices",
 		},
 		{
-			name: "mode cloning không khai reference_audio_formats",
+			name: "cloning mode did not declare reference_audio_formats",
 			manifest: &types.UniversalManifest{
 				SupportedModes: []types.EngineModeSpec{{
 					ID:           "clone",
 					Capabilities: types.EngineCapabilities{SupportsCloning: boolPtr(true)},
 				}},
-				// Engine cũng không khai, nên không có gì để kế thừa. Mặc định nền tảng chỉ áp
-				// dụng khi resolve, còn ở đây ta muốn biết Engine có tự khai hay không.
+				// Engine also did not declare, so there is nothing to inherit. The platform default only
+				// applies at resolve time; here we want to know whether the Engine declared it itself.
 				AudioSpec: types.AudioSpec{ReferenceAudioFormats: []string{}},
 			},
 			expect: "reference_audio_formats",
 		},
 		{
-			name: "speed_range đảo ngược",
+			name: "speed_range reversed",
 			manifest: &types.UniversalManifest{
 				SupportedModes: []types.EngineModeSpec{{ID: "standard"}},
 				Constraints: types.EngineConstraints{
@@ -191,18 +191,18 @@ func TestValidateWarnsOnResolvableContradictions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			errs, warnings := tc.manifest.Validate()
 			if len(errs) > 0 {
-				t.Fatalf("lẽ ra chỉ cảnh báo, nhưng bị từ chối: %v", errs)
+				t.Fatalf("should only be a warning, but was rejected: %v", errs)
 			}
 			joined := strings.Join(warnings, " | ")
 			if !strings.Contains(joined, tc.expect) {
-				t.Errorf("không thấy cảnh báo chứa %q; nhận được: %s", tc.expect, joined)
+				t.Errorf("warning containing %q not found; received: %s", tc.expect, joined)
 			}
 		})
 	}
 }
 
-// Điểm quan trọng nhất của việc kiểm lúc nạp: một lần reload lỗi không được phép hạ một
-// Engine đang chạy tốt xuống trạng thái tệ hơn lúc trước khi gọi.
+// The most important property of load-time validation: a failed reload must not downgrade
+// a running Engine to a worse state than before the call.
 func TestSetKeepsPreviousManifestWhenRejected(t *testing.T) {
 	s := &state.EngineManifestState{}
 
@@ -211,16 +211,16 @@ func TestSetKeepsPreviousManifestWhenRejected(t *testing.T) {
 		SupportedModes: []types.EngineModeSpec{{ID: "standard"}},
 	}
 	if err := s.Set(good); err != nil {
-		t.Fatalf("manifest hợp lệ mà bị từ chối: %v", err)
+		t.Fatalf("valid manifest was rejected: %v", err)
 	}
 
-	// Không có mode nào: chí tử.
+	// No modes at all: fatal.
 	if err := s.Set(&types.UniversalManifest{EngineID: "broken"}); err == nil {
-		t.Fatal("manifest không hợp lệ lẽ ra phải bị từ chối")
+		t.Fatal("invalid manifest should have been rejected")
 	}
 
 	if got := s.Get(); got == nil || got.EngineID != "good" {
-		t.Errorf("bản đang dùng phải được giữ nguyên sau một lần reload lỗi, nhận được %+v", got)
+		t.Errorf("the current version must be preserved after a failed reload, got %+v", got)
 	}
 }
 
@@ -228,20 +228,20 @@ func TestSetRejectsNilAndClearResets(t *testing.T) {
 	s := &state.EngineManifestState{}
 
 	if err := s.Set(nil); err == nil {
-		t.Error("Set(nil) lẽ ra phải là lỗi; muốn dọn trạng thái thì dùng Clear")
+		t.Error("Set(nil) should be an error; use Clear to reset state")
 	}
 
 	if err := s.Set(&types.UniversalManifest{
 		SupportedModes: []types.EngineModeSpec{{ID: "standard"}},
 	}); err != nil {
-		t.Fatalf("manifest hợp lệ mà bị từ chối: %v", err)
+		t.Fatalf("valid manifest was rejected: %v", err)
 	}
 	if !s.IsLoaded() {
-		t.Fatal("chuẩn bị dữ liệu thất bại")
+		t.Fatal("data preparation failed")
 	}
 
 	s.Clear()
 	if s.IsLoaded() {
-		t.Error("Clear phải đưa trạng thái về chưa nạp")
+		t.Error("Clear must return the state to unloaded")
 	}
 }

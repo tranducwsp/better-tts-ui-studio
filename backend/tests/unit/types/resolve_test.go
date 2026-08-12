@@ -26,33 +26,33 @@ func TestResolveCapabilities(t *testing.T) {
 		mode                      string
 		pitch, emotion, streaming bool
 	}{
-		{"fast", false, false, true},     // kế thừa hết
-		{"emotion_v2", true, true, true}, // mode ghi đè true
-		{"locked", false, false, false},  // mode ghi đè false dù engine nói true
-		{"unknown", false, false, true},  // mode lạ -> engine-wide
-		{"", false, false, true},         // rỗng -> engine-wide
+		{"fast", false, false, true},     // inherits all
+		{"emotion_v2", true, true, true}, // mode overrides to true
+		{"locked", false, false, false},  // mode overrides to false even though engine says true
+		{"unknown", false, false, true},  // unknown mode -> engine-wide
+		{"", false, false, true},         // empty -> engine-wide
 	}
 	for _, c := range cases {
 		got := m.ResolveCapabilities(c.mode)
 		if got.SupportsPitch != c.pitch || got.SupportsEmotion != c.emotion || got.SupportsStreaming != c.streaming {
-			t.Errorf("%q: pitch=%v emotion=%v streaming=%v; muốn %v/%v/%v",
+			t.Errorf("%q: pitch=%v emotion=%v streaming=%v; want %v/%v/%v",
 				c.mode, got.SupportsPitch, got.SupportsEmotion, got.SupportsStreaming, c.pitch, c.emotion, c.streaming)
 		}
 	}
 
-	// nil manifest không panic
+	// nil manifest does not panic
 	var nilM *types.UniversalManifest
 	if r := nilM.ResolveCapabilities("x"); !r.SupportsStreaming {
-		t.Error("nil manifest nên mặc định streaming=true")
+		t.Error("nil manifest should default to streaming=true")
 	}
 }
 
 func TestChunkSize(t *testing.T) {
 	cases := []struct{ maxText, pref, want int }{
-		{3000, 1000, 1000}, // pref nhỏ hơn -> dùng pref
-		{500, 9999, 500},   // pref lớn hơn trần -> kẹp về trần
-		{500, 0, 500},      // không khai -> trần
-		{0, 1000, 3000},    // engine không khai gì -> mặc định
+		{3000, 1000, 1000}, // pref is smaller -> use pref
+		{500, 9999, 500},   // pref larger than ceiling -> clamp to ceiling
+		{500, 0, 500},      // not declared -> ceiling
+		{0, 1000, 3000},    // engine declares nothing -> default
 	}
 	for _, c := range cases {
 		m := &types.UniversalManifest{Constraints: types.EngineConstraints{
@@ -60,7 +60,7 @@ func TestChunkSize(t *testing.T) {
 			Chunking:      types.ChunkingSpec{MaxChunkSize: c.pref},
 		}}
 		if got := m.ChunkSize(); got != c.want {
-			t.Errorf("maxText=%d pref=%d: được %d, muốn %d", c.maxText, c.pref, got, c.want)
+			t.Errorf("maxText=%d pref=%d: got %d, want %d", c.maxText, c.pref, got, c.want)
 		}
 	}
 }

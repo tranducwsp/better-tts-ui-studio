@@ -64,7 +64,7 @@ func TestGetEngineInfo_LoadedSuccess(t *testing.T) {
 		SupportedModes: []types.EngineModeSpec{{ID: "standard", Name: "Standard"}},
 	}
 	if err := state.GlobalManifestState.Set(mockManifest); err != nil {
-		t.Fatalf("manifest hợp lệ mà bị từ chối: %v", err)
+		t.Fatalf("valid manifest was rejected: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/info", nil)

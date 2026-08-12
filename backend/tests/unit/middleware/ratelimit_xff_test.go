@@ -11,12 +11,12 @@ import (
 	"backend/state"
 )
 
-// countingLimiter dựng một handler đếm số request đi lọt qua hạn mức.
+// countingLimiter builds a handler that counts how many requests pass through the limit.
 func countingLimiter(t *testing.T, limit int) (http.Handler, *int) {
 	t.Helper()
 
-	// Bộ đếm RAM chứ không Redis: bài này đo hành vi khoá theo IP, và một Redis còn khoá cũ
-	// từ bài khác sẽ làm kết quả phụ thuộc thứ tự chạy.
+	// In-memory counter, not Redis: this test measures IP-based limiting behavior, and a Redis
+	// with stale keys from another test would make results order-dependent.
 	prev := state.RedisClient
 	state.RedisClient = nil
 	t.Cleanup(func() { state.RedisClient = prev })
@@ -31,7 +31,13 @@ func countingLimiter(t *testing.T, limit int) (http.Handler, *int) {
 	return h, &passed
 }
 
-// TestRateLimit_IgnoresSpoofedXFF kiểm tra X-Forwarded-For giả không qua được rate limit.
+// TestRateLimit_IgnoresSpoofedXFF is the reason TRUSTED_PROXIES exists.
+//
+// X-Forwarded-For can be set by the client. Previously this header was trusted unconditionally,
+// so the rate-limit key was a value the caller chose: rotating the header each request bypassed
+// the limit entirely. Measured before the fix: 200/200 requests passed a 10/min limit — fully
+// bypassed, not just "slowed down a little."
+
 func TestRateLimit_IgnoresSpoofedXFF(t *testing.T) {
 	middleware.SetTrustedProxies(nil)
 
@@ -47,15 +53,15 @@ func TestRateLimit_IgnoresSpoofedXFF(t *testing.T) {
 	}
 
 	if *passed != limit {
-		t.Errorf("có %d/%d request lọt qua hạn mức %d — đổi X-Forwarded-For là vượt được", *passed, attempts, limit)
+		t.Errorf("%d/%d requests passed limit %d — rotating X-Forwarded-For bypasses the limit", *passed, attempts, limit)
 	}
 }
 
-// TestRateLimit_TrustsXFFFromProxy giữ chiều ngược lại.
+// TestRateLimit_TrustsXFFFromProxy holds the opposite direction.
 //
-// Khi thật sự có proxy phía trước, mọi người dùng đến từ cùng một địa chỉ TCP. Bỏ qua header
-// lúc đó nghĩa là cả site dùng chung một khoá hạn mức, và người thứ mười một bị chặn vì mười
-// người trước đã đăng nhập.
+// When there really is a proxy in front, all users arrive from the same TCP address. Ignoring
+// the header then means the entire site shares one rate-limit key, and the eleventh person is
+// blocked because ten people logged in before them.
 func TestRateLimit_TrustsXFFFromProxy(t *testing.T) {
 	middleware.SetTrustedProxies([]string{"10.10.0.0/16"})
 	t.Cleanup(func() { middleware.SetTrustedProxies(nil) })
@@ -63,7 +69,7 @@ func TestRateLimit_TrustsXFFFromProxy(t *testing.T) {
 	const limit = 2
 	handler, passed := countingLimiter(t, limit)
 
-	// Năm người dùng khác nhau, cùng đi qua một proxy tin cậy.
+	// Five different users, all passing through the same trusted proxy.
 	for i := range 5 {
 		req := httptest.NewRequest(http.MethodPost, "/api/login", nil)
 		req.RemoteAddr = "10.10.0.3:5555"
@@ -72,15 +78,16 @@ func TestRateLimit_TrustsXFFFromProxy(t *testing.T) {
 	}
 
 	if *passed != 5 {
-		t.Errorf("chỉ %d/5 người dùng sau proxy đi qua — hạn mức đang khoá theo địa chỉ proxy", *passed)
+		t.Errorf("only %d/5 users behind the proxy passed — the limit is keyed by the proxy address", *passed)
 	}
 }
 
-// TestRateLimit_UsesLastUntrustedHop bắt trường hợp client bịa sẵn chuỗi trước khi tới proxy.
+// TestRateLimit_UsesLastUntrustedHop catches the case where the client pre-spoofs the chain
+// before reaching the proxy.
 //
-// Proxy nối thêm địa chỉ thật vào CUỐI chuỗi, nên phần bên trái là thứ client tự viết. Lấy
-// phần tử đầu — cách làm cũ — nghĩa là vẫn đọc đúng giá trị người gọi tự chọn, chỉ khác là
-// bây giờ phải đi qua proxy mới đặt được.
+// The proxy appends the real address to the END of the chain, so the left part is what the
+// client wrote. Taking the first element — the old approach — means still reading the value
+// the caller chose, except now they have to go through the proxy to set it.
 func TestRateLimit_UsesLastUntrustedHop(t *testing.T) {
 	middleware.SetTrustedProxies([]string{"10.10.0.0/16"})
 	t.Cleanup(func() { middleware.SetTrustedProxies(nil) })
@@ -92,12 +99,12 @@ func TestRateLimit_UsesLastUntrustedHop(t *testing.T) {
 	for i := range attempts {
 		req := httptest.NewRequest(http.MethodPost, "/api/login", nil)
 		req.RemoteAddr = "10.10.0.3:5555"
-		// Phần bên trái do người gọi bịa; "198.51.100.77" là địa chỉ thật proxy ghi vào.
+		// Left part is spoofed by the caller; "198.51.100.77" is the real address the proxy wrote.
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("172.16.9.%d, 198.51.100.77", i%256))
 		handler.ServeHTTP(httptest.NewRecorder(), req)
 	}
 
 	if *passed != limit {
-		t.Errorf("có %d/%d request lọt qua hạn mức %d — phần bịa sẵn trong X-Forwarded-For vẫn được tin", *passed, attempts, limit)
+		t.Errorf("%d/%d requests passed limit %d — the pre-spoofed part of X-Forwarded-For is still being trusted", *passed, attempts, limit)
 	}
 }

@@ -9,16 +9,18 @@ import (
 	"testing"
 )
 
-// C9 giữ cho tts_chunks.status có cùng DEFAULT giữa schema.sql và chuỗi migration.
+// C9 keeps tts_chunks.status having the same DEFAULT between schema.sql and the migration
+// chain.
 //
-// schema.sql là bản đồ tổng hợp được duy trì tay; DB thật dựng từ migrations/*.up.sql theo
-// thứ tự. Hai nguồn từng lệch: migration 000006 đề DEFAULT 'processing', schema.sql ghi
-// 'pending' — không gây lỗi chạy (mọi insert đã chỉ status tường minh) nhưng bất kỳ công cụ
-// nào sinh schema rồi so với DB điều hành sẽ báo "khác nhau" hoài.
+// schema.sql is a hand-maintained composite snapshot; the real DB is built from
+// migrations/*.up.sql in order. The two sources once diverged: migration 000006 set DEFAULT
+// 'processing', schema.sql said 'pending' — no runtime error (every insert already specified
+// status explicitly) but any tool that generates a schema and compares it to the production DB
+// would keep reporting "different".
 //
-// Kiểm bằng cách mô phỏng hiệu lực cuối của DEFAULT theo chuỗi migration (lần ghi sau thắng)
-// rồi so với giá trị schema.sql khai — không cần Postgres thật, đúng phong cách
-// TestPythonSchemaParity.
+// Tests by simulating the final effective DEFAULT across the migration chain (last write wins)
+// then comparing with the value declared in schema.sql — no real Postgres needed, in the same
+// style as TestPythonSchemaParity.
 func TestTTSChunksStatusDefaultParity(t *testing.T) {
 	effDefault := ""
 	for _, sql := range readUpMigrations(t, filepath.Join("..", "..", "..", "..", "backend", "db", "migrations")) {
@@ -31,31 +33,31 @@ func TestTTSChunksStatusDefaultParity(t *testing.T) {
 		}
 	}
 	if effDefault == "" {
-		t.Fatalf("không thấy khai báo DEFAULT của tts_chunks.status trong toàn bộ migration — regex có thể đã lệch")
+		t.Fatalf("no DEFAULT declaration for tts_chunks.status found in any migration — regex may have drifted")
 	}
 
 	schema, err := os.ReadFile(filepath.Clean(filepath.Join("..", "..", "..", "..", "backend", "db", "schema.sql")))
 	if err != nil {
-		t.Fatalf("đọc schema.sql: %v", err)
+		t.Fatalf("read schema.sql: %v", err)
 	}
 	schemaDefault, ok := createTableStatusDefault(string(schema))
 	if !ok {
-		t.Fatalf("schema.sql không khai DEFAULT cho tts_chunks.status — bảng có còn tồn tại?")
+		t.Fatalf("schema.sql does not declare DEFAULT for tts_chunks.status — does the table still exist?")
 	}
 
 	if schemaDefault != effDefault {
-		t.Errorf("default lệch: schema.sql '%s' vs toàn chuỗi migration '%s'. Nếu migration đổi "+
-			"default status, hãy cập nhật schema.sql cùng lượt (hoặc thêm migration bù) — đừng để "+
-			"hai bản ghi 'đúng' cùng lúc.", schemaDefault, effDefault)
+		t.Errorf("default mismatch: schema.sql '%s' vs full migration chain '%s'. If a migration changes "+
+			"the default status, update schema.sql in the same commit (or add a compensating migration) — "+
+			"do not have two 'correct' records at the same time.", schemaDefault, effDefault)
 	}
 }
 
-// readUpMigrations đọc mọi tệp .up.sql theo thứ tự số.
+// readUpMigrations reads all .up.sql files in numeric order.
 func readUpMigrations(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("đọc thư mục migration %s: %v", dir, err)
+		t.Fatalf("read migration directory %s: %v", dir, err)
 	}
 
 	names := make([]string, 0, len(entries))
@@ -71,23 +73,23 @@ func readUpMigrations(t *testing.T, dir string) []string {
 	for _, n := range names {
 		raw, err := os.ReadFile(filepath.Join(dir, n))
 		if err != nil {
-			t.Fatalf("đọc migration %s: %v", n, err)
+			t.Fatalf("read migration %s: %v", n, err)
 		}
 		out = append(out, string(raw))
 	}
 	return out
 }
 
-// ttsChunksCreateRe khớp trọn khối CREATE TABLE tts_chunks. Các cột dùng VARCHAR(..) tức có
-// `)` ở giữa, nhưng không `;` nào nằm trong khối, nên `\);` chỉ khớp đúng điểm kết khối.
-// statusDefaultRe lấy DEFAULT trong khối đó.
+// ttsChunksCreateRe matches the entire CREATE TABLE tts_chunks block. Columns use
+// VARCHAR(..) which contains `)` inside, but no `;` appears inside the block, so `);`
+// only matches the block terminator. statusDefaultRe extracts the DEFAULT within that block.
 var (
 	ttsChunksCreateRe = regexp.MustCompile(`(?s)CREATE TABLE IF NOT EXISTS tts_chunks\s*\((.*?)\)\s*;`)
 	statusDefaultRe   = regexp.MustCompile(`(?i)\bstatus\s+VARCHAR\(50\)\s+NOT NULL\s+DEFAULT\s+'([^']+)'`)
 	alterStatusRe     = regexp.MustCompile(`(?i)ALTER\s+TABLE\s+tts_chunks\s+ALTER\s+COLUMN\s+status\s+SET\s+DEFAULT\s+'([^']+)'`)
 )
 
-// createTableStatusDefault trả về DEFAULT của status khi khối tạo tts_chunks khai nó.
+// createTableStatusDefault returns the DEFAULT of status when the tts_chunks create block declares it.
 func createTableStatusDefault(sql string) (string, bool) {
 	m := ttsChunksCreateRe.FindStringSubmatch(sql)
 	if m == nil {
@@ -100,7 +102,7 @@ func createTableStatusDefault(sql string) (string, bool) {
 	return d[1], true
 }
 
-// alterStatusDefault trả về DEFAULT được một lệnh ALTER tts_chunks... đặt (lần ghi sau thắng).
+// alterStatusDefault returns the DEFAULT set by an ALTER tts_chunks... statement (last write wins).
 func alterStatusDefault(sql string) (string, bool) {
 	m := alterStatusRe.FindStringSubmatch(sql)
 	if m == nil {

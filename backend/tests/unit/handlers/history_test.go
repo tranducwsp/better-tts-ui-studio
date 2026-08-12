@@ -72,9 +72,9 @@ func TestHistory_InitJob_InvalidPayload(t *testing.T) {
 	}
 }
 
-// TestHistory_GetUserHistory_BeforeNotTimestamp: con trỏ phân trang gửi `before` phải là một
-// RFC3339. Giá trị không phân tích được là lỗi phía client chứ không phải máy chủ — trả 400
-// trước khi chạm DB (vì vậy test này chạy được cả khi không có Postgres).
+// TestHistory_GetUserHistory_BeforeNotTimestamp: the pagination cursor `before` must be a
+// valid RFC3339 timestamp. A non-parseable value is a client error, not a server error — returns 400
+// before hitting the DB (so this test works even without Postgres).
 func TestHistory_GetUserHistory_BeforeNotTimestamp(t *testing.T) {
 	h := handlers.NewHistoryHandler()
 
