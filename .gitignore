@@ -56,3 +56,4 @@ node_modules/
 backend/backend
 
 .claude/worktrees/
+test-results/

@@ -143,6 +143,27 @@ docker compose ps
 curl -f http://localhost:8000/health
 ```
 
+### Playwright (UI Integration)
+
+Run Playwright tests against the running Docker stack to verify manifest-to-UI consistency:
+
+```bash
+# Install Playwright browsers (first time only)
+npx playwright install chromium
+
+# Run all integration tests
+npx playwright test
+
+# Run a specific test file
+npx playwright test tests/integration/manifest_ui.spec.ts
+
+# Run tests in headed mode (watch the browser)
+npx playwright test --headed
+
+# Run tests with UI mode (interactive dashboard)
+npx playwright test --ui
+```
+
 Smoke test with k6 when the stack is ready:
 
 ```bash
@@ -164,6 +185,112 @@ Check layout:
 
 ```bash
 scripts/check-test-layout.sh
+```
+
+## Cleanup After Testing
+
+Testing generates data that accumulates quickly and can fill disk space. Run cleanup after every test session, especially before switching branches or leaving the project.
+
+### ⚠️ Known Issues
+
+- **`backend/storage/voice/` may not exist** — always use `rm -rf backend/storage/voice` (no trailing glob) to handle missing dir gracefully.
+- **Root-owned files** — Docker containers create files as root in `storage/` subdirectories. Use `docker compose run --user root` to clean them (passwordless sudo is not available).
+
+### Storage Cleanup
+
+```bash
+# Clean generated audio files (respects .gitignore patterns)
+# Use NULL_GLOB to avoid zsh "no matches found" when dir is empty
+setopt NULL_GLOB 2>/dev/null; rm -rf backend/storage/audio/* backend/storage/temp/*; setopt NO_NULL_GLOB 2>/dev/null
+
+# Clean voice/ (may not exist; use bare path, no wildcard)
+rm -rf backend/storage/voice
+
+# Clean root-owned files (created by Docker containers)
+docker compose run --user root --entrypoint sh backend \
+  -c "rm -rf /app/storage/019f90a6-d5c8-7795-bae5-de6ae408d880 /app/storage/5fa2daa6-eb1d-4262-b185-2937b0a3cba5 /app/storage/clone/*"
+```
+
+### Docker Cleanup
+
+The build cache is the biggest space hog. After several `docker compose up --build` iterations, it can grow to **40+ GB**.
+
+```bash
+# Stop the stack (use -v ONLY if you want to delete PG data too)
+docker compose down
+
+# Remove dangling images
+docker image prune -f
+
+# ⚠️ CRITICAL: Prune build cache — typically reclaims 40+ GB
+docker builder prune -f
+
+# Remove orphan containers (left over from docker compose run)
+docker compose down --remove-orphans
+
+# Remove unused volumes (reclaim 100-500 MB)
+docker volume prune -f
+
+# Full cleanup (when disk is critically low)
+docker system prune -af --volumes   # CAUTION: removes everything
+```
+
+### Disk Usage Check
+
+```bash
+# Check how much space storage is using
+du -sh backend/storage/*/
+
+# Check Docker disk usage (images, containers, build cache, volumes)
+docker system df
+
+# Check overall disk
+df -h /
+```
+
+### Redis Cleanup (test keys)
+
+```bash
+# Flush test data (Redis requires password from .env)
+docker compose exec redis redis-cli -a "${REDIS_PASSWORD:-devredis}" FLUSHDB
+```
+
+### PostgreSQL Cleanup (test data)
+
+```bash
+# Remove test users and history (adjust for your test patterns)
+docker compose exec postgres psql -U user -d aitts -c "DELETE FROM users WHERE username LIKE 'test%';"
+docker compose exec postgres psql -U user -d aitts -c "DELETE FROM history WHERE 1=1;"  # CAUTION
+```
+
+### k6 / Load Test Cleanup
+
+```bash
+# Remove reports and metrics
+rm -f tests/reports/*.json tests/reports/*.html tests/monitoring/*.json
+```
+
+### Log Cleanup
+
+```bash
+# Truncate container logs (prevents Docker log files from filling disk)
+docker compose logs -f > /dev/null 2>&1  # or:
+truncate -s 0 $(docker inspect --format='{{.LogPath}}' $(docker compose ps -q) 2>/dev/null) 2>/dev/null
+```
+
+### Quick One-Liner (full cleanup after stopping the stack)
+
+```bash
+# Stop stack, clean storage, prune images + build cache + volumes + orphans
+docker compose down && \
+  find backend/storage/audio/ backend/storage/temp/ -type f -delete 2>/dev/null; \
+  rm -rf backend/storage/voice 2>/dev/null; \
+  docker compose run --user root --entrypoint sh backend \
+    -c "rm -rf /app/storage/clone/*" 2>/dev/null; \
+  docker image prune -f && \
+  docker builder prune -f && \
+  docker volume prune -f && \
+  docker compose down --remove-orphans
 ```
 
 ## Pre-Completion Checklist

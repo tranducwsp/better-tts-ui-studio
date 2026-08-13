@@ -110,6 +110,16 @@ func (h *TasksHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject cancel if the task is already in a terminal state.
+	if task, ok := state.GlobalTaskManager.Get(taskID); ok {
+		status, _, _, _ := task.Snapshot()
+		if status == "done" || status == "error" || status == "cancelled" {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = sonic.ConfigDefault.NewEncoder(w).Encode(map[string]string{"detail": "Task is already " + status})
+			return
+		}
+	}
+
 	state.GlobalTaskManager.Cancel(taskID)
 
 	// Write status to DB immediately, without waiting for the worker. Previously only Cancel
