@@ -7,7 +7,7 @@ namespace: ui-studio
 backend:
   replicaCount: 1
   image:
-    repository: harbor.amoratran.id.vn/tiny-src/studio-backend
+    repository: your-registry.example.com/studio-backend
     pullPolicy: Always
     tag: "latest"
   service:
@@ -27,7 +27,7 @@ backend:
 worker:
   replicaCount: 1
   image:
-    repository: harbor.amoratran.id.vn/tiny-src/studio-backend
+    repository: your-registry.example.com/studio-backend
     pullPolicy: Always
     tag: "latest"
   resources:
@@ -44,7 +44,7 @@ worker:
 cron:
   schedule: "*/15 * * * *"
   image:
-    repository: harbor.amoratran.id.vn/tiny-src/studio-backend
+    repository: your-registry.example.com/studio-backend
     pullPolicy: Always
     tag: "latest"
   tempAudioRetentionHours: 24
@@ -57,7 +57,7 @@ engine:
   enabled: true
   replicaCount: 1
   image:
-    repository: harbor.amoratran.id.vn/tiny-src/studio-engine
+    repository: your-registry.example.com/studio-engine
     pullPolicy: Always
     tag: "latest"
   service:
@@ -77,7 +77,7 @@ engine:
 frontend:
   replicaCount: 1
   image:
-    repository: harbor.amoratran.id.vn/tiny-src/studio-frontend
+    repository: your-registry.example.com/studio-frontend
     pullPolicy: Always
     tag: "latest"
   service:
@@ -96,7 +96,7 @@ frontendBuilder:
   enabled: true
   replicaCount: 1
   image:
-    repository: harbor.amoratran.id.vn/tiny-src/studio-frontend-builder
+    repository: your-registry.example.com/studio-frontend-builder
     pullPolicy: Always
     tag: "latest"
   service:
@@ -124,7 +124,7 @@ redis:
 # Image pull credentials
 # ---------------------------------------------------------------------------
 imagePullSecrets:
-  - name: tiny-src-registry-secret
+  - name: registry-secret
 
 # ---------------------------------------------------------------------------
 # Persistence — backend storage volume (audio files, etc.)

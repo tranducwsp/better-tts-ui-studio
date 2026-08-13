@@ -255,7 +255,7 @@ Located in `k8s/templates/` — Helm charts.
 | `deployment-frontend.yaml` | (default: nginx) | Image: `studio-frontend` |
 | `deployment-frontend-builder.yaml` | (default: `npm run builder`) | Image: `studio-frontend-builder` |
 
-**Image registry:** `harbor.amoratran.id.vn/tiny-src/`
+**Image registry:** `your-registry.example.com/`
 
 ---
 
