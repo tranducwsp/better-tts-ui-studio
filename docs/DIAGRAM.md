@@ -14,21 +14,21 @@ graph TB
     end
 
     subgraph Gateway["Go Gateway (API)"]
-        AUTH[Auth Middleware]
-        RATE[Rate Limiter]
-        MANIFEST[Manifest Cache]
-        TASK[Task Manager]
-        UPLOAD[Upload Handler]
+        AUTH["Auth Middleware"]
+        RATE["Rate Limiter"]
+        MANIFEST["Manifest Cache"]
+        TASK_MGR["Task Manager"]
+        UPLOAD["Upload Handler"]
     end
 
     subgraph Redis["Redis (Shared State)"]
-        TASK_STATE[task:{id} — state & progress]
-        AUDIO[audio:{id} — output blob]
-        QUEUE[queue:{engine} — pending tasks]
-        RATELIMIT[ratelimit:{user} — counters]
-        USER_CACHE[auth:user:{name} — 5s TTL]
-        ONLINE[online:{user} — 60s heartbeat]
-        PUBSUB[Pub/Sub — task events]
+        TASK_STATE["task:{id} — state & progress"]
+        AUDIO["audio:{id} — output blob"]
+        QUEUE["queue:{engine} — pending tasks"]
+        RATELIMIT["ratelimit:{user} — counters"]
+        USER_CACHE["auth:user:{name} — 5s TTL"]
+        ONLINE["online:{user} — 60s heartbeat"]
+        PUBSUB["Pub/Sub — task events"]
     end
 
     subgraph PG["PostgreSQL (Durable Data)"]
@@ -161,12 +161,12 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     subgraph Redis["Redis — cross-process state"]
-        TASK[task:{id} — TTL 5min]
-        AUDIO[audio:{id} — TTL 5min]
-        QUEUE[queue:{engine} — list]
-        RATE[ratelimit:{user} — window]
-        UCACHE[auth:user:{name} — TTL 5s]
-        ONLINE[online:{user} — TTL 60s]
+        TASK["task:{id} — TTL 5min"]
+        AUDIO["audio:{id} — TTL 5min"]
+        QUEUE["queue:{engine} — list"]
+        RATE["ratelimit:{user} — window"]
+        UCACHE["auth:user:{name} — TTL 5s"]
+        ONLINE["online:{user} — TTL 60s"]
     end
 
     subgraph RAM["In-Memory — hot singletons"]
