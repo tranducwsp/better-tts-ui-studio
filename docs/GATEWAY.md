@@ -272,7 +272,7 @@ Used to declare the list of standard Model voices directly in the Manifest (grea
 
 #### 2.6.3. Clone Attribute Form Structure Details (`voice_metadata_schema`)
 
-Used to automatically generate data input fields (such as Region, Gender, Style) in the Create New Clone Voice Modal [`CreateVoiceModal`](file:///home/amoratran/server/better-tts-ui-studio/frontend/src/lib/components/CreateVoiceModal.svelte):
+Used to automatically generate data input fields (such as Region, Gender, Style) in the Create New Clone Voice Modal [`CreateVoiceModal`](frontend/src/lib/components/CreateVoiceModal.svelte):
 
 | Field | Data Type | Required | Description & Options |
 | :--- | :--- | :--- | :--- |

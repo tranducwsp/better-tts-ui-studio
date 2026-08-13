@@ -5,8 +5,8 @@ import time
 import os
 from datetime import datetime
 
-METRICS_FILE = "/home/amoratran/server/better-tts-ui-studio/test/metrics_5h.json"
-HTML_FILE = "/home/amoratran/server/better-tts-ui-studio/test/ram_report_5h.html"
+METRICS_FILE = os.path.join(os.path.dirname(__file__), "..", "reports", "metrics_5h.json")
+HTML_FILE = os.path.join(os.path.dirname(__file__), "..", "reports", "ram_report_5h.html")
 DURATION_SECONDS = 18720  # 5.2 hours
 INTERVAL_SECONDS = 15
 

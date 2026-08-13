@@ -41,7 +41,7 @@ while time.time() - start_time < duration_sec:
     metrics.append(sample)
     time.sleep(interval_sec)
 
-with open("/home/amoratran/server/better-tts-ui-studio/test/metrics_quick.json", "w") as f:
+with open(os.path.join(os.path.dirname(__file__), "..", "reports", "metrics_quick.json"), "w") as f:
     json.dump(metrics, f, indent=2)
 
 print("Quick Monitoring complete!")
