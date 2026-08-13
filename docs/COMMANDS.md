@@ -301,7 +301,7 @@ k6 run -e STAGE=stress tests/load/load.js
 k6 run -e STAGE=soak tests/load/load.js
 
 # Custom backend URL
-k6 run -e BASE_URL=http://192.168.1.100:8000 tests/load/smoke.js
+k6 run -e BASE_URL=http://localhost:8000 tests/load/smoke.js
 
 # Output to JSON
 k6 run --out json=results.json tests/load/load.js

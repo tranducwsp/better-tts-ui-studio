@@ -599,10 +599,10 @@ P3 — Low (khi cần thiết)
 docker compose up -d
 
 # Admin user
-# username: admin, password: devadmin
+# username: admin, password: admin
 
 # Test user (cần approve)
-# username: testuser, password: testpass123
+# username: testuser, password: admin
 
 # Endpoint base
 # http://localhost:5173/api

@@ -20,9 +20,9 @@ const STAGE    = __ENV.STAGE    || 'load';   // smoke | load | stress | soak
 
 // ── Pre-created accounts ─────────────────────────────────────────────────────
 const ADMIN_USER = 'admin';
-const ADMIN_PASS = 'devadmin';
+const ADMIN_PASS = 'admin';
 const USER_USER  = 'user';
-const USER_PASS  = 'devuser';
+const USER_PASS  = 'admin';
 
 // ── Custom metrics ───────────────────────────────────────────────────────────
 const errorRate      = new Rate('errors');

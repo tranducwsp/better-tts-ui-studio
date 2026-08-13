@@ -1,9 +1,6 @@
 # Default values for UI Studio Infrastructure Platform Helm Chart
 namespace: ui-studio
 
-global:
-  domain: studio.amoratran.id.vn
-
 # ---------------------------------------------------------------------------
 # 1. Control Plane Backend (Go Chi)
 # ---------------------------------------------------------------------------
@@ -128,17 +125,6 @@ redis:
 # ---------------------------------------------------------------------------
 imagePullSecrets:
   - name: tiny-src-registry-secret
-
-# ---------------------------------------------------------------------------
-# Ingress
-# ---------------------------------------------------------------------------
-ingress:
-  enabled: true
-  className: "traefik"
-  annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    ingress.kubernetes.io/proxy-body-size: "0"
-  host: studio.amoratran.id.vn
 
 # ---------------------------------------------------------------------------
 # Persistence — backend storage volume (audio files, etc.)

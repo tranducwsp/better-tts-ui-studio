@@ -40,7 +40,7 @@ k6 run test/smoke.js
 k6 run test/api.js
 
 # Specify a different backend
-k6 run -e BASE_URL=http://192.168.1.100:8000 test/smoke.js
+k6 run -e BASE_URL=http://localhost:8000 test/smoke.js
 ```
 
 ## Run 10k VU Load

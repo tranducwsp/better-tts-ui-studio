@@ -14,7 +14,7 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:5173';
  */
 async function loginAsAdmin(context: BrowserContext): Promise<void> {
   const response = await context.request.post(`${BASE_URL}/api/login`, {
-    data: { username: 'admin', password: 'devadmin' },
+    data: { username: 'admin', password: 'admin' },
   });
   expect(response.ok()).toBeTruthy();
   // The response sets HttpOnly cookies — Playwright's context.request handles them
