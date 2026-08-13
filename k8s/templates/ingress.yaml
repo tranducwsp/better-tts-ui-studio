@@ -2,10 +2,11 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "vieneu-tts-api.fullname" . }}
+  name: {{ include "ui-studio.fullname" . }}-ingress
+  namespace: {{ .Values.namespace | default "ui-studio" }}
   labels:
-    app.kubernetes.io/name: {{ include "vieneu-tts-api.name" . }}
-    helm.sh/chart: {{ include "vieneu-tts-api.chart" . }}
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}
+    helm.sh/chart: {{ include "ui-studio.chart" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
   {{- with .Values.ingress.annotations }}
   annotations:
@@ -15,23 +16,31 @@ spec:
   ingressClassName: {{ .Values.ingress.className }}
   tls:
     - hosts:
-      {{- range .Values.ingress.hosts }}
-        - {{ .host | quote }}
-      {{- end }}
-      secretName: {{ include "vieneu-tts-api.fullname" . }}-tls
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ include "ui-studio.fullname" . }}-tls
   rules:
-  {{- range .Values.ingress.hosts }}
-    - host: {{ .host | quote }}
+    - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
-        {{- range .paths }}
-          - path: {{ .path }}
-            pathType: {{ .pathType }}
+          - path: /api
+            pathType: Prefix
             backend:
               service:
-                name: {{ include "vieneu-tts-api.fullname" $ }}
+                name: {{ include "ui-studio.fullname" . }}-backend
                 port:
-                  number: {{ $.Values.service.port }}
-        {{- end }}
-  {{- end }}
+                  number: {{ .Values.backend.service.port }}
+          - path: /storage
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ui-studio.fullname" . }}-backend
+                port:
+                  number: {{ .Values.backend.service.port }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ui-studio.fullname" . }}-frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
 {{- end }}

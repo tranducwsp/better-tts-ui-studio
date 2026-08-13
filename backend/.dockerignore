@@ -1,0 +1,19 @@
+# Không bao giờ đưa tệp môi trường vào image.
+#
+# Dockerfile trước đây có `COPY .env* ./`, nên một .env của người phát triển đi thẳng vào
+# image cùng SECRET_KEY và mật khẩu tài khoản khởi tạo. Bất kỳ ai pull được image đều đọc
+# được chúng — và vì requireAll chỉ kiểm biến có rỗng hay không, một khoá nằm sẵn trong image
+# khiến backend khởi động bình thường bằng khoá mà ai cũng biết. Đó đúng là lỗ hổng đã được
+# vá ở tầng mã nguồn khi khoá mặc định dùng chung bị bỏ đi; đường Docker làm nó sống lại.
+.env
+.env.*
+!.env.example
+
+# Dữ liệu chạy thật dưới gốc lưu trữ cục bộ. Chỉ loại NỘI DUNG, không loại thư mục
+# storage/ — đó là một package Go và thiếu nó thì bản build hỏng.
+storage/temp/
+storage/clone/
+
+# Nhị phân biên dịch trên máy phát triển; image tự dựng lại từ nguồn.
+/main
+/backend

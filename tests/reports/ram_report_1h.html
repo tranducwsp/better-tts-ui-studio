@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>1-Hour Fixed 5000 VUs Endurance Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+        .header { text-align: center; padding: 20px; background: #1e293b; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+        .header h1 { margin: 0; color: #38bdf8; font-size: 28px; }
+        .header p { color: #94a3b8; margin: 8px 0 0 0; }
+        .grid { display: grid; grid-template-columns: 1fr; gap: 20px; max-width: 1400px; margin: 0 auto; }
+        .card { background: #1e293b; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+        .card h2 { margin-top: 0; color: #cbd5e1; font-size: 20px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+        .chart-container { position: relative; height: 400px; width: 100%; }
+        .summary-boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stat-box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 16px; text-align: center; }
+        .stat-box .title { color: #94a3b8; font-size: 14px; margin-bottom: 6px; }
+        .stat-box .value { font-size: 24px; font-weight: bold; color: #38bdf8; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 1-Hour Fixed 5000 VUs Endurance Report</h1>
+        <p>Waves: 2 Waves (5000 VUs constant) | Sampling Rate: 15s | Map Bucket Re-allocation Enabled</p>
+    </div>
+
+    <div class="summary-boxes">
+        <div class="stat-box">
+            <div class="title">Max Backend RAM</div>
+            <div class="value">263.2 MiB</div>
+        </div>
+        <div class="stat-box">
+            <div class="title">Current Backend RAM</div>
+            <div class="value">263.2 MiB</div>
+        </div>
+        <div class="stat-box">
+            <div class="title">Worker Memory</div>
+            <div class="value">36.1 MiB</div>
+        </div>
+        <div class="stat-box">
+            <div class="title">Total Data Points</div>
+            <div class="value">6</div>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>🧠 Container Memory Usage (MiB) Over 1 Hour</h2>
+            <div class="chart-container">
+                <canvas id="memChart"></canvas>
+            </div>
+        </div>
+        <div class="card">
+            <h2>⚡ Backend CPU Load (%) Over 1 Hour</h2>
+            <div class="chart-container">
+                <canvas id="cpuChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const labels = ["16:23:39", "16:23:57", "16:24:14", "16:24:31", "16:24:48", "16:25:05"];
+        
+        new Chart(document.getElementById('memChart'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    { label: 'ai-backend (Go API)', data: [75.17, 102.3, 151.6, 217.3, 252.5, 263.2], borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.1)', fill: true, tension: 0.2, pointRadius: 0 },
+                    { label: 'ai-worker (Go Queue)', data: [21.96, 24.82, 27.75, 30.85, 31.7, 36.13], borderColor: '#34d399', backgroundColor: 'transparent', tension: 0.2, pointRadius: 0 },
+                    { label: 'ai-engine (Python AI)', data: [41.07, 41.07, 41.07, 41.07, 41.07, 41.07], borderColor: '#f43f5e', backgroundColor: 'transparent', tension: 0.2, pointRadius: 0 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8', maxTicksLimit: 20 } },
+                    y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' }, title: { display: true, text: 'RAM (MiB)', color: '#94a3b8' } }
+                },
+                plugins: { legend: { labels: { color: '#f8fafc' } } }
+            }
+        });
+
+        new Chart(document.getElementById('cpuChart'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    { label: 'ai-backend CPU %', data: [33.67, 178.33, 297.46, 386.24, 440.69, 384.96], borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.1)', fill: true, tension: 0.2, pointRadius: 0 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8', maxTicksLimit: 20 } },
+                    y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' }, title: { display: true, text: 'CPU %', color: '#94a3b8' } }
+                },
+                plugins: { legend: { labels: { color: '#f8fafc' } } }
+            }
+        });
+    </script>
+</body>
+</html>

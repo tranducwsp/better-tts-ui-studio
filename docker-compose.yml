@@ -1,0 +1,245 @@
+services:
+  # 0. PostgreSQL Database Service
+  postgres:
+    image: postgres:16-alpine
+    container_name: app-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set in .env}
+      - POSTGRES_DB=${POSTGRES_DB:-ai_studio}
+    # Do not publish 5432 to host: the backend talks to Postgres over the compose
+    # internal network by service name. Exposing to host places the database on every
+    # network interface of the machine.
+    # If you need psql from outside, use `docker compose exec postgres psql`.
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ai_studio}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # 0.1 Redis Cache & PubSub Broker Service
+  redis:
+    image: redis:alpine
+    container_name: app-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is not set in .env}
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # 1. AI Core Engine Microservice (Real AI Core TTS)
+  engine:
+    build:
+      context: ./core-tts-example
+      dockerfile: Dockerfile
+    container_name: ai-engine
+    # The engine has no authentication layer: every endpoint (/synthesize, /voices/clone) and
+    # gRPC are open to anyone who can reach it. It should only accept traffic from the backend
+    # over the internal network, so the port is not exposed to the host.
+    expose:
+      - "8001"
+      - "50051"
+    environment:
+      - CORE_PORT=8001
+      - CORE_HOST=0.0.0.0
+      - GRPC_PORT=50051
+      # The engine owns the UI mode: it publishes this as ui_schema.ui_mode, the backend
+      # forwards a rebuild webhook on manifest reload, and the frontend rebuilds against
+      # the new value. "beauty" (default) or "fast" — the latter strips icons, webfonts
+      # and GPU filters from the prerendered bundle.
+      - UI_MODE=${UI_MODE:-beauty}
+    volumes:
+      - ./core-tts-example:/app
+    # Use python main.py instead of uvicorn directly: main.py starts the gRPC server when GRPC_PORT
+    # is set, then calls uvicorn. Calling uvicorn directly means gRPC never starts.
+    command: python main.py
+    restart: unless-stopped
+
+  # 2. Control Plane Web Backend (Go Chi - Auth, DB, Management, Dynamic Gateway)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is not set in .env}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
+      - REDIS_URL=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - COOKIE_SECURE=${COOKIE_SECURE:-1}
+      - TASK_MEMORY_RETENTION_SECONDS=${TASK_MEMORY_RETENTION_SECONDS:-600}
+      - ENABLE_REQUEST_LOGGING=${ENABLE_REQUEST_LOGGING:-true}
+      - ENABLE_PPROF=${ENABLE_PPROF:-false}
+      - ENABLE_SWAGGER=${ENABLE_SWAGGER:-true}
+
+      # Accounts created on first startup, when the database is empty. Leave all four empty
+      # and no accounts will be created; the first user registers via the UI.
+      #
+      # Previously compose did not pass these, but the image contained a baked-in .env with
+      # accounts — so the accounts created were those of the image builder, and setting
+      # variables in your own .env had no effect.
+      - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME:-}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-}
+      - DEFAULT_USER_USERNAME=${DEFAULT_USER_USERNAME:-}
+      - DEFAULT_USER_PASSWORD=${DEFAULT_USER_PASSWORD:-}
+      - CORE_ENGINE_URL=http://engine:8001
+      - CORE_ENGINE_GRPC_URL=engine:50051
+      - FE_BUILDER_URL=http://frontend-builder:3001
+
+      # Storage backend. Default local so `docker compose up` works immediately without any
+      # account; set STORAGE_BACKEND=s3 in .env to switch to MinIO/S3.
+      #
+      # S3_* variables are passed unconditionally: when the backend runs local it doesn't read
+      # them, so leaving them empty is harmless — but declaring them conditionally would require
+      # compose to have two environment blocks and they would drift apart.
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - STORAGE_DIR=/app/storage
+      - S3_BUCKET=${S3_BUCKET:-}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-0}
+      - S3_PREFIX=${S3_PREFIX:-}
+
+    volumes:
+      - ./backend/storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      engine:
+        condition: service_started
+    command: ./web
+    restart: unless-stopped
+
+  # 2.1 Synthesis Worker (same image, separate binary)
+  #
+  # Separated from web for three reasons: a synthesis job no longer dies when the web is redeployed,
+  # the number of concurrent Engine calls has a real ceiling instead of being equal to the number of
+  # incoming requests, and the number of workers scales independently of the number of web instances.
+  #
+  # The queue lives on Redis and is NOT persistent: Redis here runs without AOF/RDB, so pending jobs
+  # are lost when Redis restarts. This is intentional — a chunk only takes a few seconds to synthesize
+  # again, and the UI already retries each chunk three times.
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-worker
+    environment:
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is not set in .env}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
+      - REDIS_URL=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - CORE_ENGINE_URL=http://engine:8001
+      - CORE_ENGINE_GRPC_URL=engine:50051
+
+      # The worker writes audio to the same store that the web reads from. With STORAGE_BACKEND=local,
+      # both processes must be on the same machine with the same volume — use S3 when splitting across
+      # multiple nodes.
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - STORAGE_DIR=/app/storage
+      - S3_BUCKET=${S3_BUCKET:-}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-0}
+      - S3_PREFIX=${S3_PREFIX:-}
+    volumes:
+      - ./backend/storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      engine:
+        condition: service_started
+    command: ./worker
+    restart: unless-stopped
+
+  # Sweeper cleans up expired temporary audio. Cron, not a worker: it runs on a clock
+  # so multiple replicas cannot divide the work. Keep exactly 1 replica.
+  cron:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-cron
+    environment:
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is not set in .env}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_studio}?sslmode=disable
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - STORAGE_DIR=/app/storage
+      - S3_BUCKET=${S3_BUCKET:-}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-0}
+      - S3_PREFIX=${S3_PREFIX:-}
+      - TEMP_AUDIO_RETENTION_HOURS=${TEMP_AUDIO_RETENTION_HOURS:-24}
+      - STALE_CHUNK_AFTER_MINUTES=${STALE_CHUNK_AFTER_MINUTES:-30}
+    volumes:
+      - ./backend/storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ./cron
+    restart: unless-stopped
+
+  # 3. Frontend Worker Builder (Node.js Sidecar for On-Demand Static HTML Re-prerendering)
+  frontend-builder:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.builder
+    container_name: ai-studio-frontend-builder
+    # /rebuild has no authentication and each call is a CPU-intensive build, so it only accepts
+    # webhooks from the backend on the internal network.
+    expose:
+      - "3001"
+    environment:
+      - PORT=3001
+      # The other half of the link with FE_BUILDER_URL; see backend/config/settings.go.
+      - VITE_BACKEND_URL=${VITE_BACKEND_URL:-http://backend:8000}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - ./frontend/dist:/app/dist
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # 4. Frontend Web Studio (High-performance Nginx serving from shared frontend_dist volume)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ai-studio-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html
+    depends_on:
+      - backend
+      - frontend-builder
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

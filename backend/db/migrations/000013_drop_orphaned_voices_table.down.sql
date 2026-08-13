@@ -1,0 +1,8 @@
+-- Re-create legacy voices table if rollback is needed. Schema matches original migration 000003.
+CREATE TABLE IF NOT EXISTS voices (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    audio_path VARCHAR(512) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

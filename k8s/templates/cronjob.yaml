@@ -1,0 +1,104 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "ui-studio.fullname" . }}-cron
+  namespace: {{ .Values.namespace | default "ui-studio" }}
+  labels:
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}-cron
+    helm.sh/chart: {{ include "ui-studio.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  schedule: {{ .Values.cron.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ include "ui-studio.name" . }}-cron
+            app.kubernetes.io/instance: {{ .Release.Name }}
+        spec:
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          restartPolicy: Never
+          containers:
+            - name: cron
+              image: "{{ .Values.cron.image.repository }}:{{ .Values.cron.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.cron.image.pullPolicy }}
+              command: ["./cron"]
+              env:
+                - name: SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ui-studio.fullname" . }}-secret
+                      key: secretKey
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ui-studio.fullname" . }}-secret
+                      key: databaseUrl
+                - name: STORAGE_BACKEND
+                  value: {{ .Values.persistence.enabled | ternary "local" "s3" | quote }}
+                - name: STORAGE_DIR
+                  value: {{ .Values.persistence.mountPath | quote }}
+                - name: S3_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ui-studio.fullname" . }}-secret
+                      key: s3Bucket
+                      optional: true
+                - name: S3_REGION
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ui-studio.fullname" . }}-secret
+                      key: s3Region
+                      optional: true
+                - name: S3_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ui-studio.fullname" . }}-secret
+                      key: s3Endpoint
+                      optional: true
+                - name: S3_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ui-studio.fullname" . }}-secret
+                      key: s3AccessKeyId
+                      optional: true
+                - name: S3_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ui-studio.fullname" . }}-secret
+                      key: s3SecretAccessKey
+                      optional: true
+                - name: S3_FORCE_PATH_STYLE
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ui-studio.fullname" . }}-secret
+                      key: s3ForcePathStyle
+                      optional: true
+                - name: S3_PREFIX
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ui-studio.fullname" . }}-secret
+                      key: s3Prefix
+                      optional: true
+                - name: TEMP_AUDIO_RETENTION_HOURS
+                  value: {{ .Values.cron.tempAudioRetentionHours | quote }}
+                - name: STALE_CHUNK_AFTER_MINUTES
+                  value: {{ .Values.cron.staleChunkAfterMinutes | quote }}
+              {{- if .Values.persistence.enabled }}
+              volumeMounts:
+                - name: storage-volume
+                  mountPath: {{ .Values.persistence.mountPath }}
+              {{- end }}
+          {{- if .Values.persistence.enabled }}
+          volumes:
+            - name: storage-volume
+              persistentVolumeClaim:
+                claimName: {{ include "ui-studio.fullname" . }}-pvc
+          {{- end }}

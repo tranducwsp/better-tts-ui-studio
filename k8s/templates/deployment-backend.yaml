@@ -1,0 +1,169 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ui-studio.fullname" . }}-backend
+  namespace: {{ .Values.namespace | default "ui-studio" }}
+  labels:
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}-backend
+    helm.sh/chart: {{ include "ui-studio.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "ui-studio.name" . }}-backend
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "ui-studio.name" . }}-backend
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+          env:
+            - name: PORT
+              value: "8000"
+            - name: HOST
+              value: "0.0.0.0"
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: secretKey
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: databaseUrl
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: redisUrl
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: redisPassword
+            - name: COOKIE_SECURE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: cookieSecure
+            - name: DEFAULT_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: defaultAdminUsername
+                  optional: true
+            - name: DEFAULT_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: defaultAdminPassword
+                  optional: true
+            - name: DEFAULT_USER_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: defaultUserUsername
+                  optional: true
+            - name: DEFAULT_USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: defaultUserPassword
+                  optional: true
+            - name: CORE_ENGINE_URL
+              value: "http://{{ include "ui-studio.fullname" . }}-engine:{{ .Values.engine.service.httpPort }}"
+            - name: CORE_ENGINE_GRPC_URL
+              value: "{{ include "ui-studio.fullname" . }}-engine:{{ .Values.engine.service.grpcPort }}"
+            - name: FE_BUILDER_URL
+              value: "http://{{ include "ui-studio.fullname" . }}-frontend-builder:{{ .Values.frontendBuilder.service.port }}"
+            - name: STORAGE_BACKEND
+              value: {{ .Values.persistence.enabled | ternary "local" "s3" | quote }}
+            - name: STORAGE_DIR
+              value: {{ .Values.persistence.mountPath | quote }}
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: s3Bucket
+                  optional: true
+            - name: S3_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: s3Region
+                  optional: true
+            - name: S3_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: s3Endpoint
+                  optional: true
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: s3AccessKeyId
+                  optional: true
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: s3SecretAccessKey
+                  optional: true
+            - name: S3_FORCE_PATH_STYLE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: s3ForcePathStyle
+                  optional: true
+            - name: S3_PREFIX
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: s3Prefix
+                  optional: true
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          {{- if .Values.persistence.enabled }}
+          volumeMounts:
+            - name: storage-volume
+              mountPath: {{ .Values.persistence.mountPath }}
+          {{- end }}
+      {{- if .Values.persistence.enabled }}
+      volumes:
+        - name: storage-volume
+          persistentVolumeClaim:
+            claimName: {{ include "ui-studio.fullname" . }}-pvc
+      {{- end }}

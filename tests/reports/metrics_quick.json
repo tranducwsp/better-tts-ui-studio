@@ -1,0 +1,716 @@
+[
+  {
+    "time": "22:59:39",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 7.91
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.0
+      },
+      "app-redis": {
+        "mem_mib": 18.0
+      }
+    }
+  },
+  {
+    "time": "22:59:44",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 16.15
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.3
+      },
+      "app-redis": {
+        "mem_mib": 18.51
+      }
+    }
+  },
+  {
+    "time": "22:59:49",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.3
+      },
+      "app-redis": {
+        "mem_mib": 18.25
+      }
+    }
+  },
+  {
+    "time": "22:59:54",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.7
+      },
+      "app-redis": {
+        "mem_mib": 18.99
+      }
+    }
+  },
+  {
+    "time": "22:59:59",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.2
+      },
+      "app-redis": {
+        "mem_mib": 18.23
+      }
+    }
+  },
+  {
+    "time": "23:00:05",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.4
+      },
+      "app-redis": {
+        "mem_mib": 18.75
+      }
+    }
+  },
+  {
+    "time": "23:00:10",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.9
+      },
+      "app-redis": {
+        "mem_mib": 18.51
+      }
+    }
+  },
+  {
+    "time": "23:00:15",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.0
+      },
+      "app-redis": {
+        "mem_mib": 19.46
+      }
+    }
+  },
+  {
+    "time": "23:00:20",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.3
+      },
+      "app-redis": {
+        "mem_mib": 18.39
+      }
+    }
+  },
+  {
+    "time": "23:00:25",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.2
+      },
+      "app-redis": {
+        "mem_mib": 18.5
+      }
+    }
+  },
+  {
+    "time": "23:00:30",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.4
+      },
+      "app-redis": {
+        "mem_mib": 18.5
+      }
+    }
+  },
+  {
+    "time": "23:00:35",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.7
+      },
+      "app-redis": {
+        "mem_mib": 18.26
+      }
+    }
+  },
+  {
+    "time": "23:00:40",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.9
+      },
+      "app-redis": {
+        "mem_mib": 18.3
+      }
+    }
+  },
+  {
+    "time": "23:00:45",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.8
+      },
+      "app-redis": {
+        "mem_mib": 18.76
+      }
+    }
+  },
+  {
+    "time": "23:00:51",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.5
+      },
+      "app-redis": {
+        "mem_mib": 19.2
+      }
+    }
+  },
+  {
+    "time": "23:00:56",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.4
+      },
+      "app-redis": {
+        "mem_mib": 18.53
+      }
+    }
+  },
+  {
+    "time": "23:01:01",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.3
+      },
+      "app-redis": {
+        "mem_mib": 19.34
+      }
+    }
+  },
+  {
+    "time": "23:01:06",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.8
+      },
+      "app-redis": {
+        "mem_mib": 18.6
+      }
+    }
+  },
+  {
+    "time": "23:01:11",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.8
+      },
+      "app-redis": {
+        "mem_mib": 18.99
+      }
+    }
+  },
+  {
+    "time": "23:01:16",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.4
+      },
+      "app-redis": {
+        "mem_mib": 18.51
+      }
+    }
+  },
+  {
+    "time": "23:01:21",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.5
+      },
+      "app-redis": {
+        "mem_mib": 18.59
+      }
+    }
+  },
+  {
+    "time": "23:01:26",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.2
+      },
+      "app-redis": {
+        "mem_mib": 18.34
+      }
+    }
+  },
+  {
+    "time": "23:01:31",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.1
+      },
+      "app-redis": {
+        "mem_mib": 18.54
+      }
+    }
+  },
+  {
+    "time": "23:01:37",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.5
+      },
+      "app-redis": {
+        "mem_mib": 17.86
+      }
+    }
+  },
+  {
+    "time": "23:01:42",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.5
+      },
+      "app-redis": {
+        "mem_mib": 18.0
+      }
+    }
+  },
+  {
+    "time": "23:01:47",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.1
+      },
+      "app-redis": {
+        "mem_mib": 18.74
+      }
+    }
+  },
+  {
+    "time": "23:01:52",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.0
+      },
+      "app-redis": {
+        "mem_mib": 19.06
+      }
+    }
+  },
+  {
+    "time": "23:01:57",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.1
+      },
+      "app-redis": {
+        "mem_mib": 18.08
+      }
+    }
+  },
+  {
+    "time": "23:02:02",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.3
+      },
+      "app-redis": {
+        "mem_mib": 19.1
+      }
+    }
+  },
+  {
+    "time": "23:02:07",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.0
+      },
+      "app-redis": {
+        "mem_mib": 17.76
+      }
+    }
+  },
+  {
+    "time": "23:02:12",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 138.8
+      },
+      "app-redis": {
+        "mem_mib": 18.25
+      }
+    }
+  },
+  {
+    "time": "23:02:18",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 138.6
+      },
+      "app-redis": {
+        "mem_mib": 18.61
+      }
+    }
+  },
+  {
+    "time": "23:02:23",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.7
+      },
+      "app-redis": {
+        "mem_mib": 18.0
+      }
+    }
+  },
+  {
+    "time": "23:02:28",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 139.0
+      },
+      "app-redis": {
+        "mem_mib": 18.03
+      }
+    }
+  },
+  {
+    "time": "23:02:33",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.9
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 138.2
+      },
+      "app-redis": {
+        "mem_mib": 19.2
+      }
+    }
+  },
+  {
+    "time": "23:02:38",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 16.65
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.9
+      },
+      "app-redis": {
+        "mem_mib": 18.73
+      }
+    }
+  },
+  {
+    "time": "23:02:43",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 16.19
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.8
+      },
+      "app-redis": {
+        "mem_mib": 18.61
+      }
+    }
+  },
+  {
+    "time": "23:02:48",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.97
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.9
+      },
+      "app-redis": {
+        "mem_mib": 18.52
+      }
+    }
+  },
+  {
+    "time": "23:02:53",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.97
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.9
+      },
+      "app-redis": {
+        "mem_mib": 18.5
+      }
+    }
+  },
+  {
+    "time": "23:02:58",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.97
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 137.9
+      },
+      "app-redis": {
+        "mem_mib": 18.24
+      }
+    }
+  },
+  {
+    "time": "23:03:04",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.97
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 138.1
+      },
+      "app-redis": {
+        "mem_mib": 19.64
+      }
+    }
+  },
+  {
+    "time": "23:03:09",
+    "stats": {
+      "ai-backend": {
+        "mem_mib": 15.97
+      },
+      "ai-engine": {
+        "mem_mib": 41.01
+      },
+      "app-postgres": {
+        "mem_mib": 138.3
+      },
+      "app-redis": {
+        "mem_mib": 19.61
+      }
+    }
+  }
+]

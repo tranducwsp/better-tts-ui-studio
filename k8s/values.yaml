@@ -1,48 +1,171 @@
-replicaCount: 1
+# Default values for UI Studio Infrastructure Platform Helm Chart
+namespace: ui-studio
 
-image:
-  repository: harbor.amoratran.id.vn/tiny-src/vieneu-tts-api
-  pullPolicy: Always
-  tag: "8f6131e347ec0ecec72d774368f75c58d7d26a3b"
+# ---------------------------------------------------------------------------
+# 1. Control Plane Backend (Go Chi)
+# ---------------------------------------------------------------------------
+backend:
+  replicaCount: 1
+  image:
+    repository: your-registry.example.com/studio-backend
+    pullPolicy: Always
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
 
-imagePullSecrets:
-  - name: tiny-src-registry-secret
-nameOverride: ""
-fullnameOverride: ""
+# ---------------------------------------------------------------------------
+# 2. Synthesis Worker (same image as backend, different binary)
+# ---------------------------------------------------------------------------
+worker:
+  replicaCount: 1
+  image:
+    repository: your-registry.example.com/studio-backend
+    pullPolicy: Always
+    tag: "latest"
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
 
-service:
-  type: ClusterIP
-  port: 8000
+# ---------------------------------------------------------------------------
+# 3. Sweeper CronJob (same image as backend, different binary)
+# ---------------------------------------------------------------------------
+cron:
+  schedule: "*/15 * * * *"
+  image:
+    repository: your-registry.example.com/studio-backend
+    pullPolicy: Always
+    tag: "latest"
+  tempAudioRetentionHours: 24
+  staleChunkAfterMinutes: 30
 
-ingress:
+# ---------------------------------------------------------------------------
+# 4. AI Inference Engine
+# ---------------------------------------------------------------------------
+engine:
   enabled: true
-  className: "traefik"
-  annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    ingress.kubernetes.io/proxy-body-size: "0"
-    # Tắt Basic Auth Traefik vì Web App đã tích hợp hệ thống đăng nhập JWT riêng
-    # traefik.ingress.kubernetes.io/router.middlewares: tiny-src-tts-vieneu-tts-api-auth@kubernetescrd
-  hosts:
-    - host: tts.amoratran.id.vn
-      paths:
-        - path: /
-          pathType: Prefix
+  replicaCount: 1
+  image:
+    repository: your-registry.example.com/studio-engine
+    pullPolicy: Always
+    tag: "latest"
+  service:
+    httpPort: 8001
+    grpcPort: 50051
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
 
-resources:
-  requests:
-    cpu: "500m"
-    memory: "1Gi"
-  limits:
-    cpu: "4"
-    memory: "8Gi"
+# ---------------------------------------------------------------------------
+# 5. Frontend Web Studio (Nginx)
+# ---------------------------------------------------------------------------
+frontend:
+  replicaCount: 1
+  image:
+    repository: your-registry.example.com/studio-frontend
+    pullPolicy: Always
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 5173
 
+# ---------------------------------------------------------------------------
+# 6. Frontend Builder (Node.js sidecar for on-demand rebuild)
+#
+# Shares the frontend-dist PVC with frontend. Requires a storageClass that supports
+# ReadWriteMany (NFS, CephFS, etc.) if the two pods are on different nodes. If using
+# a storageClass that only supports ReadWriteOnce, ensure both pods are on the same node
+# (add affinity) or switch to S3 to avoid needing a shared volume.
+# ---------------------------------------------------------------------------
+frontendBuilder:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: your-registry.example.com/studio-frontend-builder
+    pullPolicy: Always
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 3001
+
+# ---------------------------------------------------------------------------
+# Infrastructure (optional — set enabled: true to deploy in-cluster)
+# ---------------------------------------------------------------------------
+postgresql:
+  enabled: false
+  image: postgres:16-alpine
+  storageClass: "local-path"
+  size: "10Gi"
+  auth:
+    database: ai_studio
+
+redis:
+  enabled: false
+  image: redis:alpine
+  storageClass: "local-path"
+  size: "1Gi"
+
+# ---------------------------------------------------------------------------
+# Image pull credentials
+# ---------------------------------------------------------------------------
+imagePullSecrets:
+  - name: registry-secret
+
+# ---------------------------------------------------------------------------
+# Persistence — backend storage volume (audio files, etc.)
+# ---------------------------------------------------------------------------
 persistence:
   enabled: true
   storageClass: "local-path"
   accessMode: "ReadWriteOnce"
   size: "10Gi"
-  mountPath: "/root/.cache"
+  mountPath: "/app/storage"
 
-nodeSelector: {}
-tolerations: []
-affinity: {}
+# ---------------------------------------------------------------------------
+# Frontend dist volume — shared between frontend-builder and frontend.
+# ---------------------------------------------------------------------------
+frontendDist:
+  storageClass: "local-path"
+  accessMode: "ReadWriteOnce"
+  size: "1Gi"
+
+# ---------------------------------------------------------------------------
+# Sensitive config — override via --set or values override file.
+#
+# DO NOT put real values here. Use one of the following methods:
+#   1. helm install --set secret.secretKey=xxx ...
+#   2. Create a separate values override file (do not commit to git)
+#   3. Sealed Secrets (kubeseal) or External Secrets Operator
+# ---------------------------------------------------------------------------
+secret:
+  secretKey: ""
+  databaseUrl: ""
+  redisUrl: ""
+  redisPassword: ""
+  cookieSecure: "1"
+  defaultAdminUsername: ""
+  defaultAdminPassword: ""
+  defaultUserUsername: ""
+  defaultUserPassword: ""
+  s3Bucket: ""
+  s3Region: "us-east-1"
+  s3Endpoint: ""
+  s3AccessKeyId: ""
+  s3SecretAccessKey: ""
+  s3ForcePathStyle: "0"
+  s3Prefix: ""

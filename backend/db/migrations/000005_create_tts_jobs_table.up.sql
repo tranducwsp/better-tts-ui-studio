@@ -1,0 +1,12 @@
+-- 000003_create_tts_jobs_table.up.sql
+
+CREATE TABLE IF NOT EXISTS tts_jobs (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    engine VARCHAR(50) NOT NULL,
+    voice VARCHAR(255) NOT NULL,
+    speed DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+    total_chunks INT NOT NULL DEFAULT 1,
+    text TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

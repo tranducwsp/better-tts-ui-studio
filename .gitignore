@@ -36,8 +36,10 @@ pretrained-models/
 *.db
 *.sqlite
 *.sqlite3
-tts_database.db
-storage/
+/storage/
+/backend/storage/audio/
+/backend/storage/temp/
+/backend/storage/voice/
 
 # Backup & Temporary files
 *.orig
@@ -46,3 +48,12 @@ storage/
 # Logs
 *.log
 *secret.yaml
+
+# Node.js
+node_modules/
+
+# Go Binaries
+backend/backend
+
+.claude/worktrees/
+test-results/

@@ -1,0 +1,9 @@
+# node_modules are reinstalled in the image; sending 168 MB through the build context only slows
+# every build without changing the result.
+node_modules/
+dist/
+
+# Never include environment files in the image — see backend/.dockerignore.
+.env
+.env.*
+!.env.example

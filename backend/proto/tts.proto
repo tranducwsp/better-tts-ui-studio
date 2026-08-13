@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package tts;
+
+option go_package = "backend/proto";
+
+service TTSService {
+  rpc GetInfo (GetInfoRequest) returns (GetInfoResponse);
+  rpc GetVoices (GetVoicesRequest) returns (GetVoicesResponse);
+  rpc Synthesize (SynthesizeRequest) returns (SynthesizeResponse);
+  rpc CloneVoice (CloneVoiceRequest) returns (CloneVoiceResponse);
+}
+
+// ── GetInfo ──────────────────────────────────────────────────────────────────
+
+message GetInfoRequest {}
+
+message GetInfoResponse {
+  string manifest_json = 1;  // Full UniversalManifest as JSON string
+}
+
+// ── GetVoices ────────────────────────────────────────────────────────────────
+
+message GetVoicesRequest {
+  optional string model_id = 1;  // Filter by mode, e.g. "fast", "standard"
+}
+
+message VoiceInfo {
+  string id           = 1;
+  string name         = 2;
+  repeated string descriptions = 3;
+  repeated string modes = 4;
+}
+
+message GetVoicesResponse {
+  repeated VoiceInfo voices = 1;
+}
+
+// ── Synthesize ───────────────────────────────────────────────────────────────
+
+message SynthesizeRequest {
+  string text     = 1;
+  string voice_id = 2;
+  double speed    = 3;
+  string engine   = 4;  // "standard" | "fast" | "zero_shot_clone"
+  optional double pitch   = 5;
+  optional string emotion = 6;
+}
+
+message SynthesizeResponse {
+  bytes  audio_bytes = 1;
+  string error_msg   = 2;
+}
+
+// ── CloneVoice ───────────────────────────────────────────────────────────────
+
+message CloneVoiceRequest {
+  bytes  audio_bytes = 1;  // Reference audio file content
+  string name        = 2;  // User-provided name for the cloned voice
+  string engine      = 3;  // Mode, e.g. "zero_shot_clone"
+}
+
+message CloneVoiceResponse {
+  string voice_id = 1;
+  string name     = 2;
+  string status   = 3;  // "success" | "error"
+  string error_msg = 4;
+}
