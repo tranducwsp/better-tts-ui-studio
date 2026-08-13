@@ -53,7 +53,7 @@ Designed for AI Engineers who want to take their models from notebooks/local scr
 
 ### Step 1: Prepare Your AI Model Microservice
 
-The platform communicates with your AI model through a standard HTTP REST (or gRPC) Service. We have provided a complete example source code in the [`core-tts-example/`](./core-tts-example) directory.
+The platform communicates with your AI model through a standard HTTP REST (or gRPC) Service. We have provided a complete example source code in the [`core-tts-example/`](./core-tts-example) directory. This is a stub/reference for the integration contract — your real engine lives in a separate repository.
 
 Your AI service only needs to implement 3 main endpoints:
 1. `GET /info` (Required): Returns a JSON Manifest defining model information, UI parameter panel, regex rules, and Voice Cloning features.
@@ -114,7 +114,7 @@ Basic Manifest structure example:
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/better-tts-ui-studio.git
+   git clone https://github.com/tranducwsp/better-tts-ui-studio.git
    cd better-tts-ui-studio
    ```
 
@@ -123,10 +123,10 @@ Basic Manifest structure example:
    cp .env.example .env
    ```
    Open the `.env` file and fill in the security keys (you can generate them with `openssl rand -hex 32`):
-   - `SECRET_KEY`: JWT signing key.
-   - `POSTGRES_PASSWORD`: Database password.
-   - `REDIS_PASSWORD`: Redis cache/queue password.
-   - `CORE_ENGINE_URL`: URL to your AI Model service (default in docker compose is `http://core-engine:8001`).
+   - `SECRET_KEY` (**required**): JWT signing key. Backend refuses to start without it.
+   - `POSTGRES_PASSWORD` (**required**): Database password.
+   - `REDIS_PASSWORD` (**required**): Redis cache/queue password.
+   - `CORE_ENGINE_URL`: URL to your AI Model service (default in docker compose is `http://engine:8001`).
 
 3. **Launch the system**:
    ```bash
@@ -143,11 +143,43 @@ curl -X POST http://localhost:8000/api/internal/engine/reload
 ```
 The platform will automatically update the latest UI for all users immediately!
 
+### Development Credentials
+
+When running with Docker Compose for the first time, set these in your `.env` to create an admin account:
+
+```bash
+DEFAULT_ADMIN_USERNAME=admin
+DEFAULT_ADMIN_PASSWORD=your-secure-password
+```
+
+The account is created automatically on first startup. Leave both empty to skip seeding and let the first user register through the UI.
+
+---
+
+## 🧪 Testing
+
+The project includes a comprehensive test suite. See [tests/test-plan.md](./tests/test-plan.md) for the full test plan.
+
+**Quick checks:**
+
+```bash
+# Backend tests
+cd backend && go test ./...
+
+# Frontend tests
+cd frontend && npm test
+
+# Integration tests (requires running Docker stack)
+cd tests && npx playwright test
+
+# Smoke test with k6
+docker run --rm -i --network=host \
+  -v "$(pwd)/tests/load:/tests/load" grafana/k6 run /tests/load/smoke.js
+```
+
 ---
 
 ## 📚 Complete Technical Documentation System
-
-To learn more about each component in the system, refer to the in-depth documentation in the `docs/` directory:
 
 | Document File | Main Content |
 | :--- | :--- |
