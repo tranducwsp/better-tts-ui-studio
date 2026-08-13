@@ -49,6 +49,9 @@ pretrained-models/
 *.log
 *secret.yaml
 
+# Node.js
+node_modules/
+
 # Go Binaries
 backend/backend
 
