@@ -14,7 +14,6 @@ import type { InputPanelSpec, ResolvedInputPanel } from './types';
 /** Applied when the engine does not state a value. Must match PlatformDefaultInputPanel in Go. */
 export const PLATFORM_DEFAULT_INPUT_PANEL: ResolvedInputPanel = {
   file_serve: true,
-  closeable: false,
   find_mode: 'expert',
   replace_tool: true,
   enable_chunk_box: true,
@@ -52,7 +51,6 @@ export function resolveInputPanel(
   const d = PLATFORM_DEFAULT_INPUT_PANEL;
   return {
     file_serve: pickBool(inputPanelSpec.file_serve, d.file_serve),
-    closeable: pickBool(inputPanelSpec.closeable, d.closeable),
     find_mode: pickStr(inputPanelSpec.find_mode, d.find_mode),
     replace_tool: pickBool(inputPanelSpec.replace_tool, d.replace_tool),
     enable_chunk_box: pickBool(inputPanelSpec.enable_chunk_box, d.enable_chunk_box),

@@ -114,7 +114,6 @@ type NoticeBannerSpec struct {
 // Do not read these fields directly. Use ResolveInputPanel to get the resolved value.
 type InputPanelSpec struct {
 	FileServe      *bool            `json:"file_serve,omitempty"`
-	Closeable      *bool            `json:"closeable,omitempty"`
 	FindMode       string           `json:"find_mode,omitempty"` // "expert", "express"
 	ReplaceTool    *bool            `json:"replace_tool,omitempty"`
 	EnableChunkBox *bool            `json:"enable_chunk_box,omitempty"`
@@ -124,7 +123,6 @@ type InputPanelSpec struct {
 // ResolvedInputPanel is the result after resolution — no more nil, ready to use.
 type ResolvedInputPanel struct {
 	FileServe      bool             `json:"file_serve"`
-	Closeable      bool             `json:"closeable"`
 	FindMode       string           `json:"find_mode"`
 	ReplaceTool    bool             `json:"replace_tool"`
 	EnableChunkBox bool             `json:"enable_chunk_box"`
@@ -135,7 +133,6 @@ type ResolvedInputPanel struct {
 // PLATFORM_DEFAULT_INPUT_PANEL in frontend/src/lib/inputPanel.ts.
 var PlatformDefaultInputPanel = ResolvedInputPanel{
 	FileServe:      true,
-	Closeable:      false,
 	FindMode:       "expert",
 	ReplaceTool:    true,
 	EnableChunkBox: true,
@@ -263,7 +260,6 @@ func (m *UniversalManifest) ResolveInputPanel() ResolvedInputPanel {
 	d := PlatformDefaultInputPanel
 	return ResolvedInputPanel{
 		FileServe:      pickBool(ip.FileServe, d.FileServe),
-		Closeable:      pickBool(ip.Closeable, d.Closeable),
 		FindMode:       pickStr(ip.FindMode, d.FindMode),
 		ReplaceTool:    pickBool(ip.ReplaceTool, d.ReplaceTool),
 		EnableChunkBox: pickBool(ip.EnableChunkBox, d.EnableChunkBox),

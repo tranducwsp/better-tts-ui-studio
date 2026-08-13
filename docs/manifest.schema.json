@@ -127,7 +127,6 @@
       "type": "object",
       "properties": {
         "file_serve":      { "type": "boolean", "description": "Enable file serving (upload reference audio)" },
-        "closeable":       { "type": "boolean", "description": "Allow closing the input panel" },
         "find_mode":       { "type": "string", "enum": ["expert", "express"], "description": "Input panel variant: 'expert' (full controls) or 'express' (simplified)" },
         "replace_tool":    { "type": "boolean", "description": "Enable find/replace text tool" },
         "enable_chunk_box": { "type": "boolean", "description": "Enable chunk size display/control" },

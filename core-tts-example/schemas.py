@@ -52,7 +52,6 @@ class EngineCapabilities(BaseModel):
     supports_speed: Optional[bool] = None
     supports_pitch: Optional[bool] = None
     supports_emotion: Optional[bool] = None
-    supports_ssml: Optional[bool] = None
 
 class AudioSpec(BaseModel):
     """Định dạng Engine xuất ra, và ràng buộc cho âm thanh tham chiếu nhận vào.
@@ -127,7 +126,6 @@ DEFAULT_AUTO_FORMAT_RULES = [
 
 class InputPanelSpec(BaseModel):
     file_serve: bool = True
-    closeable: bool = False
     find_mode: str = "expert"
     replace_tool: bool = True
     enable_chunk_box: bool = True
@@ -220,7 +218,7 @@ class UniversalManifest(BaseModel):
     capabilities: EngineCapabilities = Field(default_factory=lambda: EngineCapabilities(
         supports_preset_voices=True, supports_cloning=False, supports_voice_saving=False,
         supports_streaming=True, supports_speed=True,
-        supports_pitch=False, supports_emotion=False, supports_ssml=False,
+        supports_pitch=False, supports_emotion=False,
     ))
     constraints: EngineConstraints = Field(default_factory=EngineConstraints)
     audio_spec: AudioSpec = Field(default_factory=lambda: AudioSpec(
