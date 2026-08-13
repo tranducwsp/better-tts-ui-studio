@@ -145,23 +145,24 @@ curl -f http://localhost:8000/health
 
 ### Playwright (UI Integration)
 
-Run Playwright tests against the running Docker stack to verify manifest-to-UI consistency:
+Run Playwright tests against the running Docker stack to verify manifest-to-UI consistency.
+The Playwright config and dependencies live in `tests/` (not at the repo root):
 
 ```bash
 # Install Playwright browsers (first time only)
-npx playwright install chromium
+cd tests && npx playwright install chromium
 
 # Run all integration tests
-npx playwright test
+cd tests && npx playwright test
 
 # Run a specific test file
-npx playwright test tests/integration/manifest_ui.spec.ts
+cd tests && npx playwright test integration/manifest_ui.spec.ts
 
 # Run tests in headed mode (watch the browser)
-npx playwright test --headed
+cd tests && npx playwright test --headed
 
 # Run tests with UI mode (interactive dashboard)
-npx playwright test --ui
+cd tests && npx playwright test --ui
 ```
 
 Smoke test with k6 when the stack is ready:
