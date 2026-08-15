@@ -1,0 +1,99 @@
+{{- if .Values.postgresql.enabled -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "ui-studio.fullname" . }}-postgresql
+  labels:
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}-postgresql
+    helm.sh/chart: {{ include "ui-studio.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "ui-studio.name" . }}-postgresql
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  serviceName: {{ include "ui-studio.fullname" . }}-postgresql-hl
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "ui-studio.name" . }}-postgresql
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: postgresql
+          image: {{ .Values.postgresql.image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgresql
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.auth.database | quote }}
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ui-studio.fullname" . }}-secret
+                  key: postgresPassword
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.postgresql.storageClass | quote }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.size | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ui-studio.fullname" . }}-postgresql-hl
+  labels:
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}-postgresql
+    helm.sh/chart: {{ include "ui-studio.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}-postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ui-studio.fullname" . }}-postgresql
+  labels:
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}-postgresql
+    helm.sh/chart: {{ include "ui-studio.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ include "ui-studio.name" . }}-postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: 5432
+{{- end }}

@@ -1,9 +1,18 @@
 import type { HistoryPage, UserResponse, VoiceOption, Preset, HistoryItem, UniversalManifest, JobDetailResponse, ChunkItemResponse } from './types';
 export type { HistoryPage, UserResponse, VoiceOption, Preset, HistoryItem, UniversalManifest, JobDetailResponse, ChunkItemResponse };
 
+// VITE_BACKEND_URL is injected at build time (e.g. https://btutapi.amoratran.id.vn).
+// In dev (npm run dev) it's empty/undefined so the Vite proxy handles routing.
+// In production the built JS uses this as the base for all API calls.
+const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || '';
+
+function apiUrl(path: string): string {
+  return API_BASE ? `${API_BASE.replace(/\/+$/, '')}${path}` : path;
+}
+
 export async function fetchManifest(): Promise<UniversalManifest | null> {
   try {
-    const res = await fetch('/api/info', { credentials: 'include' });
+    const res = await fetch(apiUrl('/api/info'), { credentials: 'include' });
     if (!res.ok) return null;
     return await res.json();
   } catch (err) {
@@ -28,7 +37,7 @@ let refreshInFlight: Promise<boolean> | null = null;
 
 async function doRefresh(): Promise<boolean> {
   try {
-    let res = await fetch('/api/auth/refresh', {
+    let res = await fetch(apiUrl('/api/auth/refresh'), {
       method: 'POST',
       credentials: 'include',
     });
@@ -36,7 +45,7 @@ async function doRefresh(): Promise<boolean> {
     // but this request carried the old token and got 401 ("already used"). Retrying once with the
     // current cookie fixes it; a second 401 is a genuinely dead session.
     if (res.status === 401) {
-      res = await fetch('/api/auth/refresh', {
+      res = await fetch(apiUrl('/api/auth/refresh'), {
         method: 'POST',
         credentials: 'include',
       });
@@ -52,9 +61,10 @@ async function doRefresh(): Promise<boolean> {
 // last 15 minutes, and sessions longer than 15 minutes without retry will get 401 "Please log in"
 // even though the refresh token is still valid.
 export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  let res = await fetch(input, { ...init, credentials: 'include' });
+  const url = typeof input === 'string' ? apiUrl(input) : input;
+  let res = await fetch(url, { ...init, credentials: 'include' });
   if (res.status === 401 && await refreshSession()) {
-    res = await fetch(input, { ...init, credentials: 'include' });
+    res = await fetch(url, { ...init, credentials: 'include' });
   }
   return res;
 }
@@ -70,7 +80,7 @@ export async function checkCurrentUser(): Promise<UserResponse | null> {
 }
 
 export async function loginUser(username: string, password: string): Promise<UserResponse> {
-  const res = await fetch('/api/login', {
+  const res = await fetch(apiUrl('/api/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -87,7 +97,7 @@ export async function loginUser(username: string, password: string): Promise<Use
 }
 
 export async function registerUser(username: string, password: string): Promise<UserResponse> {
-  const res = await fetch('/api/register', {
+  const res = await fetch(apiUrl('/api/register'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -299,7 +309,7 @@ export function subscribeTaskStream(
   onError: (errorMsg: string) => void,
   format = 'wav'
 ): () => void {
-  const eventSource = new EventSource(`/api/stream/tasks/${taskId}`, { withCredentials: true });
+  const eventSource = new EventSource(apiUrl(`/api/stream/tasks/${taskId}`), { withCredentials: true });
 
   eventSource.onmessage = async (e) => {
     try {
@@ -317,7 +327,7 @@ export function subscribeTaskStream(
         const blob = await audioRes.blob();
         // altUrl: URL for the same audio in a different format (first non-default from
         // supported_formats).  Kept for backward compat — current callers ignore it.
-        const altUrl = `/api/tasks/${taskId}/audio?format=${format === 'mp3' ? 'wav' : 'mp3'}`;
+        const altUrl = apiUrl(`/api/tasks/${taskId}/audio?format=${format === 'mp3' ? 'wav' : 'mp3'}`);
         onComplete(blob, altUrl);
       } else if (data.status === 'error' || data.status === 'failed') {
         eventSource.close();

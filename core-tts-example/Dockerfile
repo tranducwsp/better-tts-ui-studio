@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY schemas.py .
 COPY main.py .
 COPY grpc_server.py .
+COPY utils/ utils/
 COPY proto/ proto/
 
 ENV CORE_PORT=8001
