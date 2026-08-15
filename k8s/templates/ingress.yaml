@@ -3,7 +3,6 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "ui-studio.fullname" . }}-ingress
-  namespace: {{ .Values.namespace | default "ui-studio" }}
   labels:
     app.kubernetes.io/name: {{ include "ui-studio.name" . }}
     helm.sh/chart: {{ include "ui-studio.chart" . }}
@@ -18,8 +17,31 @@ spec:
     - hosts:
         - {{ .Values.ingress.host | quote }}
       secretName: {{ include "ui-studio.fullname" . }}-tls
+    {{- if .Values.ingress.apiHost }}
+    - hosts:
+        - {{ .Values.ingress.apiHost | quote }}
+      secretName: {{ include "ui-studio.fullname" . }}-api-tls
+    {{- end }}
   rules:
     - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ui-studio.fullname" . }}-backend
+                port:
+                  number: {{ .Values.backend.service.port }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ui-studio.fullname" . }}-frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
+    {{- if .Values.ingress.apiHost }}
+    - host: {{ .Values.ingress.apiHost | quote }}
       http:
         paths:
           - path: /api
@@ -36,11 +58,5 @@ spec:
                 name: {{ include "ui-studio.fullname" . }}-backend
                 port:
                   number: {{ .Values.backend.service.port }}
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "ui-studio.fullname" . }}-frontend
-                port:
-                  number: {{ .Values.frontend.service.port }}
+    {{- end }}
 {{- end }}

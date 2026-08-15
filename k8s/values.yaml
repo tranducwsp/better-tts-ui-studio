@@ -1,5 +1,5 @@
 # Default values for UI Studio Infrastructure Platform Helm Chart
-namespace: ui-studio
+# Namespace is managed by the ingress controller or Argo CD, not set here.
 
 # ---------------------------------------------------------------------------
 # 1. Control Plane Backend (Go Chi)
@@ -39,10 +39,13 @@ worker:
       memory: "2Gi"
 
 # ---------------------------------------------------------------------------
-# 3. Sweeper CronJob (same image as backend, different binary)
+# 3. Sweeper Deployment (same image as backend, different binary)
+#
+# Long-running process: sweeps temp audio every 1h, reconciles orphaned
+# chunks every 5 min. Uses a Deployment (not CronJob) because the binary
+# is a daemon that runs until SIGTERM.
 # ---------------------------------------------------------------------------
 cron:
-  schedule: "*/15 * * * *"
   image:
     repository: your-registry.example.com/studio-backend
     pullPolicy: Always
@@ -104,10 +107,21 @@ frontendBuilder:
     port: 3001
 
 # ---------------------------------------------------------------------------
-# Infrastructure (optional — set enabled: true to deploy in-cluster)
+# Ingress — standard Kubernetes Ingress
+# Override annotations for your ingress controller (e.g., cert-manager, Traefik, NGINX)
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  host: studio.example.com
+  apiHost: ""
+  className: ""
+  annotations: {}
+
+# ---------------------------------------------------------------------------
+# Infrastructure (deploy in-cluster when external services are not available)
 # ---------------------------------------------------------------------------
 postgresql:
-  enabled: false
+  enabled: true
   image: postgres:16-alpine
   storageClass: "local-path"
   size: "10Gi"
@@ -115,7 +129,7 @@ postgresql:
     database: ai_studio
 
 redis:
-  enabled: false
+  enabled: true
   image: redis:alpine
   storageClass: "local-path"
   size: "1Gi"
